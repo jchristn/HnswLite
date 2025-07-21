@@ -1,3 +1,5 @@
+<img src="https://github.com/jchristn/HnswIndex/blob/main/assets/logo.png" width="256" height="256">
+
 # HnswIndex
 
 A pure C# implementation of Hierarchical Navigable Small World (HNSW) graphs for approximate nearest neighbor search. This library provides a thread-safe, embeddable solution for vector similarity search in .NET applications.
