@@ -6,6 +6,8 @@ A pure C# implementation of Hierarchical Navigable Small World (HNSW) graphs for
 
 > **Note**: This library is in its early stages of development. We welcome your patience, constructive feedback, and contributions! Please be kind and considerate when reporting issues or suggesting improvements. I am not an expert on this topic and relied heavily on available AI tools to build this library. Pull requests are greatly appreciated!
 
+[![NuGet Version](https://img.shields.io/nuget/v/HnswIndex.svg?style=flat)](https://www.nuget.org/packages/HnswIndex/) [![NuGet](https://img.shields.io/nuget/dt/HnswIndex.svg)](https://www.nuget.org/packages/HnswIndex) 
+
 ## Overview
 
 HnswIndex implements the Hierarchical Navigable Small World algorithm, which provides fast approximate nearest neighbor search with excellent recall rates. The library is designed to be embeddable, extensible, and easy to use in any .NET application.
