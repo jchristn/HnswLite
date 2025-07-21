@@ -21,6 +21,7 @@
 		<IncludeSymbols>True</IncludeSymbols>
 		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
 		<PackageTags>hnsw hierarchical navigable small world index indices vector vectors embedding embeddings</PackageTags>
+		<PackageId>HnswLite</PackageId>
 	</PropertyGroup>
 
 	<ItemGroup>

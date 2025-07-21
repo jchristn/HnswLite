@@ -1,16 +1,16 @@
-<img src="https://github.com/jchristn/HnswIndex/blob/main/assets/logo.png" width="256" height="256">
+<img src="https://github.com/jchristn/HnswLite/blob/main/assets/logo.png" width="256" height="256">
 
-# HnswIndex
+# HnswLite
 
 A pure C# implementation of Hierarchical Navigable Small World (HNSW) graphs for approximate nearest neighbor search. This library provides a thread-safe, embeddable solution for vector similarity search in .NET applications.
 
 > **Note**: This library is in its early stages of development. We welcome your patience, constructive feedback, and contributions! Please be kind and considerate when reporting issues or suggesting improvements. I am not an expert on this topic and relied heavily on available AI tools to build this library. Pull requests are greatly appreciated!
 
-[![NuGet Version](https://img.shields.io/nuget/v/HnswIndex.svg?style=flat)](https://www.nuget.org/packages/HnswIndex/) [![NuGet](https://img.shields.io/nuget/dt/HnswIndex.svg)](https://www.nuget.org/packages/HnswIndex) 
+[![NuGet Version](https://img.shields.io/nuget/v/HnswLite.svg?style=flat)](https://www.nuget.org/packages/HnswLite/) [![NuGet](https://img.shields.io/nuget/dt/HnswLite.svg)](https://www.nuget.org/packages/HnswLite) 
 
 ## Overview
 
-HnswIndex implements the Hierarchical Navigable Small World algorithm, which provides fast approximate nearest neighbor search with excellent recall rates. The library is designed to be embeddable, extensible, and easy to use in any .NET application.
+HnswLite implements the Hierarchical Navigable Small World algorithm, which provides fast approximate nearest neighbor search with excellent recall rates. The library is designed to be embeddable, extensible, and easy to use in any .NET application.
 
 ### Key Features
 
@@ -39,7 +39,7 @@ For version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Use Cases
 
-HnswIndex is ideal for:
+HnswLite is ideal for:
 
 - **Semantic Search** - Find similar documents, sentences, or paragraphs based on embeddings
 - **Recommendation Systems** - Discover similar items, users, or content
@@ -103,7 +103,7 @@ We value your input! If you encounter any issues or have suggestions:
 using Hnsw;
 
 // Create an index for 128-dimensional vectors
-var index = new HNSWIndex(dimension: 128);
+var index = new HnswLite(dimension: 128);
 
 // Configure parameters (optional)
 index.M = 16;
@@ -143,7 +143,7 @@ var state = await index.ExportStateAsync();
 // ... serialize state to disk ...
 
 // Load the index
-var newIndex = new HNSWIndex(dimension: 128);
+var newIndex = new HnswLite(dimension: 128);
 await newIndex.ImportStateAsync(state);
 ```
 
@@ -158,7 +158,7 @@ public class RedisHNSWStorage : IHNSWStorage
 
 // Use custom storage
 var storage = new RedisHNSWStorage(connectionString);
-var index = new HNSWIndex(dimension: 128, storage: storage);
+var index = new HnswLite(dimension: 128, storage: storage);
 ```
 
 ## License

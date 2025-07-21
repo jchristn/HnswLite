@@ -23,6 +23,7 @@
     <PackageRequireLicenseAcceptance>False</PackageRequireLicenseAcceptance>
     <IncludeSymbols>True</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PackageId>HnswLite.RamStorage</PackageId>
   </PropertyGroup>
 
   <ItemGroup>
