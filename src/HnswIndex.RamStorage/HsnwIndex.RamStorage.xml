@@ -1,0 +1,237 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>HnswIndex.RamStorage</name>
+    </assembly>
+    <members>
+        <member name="T:Hnsw.RamStorage.RamHnswNode">
+            <summary>
+            In-memory implementation of HNSW node with thread-safe operations.
+            </summary>
+        </member>
+        <member name="P:Hnsw.RamStorage.RamHnswNode.Id">
+            <summary>
+            Gets the unique identifier of the node.
+            Cannot be Guid.Empty.
+            </summary>
+        </member>
+        <member name="P:Hnsw.RamStorage.RamHnswNode.Vector">
+            <summary>
+            Gets the vector associated with the node.
+            Never null. Vector dimension typically ranges from 1 to 4096.
+            All values must be finite (not NaN or Infinity).
+            </summary>
+        </member>
+        <member name="P:Hnsw.RamStorage.RamHnswNode.IsDisposed">
+            <summary>
+            Gets whether this node has been disposed.
+            </summary>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswNode.#ctor(System.Guid,System.Collections.Generic.List{System.Single})">
+            <summary>
+            Initializes a new instance of the RamHnswNode class.
+            </summary>
+            <param name="id">Node identifier. Cannot be Guid.Empty.</param>
+            <param name="vector">Vector data. Cannot be null or empty. All values must be finite.</param>
+            <exception cref="T:System.ArgumentException">Thrown when id is Guid.Empty or vector contains invalid values.</exception>
+            <exception cref="T:System.ArgumentNullException">Thrown when vector is null.</exception>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswNode.GetNeighbors">
+            <summary>
+            Gets a copy of the node's neighbors organized by layer.
+            Thread-safe operation.
+            Returns a dictionary where keys are layer numbers (0 to MaxLayers-1) and values are sets of neighbor IDs.
+            Never returns null. Returns an empty dictionary if no neighbors exist.
+            </summary>
+            <returns>A copy of the neighbors dictionary.</returns>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the node has been disposed.</exception>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswNode.AddNeighbor(System.Int32,System.Guid)">
+            <summary>
+            Adds a neighbor connection at the specified layer.
+            Thread-safe operation. Idempotent - adding the same neighbor multiple times has no additional effect.
+            </summary>
+            <param name="layer">The layer number. Minimum: 0, Maximum: 63.</param>
+            <param name="neighborId">The ID of the neighbor to add. Cannot be Guid.Empty or equal to this node's ID.</param>
+            <exception cref="T:System.ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
+            <exception cref="T:System.ArgumentException">Thrown when neighborId is invalid.</exception>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the node has been disposed.</exception>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswNode.RemoveNeighbor(System.Int32,System.Guid)">
+            <summary>
+            Removes a neighbor connection at the specified layer.
+            Thread-safe operation. No effect if the neighbor doesn't exist.
+            Removes the layer entry if it becomes empty after neighbor removal.
+            </summary>
+            <param name="layer">The layer number. Minimum: 0, Maximum: 63.</param>
+            <param name="neighborId">The ID of the neighbor to remove.</param>
+            <exception cref="T:System.ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the node has been disposed.</exception>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswNode.GetNeighborCount(System.Int32)">
+            <summary>
+            Gets the number of neighbors at a specific layer.
+            Thread-safe operation.
+            </summary>
+            <param name="layer">The layer number. Minimum: 0, Maximum: 63.</param>
+            <returns>The number of neighbors at the specified layer, or 0 if the layer has no neighbors.</returns>
+            <exception cref="T:System.ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the node has been disposed.</exception>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswNode.GetTotalNeighborCount">
+            <summary>
+            Gets the total number of neighbors across all layers.
+            Thread-safe operation.
+            </summary>
+            <returns>The total number of neighbors.</returns>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the node has been disposed.</exception>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswNode.HasNeighbor(System.Int32,System.Guid)">
+            <summary>
+            Checks if a specific neighbor exists at the given layer.
+            Thread-safe operation.
+            </summary>
+            <param name="layer">The layer number. Minimum: 0, Maximum: 63.</param>
+            <param name="neighborId">The neighbor ID to check.</param>
+            <returns>true if the neighbor exists at the specified layer; otherwise, false.</returns>
+            <exception cref="T:System.ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the node has been disposed.</exception>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswNode.Dispose">
+            <summary>
+            Disposes of the node's resources.
+            </summary>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswNode.Dispose(System.Boolean)">
+            <summary>
+            Disposes of the node's resources.
+            </summary>
+            <param name="disposing">true if disposing managed resources; otherwise, false.</param>
+        </member>
+        <member name="T:Hnsw.RamStorage.RamHnswStorage">
+            <summary>
+            In-memory implementation of HNSW storage with thread-safe operations.
+            Provides high-performance storage for HNSW nodes in RAM.
+            </summary>
+        </member>
+        <member name="P:Hnsw.RamStorage.RamHnswStorage.EntryPoint">
+            <summary>
+            Gets or sets the entry point node ID.
+            Can be null when storage is empty.
+            When setting, the value must either be null or correspond to an existing node ID.
+            Thread-safe property.
+            Default: null.
+            </summary>
+        </member>
+        <member name="P:Hnsw.RamStorage.RamHnswStorage.IsEmpty">
+            <summary>
+            Gets whether the storage is empty (contains no nodes).
+            Thread-safe property.
+            </summary>
+        </member>
+        <member name="P:Hnsw.RamStorage.RamHnswStorage.IsDisposed">
+            <summary>
+            Gets whether the storage has been disposed.
+            </summary>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswStorage.#ctor">
+            <summary>
+            Initializes a new instance of the RamHnswStorage class.
+            </summary>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswStorage.GetCountAsync(System.Threading.CancellationToken)">
+            <summary>
+            Gets the number of nodes in storage.
+            Thread-safe operation.
+            Minimum: 0, Maximum: int.MaxValue (limited by available memory).
+            </summary>
+            <param name="cancellationToken">Cancellation token.</param>
+            <returns>The number of nodes in storage.</returns>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswStorage.AddNodeAsync(System.Guid,System.Collections.Generic.List{System.Single},System.Threading.CancellationToken)">
+            <summary>
+            Adds a new node to storage.
+            Thread-safe operation.
+            If this is the first node and EntryPoint is null, it becomes the entry point.
+            If a node with the same ID already exists, it will be replaced.
+            </summary>
+            <param name="id">Node identifier. Cannot be Guid.Empty.</param>
+            <param name="vector">Vector data. Cannot be null or empty. All values must be finite.</param>
+            <param name="cancellationToken">Cancellation token.</param>
+            <exception cref="T:System.ArgumentException">Thrown when id is Guid.Empty.</exception>
+            <exception cref="T:System.ArgumentNullException">Thrown when vector is null.</exception>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswStorage.RemoveNodeAsync(System.Guid,System.Threading.CancellationToken)">
+            <summary>
+            Removes a node from storage.
+            Thread-safe operation.
+            If the removed node was the entry point, a new entry point is automatically selected.
+            No effect if the node doesn't exist.
+            </summary>
+            <param name="id">Node identifier to remove.</param>
+            <param name="cancellationToken">Cancellation token.</param>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswStorage.GetNodeAsync(System.Guid,System.Threading.CancellationToken)">
+            <summary>
+            Gets a node by ID.
+            Thread-safe operation.
+            </summary>
+            <param name="id">Node identifier.</param>
+            <param name="cancellationToken">Cancellation token.</param>
+            <returns>The requested node.</returns>
+            <exception cref="T:System.Collections.Generic.KeyNotFoundException">Thrown when the node doesn't exist.</exception>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswStorage.TryGetNodeAsync(System.Guid,System.Threading.CancellationToken)">
+            <summary>
+            Tries to get a node by ID.
+            Thread-safe operation.
+            </summary>
+            <param name="id">Node identifier.</param>
+            <param name="cancellationToken">Cancellation token.</param>
+            <returns>A tuple indicating success and the node if found.</returns>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswStorage.GetAllNodeIdsAsync(System.Threading.CancellationToken)">
+            <summary>
+            Gets all node IDs in storage.
+            Thread-safe operation.
+            Returns a new list to prevent external modification.
+            </summary>
+            <param name="cancellationToken">Cancellation token.</param>
+            <returns>A collection of all node IDs in storage.</returns>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswStorage.ContainsNode(System.Guid)">
+            <summary>
+            Checks if a node exists in storage.
+            Thread-safe operation.
+            </summary>
+            <param name="id">Node identifier to check.</param>
+            <returns>true if the node exists; otherwise, false.</returns>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswStorage.Clear">
+            <summary>
+            Clears all nodes from storage.
+            Thread-safe operation.
+            Also clears the entry point.
+            </summary>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswStorage.Dispose">
+            <summary>
+            Disposes of the storage and all contained nodes.
+            </summary>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswStorage.Dispose(System.Boolean)">
+            <summary>
+            Disposes of the storage resources.
+            </summary>
+            <param name="disposing">true if disposing managed resources; otherwise, false.</param>
+        </member>
+    </members>
+</doc>

@@ -1,0 +1,695 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>HnswIndex</name>
+    </assembly>
+    <members>
+        <member name="T:Hnsw.CosineDistance">
+            <summary>
+            Calculates cosine distance between vectors.
+            </summary>
+        </member>
+        <member name="P:Hnsw.CosineDistance.Name">
+            <summary>
+            Gets the name of the distance function.
+            </summary>
+        </member>
+        <member name="M:Hnsw.CosineDistance.Distance(System.Collections.Generic.List{System.Single},System.Collections.Generic.List{System.Single})">
+            <summary>
+            Calculates the cosine distance between two vectors.
+            </summary>
+        </member>
+        <member name="T:Hnsw.DotProductDistance">
+            <summary>
+            Calculates dot product distance between vectors (negated for use as distance metric).
+            </summary>
+        </member>
+        <member name="P:Hnsw.DotProductDistance.Name">
+            <summary>
+            Gets the name of the distance function.
+            </summary>
+        </member>
+        <member name="M:Hnsw.DotProductDistance.Distance(System.Collections.Generic.List{System.Single},System.Collections.Generic.List{System.Single})">
+            <summary>
+            Calculates the negative dot product between two vectors.
+            </summary>
+        </member>
+        <member name="T:Hnsw.EuclideanDistance">
+            <summary>
+            Calculates Euclidean distance between vectors.
+            </summary>
+        </member>
+        <member name="P:Hnsw.EuclideanDistance.Name">
+            <summary>
+            Gets the name of the distance function.
+            </summary>
+        </member>
+        <member name="M:Hnsw.EuclideanDistance.Distance(System.Collections.Generic.List{System.Single},System.Collections.Generic.List{System.Single})">
+            <summary>
+            Calculates the Euclidean distance between two vectors.
+            </summary>
+        </member>
+        <member name="T:Hnsw.HnswParameters">
+            <summary>
+            Parameters for HNSW index configuration.
+            </summary>
+        </member>
+        <member name="P:Hnsw.HnswParameters.M">
+            <summary>
+            Gets or sets the maximum number of connections per layer (except layer 0).
+            Minimum: 2, Maximum: 100, Default: 16.
+            Typical values range from 8 to 48.
+            </summary>
+        </member>
+        <member name="P:Hnsw.HnswParameters.MaxM">
+            <summary>
+            Gets or sets the maximum number of connections for layer 0.
+            Minimum: 1, Maximum: 200, Default: 32.
+            Should be greater than M, typically 2*M.
+            </summary>
+        </member>
+        <member name="P:Hnsw.HnswParameters.EfConstruction">
+            <summary>
+            Gets or sets the size of the dynamic candidate list.
+            Minimum: 1, Maximum: 2000, Default: 200.
+            Higher values improve recall but decrease construction speed.
+            </summary>
+        </member>
+        <member name="P:Hnsw.HnswParameters.MaxLayers">
+            <summary>
+            Gets or sets the maximum number of layers in the graph.
+            Minimum: 1, Maximum: 64, Default: 16.
+            Typically between 10 and 30.
+            </summary>
+        </member>
+        <member name="P:Hnsw.HnswParameters.LevelMultiplier">
+            <summary>
+            Gets or sets the level assignment multiplier.
+            Minimum: Greater than 0, Maximum: 2.0, Default: 1/ln(2) ≈ 1.44.
+            Controls the layer assignment probability distribution.
+            Must be a finite number (not NaN or Infinity).
+            </summary>
+        </member>
+        <member name="P:Hnsw.HnswParameters.ExtendCandidates">
+            <summary>
+            Gets or sets whether to extend candidates with neighbors' neighbors.
+            Default: false.
+            Can improve recall at the cost of construction time.
+            </summary>
+        </member>
+        <member name="P:Hnsw.HnswParameters.KeepPrunedConnections">
+            <summary>
+            Gets or sets whether to add pruned connections to lower levels.
+            Default: false.
+            Can improve connectivity at the cost of more memory usage.
+            </summary>
+        </member>
+        <member name="P:Hnsw.HnswParameters.DistanceFunctionName">
+            <summary>
+            Gets or sets the name of the distance function.
+            Minimum length: 1 (non-whitespace), Maximum length: 100 characters, Default: "L2".
+            Common values: "L2", "L1", "Cosine", "InnerProduct".
+            Cannot be null or whitespace.
+            </summary>
+        </member>
+        <member name="M:Hnsw.HnswParameters.#ctor">
+            <summary>
+            Initializes a new instance of the HnswParameters class with default values.
+            </summary>
+        </member>
+        <member name="M:Hnsw.HnswParameters.Validate">
+            <summary>
+            Validates that all parameters are consistent with each other.
+            </summary>
+        </member>
+        <member name="T:Hnsw.HNSWIndex">
+            <summary>
+            Main HNSW (Hierarchical Navigable Small World) index implementation.
+            </summary>
+        </member>
+        <member name="P:Hnsw.HNSWIndex.DistanceFunction">
+            <summary>
+            Gets or sets the distance function used for vector comparisons.
+            Cannot be null. Setting to null creates a new EuclideanDistance instance.
+            Default: EuclideanDistance.
+            </summary>
+        </member>
+        <member name="P:Hnsw.HNSWIndex.M">
+            <summary>
+            Gets or sets the maximum number of connections per layer (except layer 0).
+            Minimum: 2, Maximum: 100, Default: 16.
+            Typical values range from 8 to 48.
+            </summary>
+        </member>
+        <member name="P:Hnsw.HNSWIndex.MaxM">
+            <summary>
+            Gets or sets the maximum number of connections for layer 0.
+            Minimum: 1, Maximum: 200, Default: 32.
+            Should be greater than or equal to M, typically 2*M.
+            </summary>
+        </member>
+        <member name="P:Hnsw.HNSWIndex.EfConstruction">
+            <summary>
+            Gets or sets the size of the dynamic candidate list.
+            Minimum: 1, Maximum: 2000, Default: 200.
+            Higher values improve recall but decrease construction speed.
+            </summary>
+        </member>
+        <member name="P:Hnsw.HNSWIndex.MaxLayers">
+            <summary>
+            Gets or sets the maximum number of layers in the graph.
+            Minimum: 1, Maximum: 64, Default: 16.
+            Typically between 10 and 30.
+            </summary>
+        </member>
+        <member name="P:Hnsw.HNSWIndex.LevelMultiplier">
+            <summary>
+            Gets or sets the level assignment multiplier.
+            Minimum: Greater than 0, Maximum: 2.0, Default: 1/ln(2) ≈ 1.44.
+            Controls the layer assignment probability distribution.
+            Must be a finite number (not NaN or Infinity).
+            </summary>
+        </member>
+        <member name="P:Hnsw.HNSWIndex.ExtendCandidates">
+            <summary>
+            Gets or sets whether to extend candidates with neighbors' neighbors.
+            Default: false.
+            Can improve recall at the cost of construction time.
+            </summary>
+        </member>
+        <member name="P:Hnsw.HNSWIndex.KeepPrunedConnections">
+            <summary>
+            Gets or sets whether to add pruned connections to lower levels.
+            Default: false.
+            Can improve connectivity at the cost of more memory usage.
+            </summary>
+        </member>
+        <member name="P:Hnsw.HNSWIndex.Seed">
+            <summary>
+            Gets or sets the random seed for reproducible results.
+            Minimum: -1 (random seed), Maximum: int.MaxValue, Default: -1.
+            Use -1 for random seed, or any non-negative value for deterministic behavior.
+            </summary>
+        </member>
+        <member name="P:Hnsw.HNSWIndex.VectorDimension">
+            <summary>
+            Gets the vector dimension for this index.
+            </summary>
+        </member>
+        <member name="M:Hnsw.HNSWIndex.#ctor(System.Int32,Hnsw.IHnswStorage)">
+            <summary>
+            Initializes a new instance of the HNSWIndex class with custom storage.
+            </summary>
+            <param name="dimension">The dimensionality of vectors to be indexed. Minimum: 1, Maximum: 4096.</param>
+            <param name="storage">Storage backend implementation. Cannot be null.</param>
+        </member>
+        <member name="M:Hnsw.HNSWIndex.#ctor(System.Int32,Hnsw.IHnswStorage,System.Nullable{System.Int32})">
+            <summary>
+            Initializes a new instance of the HNSWIndex class with custom storage and seed.
+            </summary>
+            <param name="dimension">The dimensionality of vectors to be indexed. Minimum: 1, Maximum: 4096.</param>
+            <param name="storage">Storage backend implementation. Cannot be null.</param>
+            <param name="seed">Random seed for reproducible results. Use null for random seed.</param>
+        </member>
+        <member name="M:Hnsw.HNSWIndex.AddAsync(System.Guid,System.Collections.Generic.List{System.Single},System.Threading.CancellationToken)">
+            <summary>
+            Adds a vector to the index.
+            </summary>
+            <param name="guid">Unique identifier for the vector.</param>
+            <param name="vector">Vector data. Cannot be null. Must match index dimension.</param>
+            <param name="cancellationToken">Cancellation token.</param>
+        </member>
+        <member name="M:Hnsw.HNSWIndex.AddBatchAsync(System.Collections.Generic.IEnumerable{System.ValueTuple{System.Guid,System.Collections.Generic.List{System.Single}}},System.Threading.CancellationToken)">
+            <summary>
+            Adds multiple vectors to the index.
+            </summary>
+            <param name="items">Collection of (id, vector) pairs to add. Cannot be null or contain null vectors.</param>
+            <param name="cancellationToken">Cancellation token.</param>
+        </member>
+        <member name="M:Hnsw.HNSWIndex.RemoveAsync(System.Guid,System.Threading.CancellationToken)">
+            <summary>
+            Removes a vector from the index.
+            </summary>
+            <param name="guid">Identifier of the vector to remove.</param>
+            <param name="cancellationToken">Cancellation token.</param>
+        </member>
+        <member name="M:Hnsw.HNSWIndex.RemoveBatchAsync(System.Collections.Generic.IEnumerable{System.Guid},System.Threading.CancellationToken)">
+            <summary>
+            Removes multiple vectors from the index.
+            </summary>
+            <param name="guids">Collection of identifiers to remove. Cannot be null.</param>
+            <param name="cancellationToken">Cancellation token.</param>
+        </member>
+        <member name="M:Hnsw.HNSWIndex.GetTopKAsync(System.Collections.Generic.List{System.Single},System.Int32,System.Nullable{System.Int32},System.Threading.CancellationToken)">
+            <summary>
+            Finds the k nearest neighbors to a query vector.
+            </summary>
+            <param name="vector">Query vector. Cannot be null. Must match index dimension.</param>
+            <param name="count">Number of neighbors to return. Minimum: 1, Maximum: 10000.</param>
+            <param name="ef">Optional search parameter. Minimum: 1, Maximum: 10000. Default: max(EfConstruction, count*2).</param>
+            <param name="cancellationToken">Cancellation token.</param>
+            <returns>Collection of nearest neighbors with distances.</returns>
+        </member>
+        <member name="M:Hnsw.HNSWIndex.ExportStateAsync(System.Threading.CancellationToken)">
+            <summary>
+            Exports the current state of the index.
+            </summary>
+            <param name="cancellationToken">Cancellation token.</param>
+            <returns>Serializable state of the index. Never null.</returns>
+        </member>
+        <member name="M:Hnsw.HNSWIndex.ImportStateAsync(Hsnw.HnswState,System.Threading.CancellationToken)">
+            <summary>
+            Imports a previously exported state into the index.
+            </summary>
+            <param name="state">State to import. Cannot be null. Vector dimension must match index dimension.</param>
+            <param name="cancellationToken">Cancellation token.</param>
+        </member>
+        <member name="T:Hnsw.IDistanceFunction">
+            <summary>
+            Interface for distance calculation between vectors.
+            </summary>
+        </member>
+        <member name="M:Hnsw.IDistanceFunction.Distance(System.Collections.Generic.List{System.Single},System.Collections.Generic.List{System.Single})">
+            <summary>
+            Calculates the distance between two vectors.
+            </summary>
+            <param name="a">First vector.</param>
+            <param name="b">Second vector.</param>
+            <returns>Distance between the vectors.</returns>
+        </member>
+        <member name="P:Hnsw.IDistanceFunction.Name">
+            <summary>
+            Gets the name of the distance function.
+            </summary>
+        </member>
+        <member name="T:Hnsw.IHnswNode">
+            <summary>
+            Interface for HNSW graph nodes.
+            </summary>
+        </member>
+        <member name="P:Hnsw.IHnswNode.Id">
+            <summary>
+            Gets the unique identifier of the node.
+            </summary>
+        </member>
+        <member name="P:Hnsw.IHnswNode.Vector">
+            <summary>
+            Gets the vector associated with the node.
+            </summary>
+        </member>
+        <member name="M:Hnsw.IHnswNode.GetNeighbors">
+            <summary>
+            Gets a copy of the node's neighbors organized by layer.
+            </summary>
+        </member>
+        <member name="M:Hnsw.IHnswNode.AddNeighbor(System.Int32,System.Guid)">
+            <summary>
+            Adds a neighbor connection at the specified layer.
+            </summary>
+        </member>
+        <member name="M:Hnsw.IHnswNode.RemoveNeighbor(System.Int32,System.Guid)">
+            <summary>
+            Removes a neighbor connection at the specified layer.
+            </summary>
+        </member>
+        <member name="T:Hnsw.IHnswStorage">
+            <summary>
+            Interface for HNSW storage backend.
+            </summary>
+        </member>
+        <member name="M:Hnsw.IHnswStorage.AddNodeAsync(System.Guid,System.Collections.Generic.List{System.Single},System.Threading.CancellationToken)">
+            <summary>
+            Adds a new node to storage.
+            </summary>
+        </member>
+        <member name="M:Hnsw.IHnswStorage.RemoveNodeAsync(System.Guid,System.Threading.CancellationToken)">
+            <summary>
+            Removes a node from storage.
+            </summary>
+        </member>
+        <member name="M:Hnsw.IHnswStorage.GetNodeAsync(System.Guid,System.Threading.CancellationToken)">
+            <summary>
+            Gets a node by ID.
+            </summary>
+        </member>
+        <member name="M:Hnsw.IHnswStorage.TryGetNodeAsync(System.Guid,System.Threading.CancellationToken)">
+            <summary>
+            Tries to get a node by ID.
+            </summary>
+        </member>
+        <member name="M:Hnsw.IHnswStorage.GetAllNodeIdsAsync(System.Threading.CancellationToken)">
+            <summary>
+            Gets all node IDs in storage.
+            </summary>
+        </member>
+        <member name="M:Hnsw.IHnswStorage.GetCountAsync(System.Threading.CancellationToken)">
+            <summary>
+            Gets the number of nodes in storage.
+            </summary>
+        </member>
+        <member name="P:Hnsw.IHnswStorage.EntryPoint">
+            <summary>
+            Gets or sets the entry point node ID.
+            </summary>
+        </member>
+        <member name="T:Hnsw.MinHeap`1">
+            <summary>
+            Simple min-heap implementation for priority queue operations.
+            </summary>
+            <typeparam name="T">The type of elements in the heap.</typeparam>
+        </member>
+        <member name="P:Hnsw.MinHeap`1.Count">
+            <summary>
+            Gets the number of items in the heap.
+            Minimum: 0, Maximum: int.MaxValue (limited by available memory).
+            </summary>
+        </member>
+        <member name="P:Hnsw.MinHeap`1.IsEmpty">
+            <summary>
+            Gets whether the heap is empty.
+            </summary>
+        </member>
+        <member name="P:Hnsw.MinHeap`1.Capacity">
+            <summary>
+            Gets or sets the capacity of the internal storage.
+            Minimum: 0, Maximum: int.MaxValue (limited by available memory).
+            Setting a smaller capacity than Count will automatically adjust to Count.
+            </summary>
+        </member>
+        <member name="M:Hnsw.MinHeap`1.#ctor(System.Collections.Generic.IComparer{`0})">
+            <summary>
+            Initializes a new instance of the MinHeap class with default capacity.
+            </summary>
+            <param name="itemComparer">Optional comparer for items with equal priority. 
+            If null, uses Comparer&lt;T&gt;.Default.</param>
+        </member>
+        <member name="M:Hnsw.MinHeap`1.#ctor(System.Int32,System.Collections.Generic.IComparer{`0})">
+            <summary>
+            Initializes a new instance of the MinHeap class with specified initial capacity.
+            </summary>
+            <param name="capacity">Initial capacity. Minimum: 0, Maximum: int.MaxValue.</param>
+            <param name="itemComparer">Optional comparer for items with equal priority. 
+            If null, uses Comparer&lt;T&gt;.Default.</param>
+        </member>
+        <member name="M:Hnsw.MinHeap`1.Push(System.Single,`0)">
+            <summary>
+            Adds an item to the heap with the specified priority.
+            Lower priority values are considered higher priority (min-heap).
+            </summary>
+            <param name="priority">The priority of the item. Must be a finite number (not NaN or Infinity).</param>
+            <param name="item">The item to add. Can be null if T is a reference type.</param>
+            <exception cref="T:System.ArgumentException">Thrown when priority is NaN or Infinity.</exception>
+        </member>
+        <member name="M:Hnsw.MinHeap`1.Pop">
+            <summary>
+            Removes and returns the item with the lowest priority.
+            </summary>
+            <returns>A tuple containing the priority and item.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown when the heap is empty.</exception>
+        </member>
+        <member name="M:Hnsw.MinHeap`1.Peek">
+            <summary>
+            Returns the item with the lowest priority without removing it.
+            </summary>
+            <returns>A tuple containing the priority and item.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown when the heap is empty.</exception>
+        </member>
+        <member name="M:Hnsw.MinHeap`1.Clear">
+            <summary>
+            Removes all items from the heap.
+            </summary>
+        </member>
+        <member name="M:Hnsw.MinHeap`1.Contains(`0)">
+            <summary>
+            Determines whether the heap contains a specific item.
+            </summary>
+            <param name="item">The item to locate in the heap.</param>
+            <returns>true if item is found in the heap; otherwise, false.</returns>
+        </member>
+        <member name="M:Hnsw.MinHeap`1.GetAll">
+            <summary>
+            Returns all items in the heap sorted by priority (ascending).
+            Items with equal priority are sorted using the item comparer.
+            This operation does not modify the heap.
+            </summary>
+            <returns>A new list containing all items sorted by priority.</returns>
+        </member>
+        <member name="M:Hnsw.MinHeap`1.GetAllUnsorted">
+            <summary>
+            Returns all items in the heap in their internal storage order (not sorted).
+            This operation is O(n) and does not modify the heap.
+            </summary>
+            <returns>A new list containing all items in heap order.</returns>
+        </member>
+        <member name="M:Hnsw.MinHeap`1.ToArray">
+            <summary>
+            Converts the heap to an array sorted by priority (ascending).
+            </summary>
+            <returns>An array containing all items sorted by priority.</returns>
+        </member>
+        <member name="T:Hnsw.NodeState">
+            <summary>
+            Represents the state of a node for serialization.
+            Used for exporting and importing HNSW index state.
+            </summary>
+        </member>
+        <member name="P:Hnsw.NodeState.Id">
+            <summary>
+            Gets or sets the node identifier.
+            Cannot be Guid.Empty.
+            Default: Guid.Empty (should be set to valid value before use).
+            </summary>
+        </member>
+        <member name="P:Hnsw.NodeState.Vector">
+            <summary>
+            Gets or sets the vector data.
+            Cannot be null. Setting to null creates a new empty list.
+            Vector dimension typically ranges from 1 to 4096.
+            All values should be finite (not NaN or Infinity).
+            Default: Empty list.
+            </summary>
+        </member>
+        <member name="P:Hnsw.NodeState.Layer">
+            <summary>
+            Gets or sets the layer assignment.
+            Minimum: 0, Maximum: 63, Default: 0.
+            Represents the highest layer where this node appears in the HNSW graph.
+            </summary>
+        </member>
+        <member name="P:Hnsw.NodeState.Neighbors">
+            <summary>
+            Gets or sets the neighbor connections by layer.
+            Cannot be null. Setting to null creates a new empty dictionary.
+            Keys are layer numbers (0 to Layer), values are lists of neighbor IDs.
+            Each layer can have different connection limits:
+            - Layer 0: Up to MaxM connections (typically 32)
+            - Other layers: Up to M connections (typically 16)
+            Default: Empty dictionary.
+            </summary>
+        </member>
+        <member name="M:Hnsw.NodeState.#ctor">
+            <summary>
+            Initializes a new instance of the NodeState class with default values.
+            </summary>
+        </member>
+        <member name="M:Hnsw.NodeState.#ctor(System.Guid,System.Collections.Generic.List{System.Single})">
+            <summary>
+            Initializes a new instance of the NodeState class with specified ID and vector.
+            </summary>
+            <param name="id">The node identifier. Cannot be Guid.Empty.</param>
+            <param name="vector">The vector data. Cannot be null.</param>
+        </member>
+        <member name="M:Hnsw.NodeState.#ctor(System.Guid,System.Collections.Generic.List{System.Single},System.Int32,System.Collections.Generic.Dictionary{System.Int32,System.Collections.Generic.List{System.Guid}})">
+            <summary>
+            Initializes a new instance of the NodeState class with full specification.
+            </summary>
+            <param name="id">The node identifier. Cannot be Guid.Empty.</param>
+            <param name="vector">The vector data. Cannot be null.</param>
+            <param name="layer">The layer assignment. Minimum: 0, Maximum: 63.</param>
+            <param name="neighbors">The neighbor connections. Can be null (creates empty dictionary).</param>
+        </member>
+        <member name="M:Hnsw.NodeState.Validate">
+            <summary>
+            Validates that the node state is consistent and ready for use.
+            </summary>
+            <exception cref="T:System.InvalidOperationException">Thrown when validation fails.</exception>
+        </member>
+        <member name="M:Hnsw.NodeState.GetTotalNeighborCount">
+            <summary>
+            Gets the total number of neighbors across all layers.
+            </summary>
+            <returns>The total neighbor count.</returns>
+        </member>
+        <member name="M:Hnsw.NodeState.GetNeighborsAtLayer(System.Int32)">
+            <summary>
+            Gets the neighbors at a specific layer.
+            </summary>
+            <param name="layer">The layer number. Minimum: 0, Maximum: 63.</param>
+            <returns>A list of neighbor IDs at the specified layer, or empty list if layer has no neighbors.</returns>
+        </member>
+        <member name="M:Hnsw.NodeState.Clone">
+            <summary>
+            Creates a deep copy of this NodeState.
+            </summary>
+            <returns>A new NodeState instance with copied values.</returns>
+        </member>
+        <member name="T:Hnsw.VectorResult">
+            <summary>
+            Represents a search result containing the vector ID, distance, and vector data.
+            Used to return results from nearest neighbor searches in the HNSW index.
+            </summary>
+        </member>
+        <member name="P:Hnsw.VectorResult.GUID">
+            <summary>
+            Gets or sets the unique identifier of the vector.
+            Cannot be Guid.Empty.
+            Default: Guid.Empty (should be set to valid value before use).
+            </summary>
+        </member>
+        <member name="P:Hnsw.VectorResult.Distance">
+            <summary>
+            Gets or sets the distance from the query vector.
+            Minimum: 0.0 (identical vectors), Maximum: float.MaxValue, Default: 0.0.
+            Must be a finite non-negative number (not NaN or Infinity).
+            Distance interpretation depends on the distance function used:
+            - Euclidean: L2 distance (0 = identical)
+            - Cosine: 1 - cosine similarity (0 = identical, 2 = opposite)
+            - DotProduct: Negative dot product (lower = more similar)
+            </summary>
+        </member>
+        <member name="P:Hnsw.VectorResult.Vectors">
+            <summary>
+            Gets or sets the vector data.
+            Cannot be null. Setting to null creates a new empty list.
+            Vector dimension typically ranges from 1 to 4096.
+            All values should be finite (not NaN or Infinity).
+            Default: Empty list.
+            Note: Property name 'Vectors' is plural for compatibility but represents a single vector.
+            </summary>
+        </member>
+        <member name="M:Hnsw.VectorResult.#ctor">
+            <summary>
+            Initializes a new instance of the VectorResult class with default values.
+            </summary>
+        </member>
+        <member name="M:Hnsw.VectorResult.#ctor(System.Guid,System.Single,System.Collections.Generic.List{System.Single})">
+            <summary>
+            Initializes a new instance of the VectorResult class with specified values.
+            </summary>
+            <param name="guid">The vector identifier. Cannot be Guid.Empty.</param>
+            <param name="distance">The distance from query. Minimum: 0.0.</param>
+            <param name="vectors">The vector data. Cannot be null.</param>
+        </member>
+        <member name="M:Hnsw.VectorResult.#ctor(System.Guid,System.Single,System.Collections.Generic.IEnumerable{System.Single})">
+            <summary>
+            Initializes a new instance of the VectorResult class by copying vector data.
+            </summary>
+            <param name="guid">The vector identifier. Cannot be Guid.Empty.</param>
+            <param name="distance">The distance from query. Minimum: 0.0.</param>
+            <param name="vectors">The vector data to copy. Cannot be null.</param>
+        </member>
+        <member name="M:Hnsw.VectorResult.Validate">
+            <summary>
+            Validates that the result is complete and consistent.
+            </summary>
+            <exception cref="T:System.InvalidOperationException">Thrown when validation fails.</exception>
+        </member>
+        <member name="P:Hnsw.VectorResult.Dimension">
+            <summary>
+            Gets the dimension of the vector.
+            </summary>
+        </member>
+        <member name="M:Hnsw.VectorResult.Clone">
+            <summary>
+            Creates a deep copy of this VectorResult.
+            </summary>
+            <returns>A new VectorResult instance with copied values.</returns>
+        </member>
+        <member name="M:Hnsw.VectorResult.ToString">
+            <summary>
+            Returns a string representation of the vector result.
+            </summary>
+            <returns>A string containing the GUID, distance, and vector dimension.</returns>
+        </member>
+        <member name="M:Hnsw.VectorResult.Equals(Hnsw.VectorResult)">
+            <summary>
+            Determines whether this instance is equal to another VectorResult.
+            </summary>
+            <param name="other">The VectorResult to compare with.</param>
+            <returns>true if the instances are equal; otherwise, false.</returns>
+        </member>
+        <member name="M:Hnsw.VectorResult.Equals(System.Object)">
+            <summary>
+            Determines whether this instance is equal to another object.
+            </summary>
+            <param name="obj">The object to compare with.</param>
+            <returns>true if the instances are equal; otherwise, false.</returns>
+        </member>
+        <member name="M:Hnsw.VectorResult.GetHashCode">
+            <summary>
+            Returns the hash code for this instance.
+            </summary>
+            <returns>A 32-bit signed integer hash code.</returns>
+        </member>
+        <member name="T:Hsnw.HnswState">
+            <summary>
+            Represents the complete state of an HNSW index.
+            </summary>
+        </member>
+        <member name="P:Hsnw.HnswState.VectorDimension">
+            <summary>
+            Gets or sets the vector dimension.
+            Minimum: 1, Maximum: 4096, Default: 128.
+            Common values: 128, 256, 512, 768, 1024.
+            </summary>
+        </member>
+        <member name="P:Hsnw.HnswState.Parameters">
+            <summary>
+            Gets or sets the index parameters.
+            Cannot be null. Setting to null creates a new instance with default values.
+            Default: New HnswParameters instance with default values.
+            </summary>
+        </member>
+        <member name="P:Hsnw.HnswState.Nodes">
+            <summary>
+            Gets or sets the collection of nodes.
+            Cannot be null. Setting to null creates a new empty list.
+            Default: Empty list.
+            Maximum recommended size: 100,000,000 nodes (depending on available memory).
+            </summary>
+        </member>
+        <member name="P:Hsnw.HnswState.EntryPointId">
+            <summary>
+            Gets or sets the entry point node ID.
+            Can be null when the index is empty.
+            Default: null.
+            </summary>
+        </member>
+        <member name="M:Hsnw.HnswState.#ctor">
+            <summary>
+            Initializes a new instance of the HnswState class with default values.
+            </summary>
+        </member>
+        <member name="M:Hsnw.HnswState.#ctor(System.Int32)">
+            <summary>
+            Initializes a new instance of the HnswState class with specified vector dimension.
+            </summary>
+            <param name="vectorDimension">The dimension of vectors to be indexed.</param>
+        </member>
+        <member name="M:Hsnw.HnswState.Validate">
+            <summary>
+            Validates that the state is consistent and ready for use.
+            </summary>
+        </member>
+        <member name="P:Hsnw.HnswState.NodeCount">
+            <summary>
+            Gets the total number of nodes in the index.
+            </summary>
+        </member>
+        <member name="P:Hsnw.HnswState.IsEmpty">
+            <summary>
+            Checks if the index is empty (has no nodes).
+            </summary>
+        </member>
+    </members>
+</doc>
