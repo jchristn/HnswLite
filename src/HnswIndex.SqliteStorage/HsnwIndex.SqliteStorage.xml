@@ -1,44 +1,55 @@
 <?xml version="1.0"?>
 <doc>
     <assembly>
-        <name>HnswIndex.RamStorage</name>
+        <name>HnswIndex.SqliteStorage</name>
     </assembly>
     <members>
-        <member name="T:Hnsw.RamStorage.RamHnswLayerStorage">
+        <member name="T:Hnsw.SqliteStorage.SqliteHnswLayerStorage">
             <summary>
-            In-memory implementation of HNSW layer storage with thread-safe operations.
-            Provides high-performance layer assignment storage in RAM.
+            SQLite-based implementation of HNSW layer storage with thread-safe operations.
+            Provides persistent layer assignment storage in a SQLite database.
             </summary>
         </member>
-        <member name="P:Hnsw.RamStorage.RamHnswLayerStorage.Count">
+        <member name="P:Hnsw.SqliteStorage.SqliteHnswLayerStorage.Count">
             <summary>
             Gets the number of nodes with layer assignments.
             Thread-safe operation.
             </summary>
         </member>
-        <member name="P:Hnsw.RamStorage.RamHnswLayerStorage.IsDisposed">
+        <member name="P:Hnsw.SqliteStorage.SqliteHnswLayerStorage.IsDisposed">
             <summary>
             Gets whether the storage has been disposed.
             </summary>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswLayerStorage.#ctor">
+        <member name="P:Hnsw.SqliteStorage.SqliteHnswLayerStorage.TableName">
             <summary>
-            Initializes a new instance of the RamHnswLayerStorage class.
+            Gets the database table name used for layer storage.
             </summary>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswLayerStorage.GetNodeLayer(System.Guid)">
+        <member name="M:Hnsw.SqliteStorage.SqliteHnswLayerStorage.#ctor(Microsoft.Data.Sqlite.SqliteConnection,System.String)">
+            <summary>
+            Initializes a new instance of the SqliteHnswLayerStorage class.
+            </summary>
+            <param name="connection">SQLite database connection. Cannot be null.</param>
+            <param name="tableName">Table name for storing layer assignments. Cannot be null or empty.</param>
+            <exception cref="T:System.ArgumentNullException">Thrown when connection or tableName is null.</exception>
+            <exception cref="T:System.ArgumentException">Thrown when tableName is empty or whitespace.</exception>
+        </member>
+        <member name="M:Hnsw.SqliteStorage.SqliteHnswLayerStorage.GetNodeLayer(System.Guid)">
             <summary>
             Gets the layer assignment for a specific node.
             Thread-safe operation.
+            Uses caching for improved performance.
             </summary>
             <param name="nodeId">Node identifier.</param>
             <returns>The layer number for the node, or 0 if not found.</returns>
             <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswLayerStorage.SetNodeLayer(System.Guid,System.Int32)">
+        <member name="M:Hnsw.SqliteStorage.SqliteHnswLayerStorage.SetNodeLayer(System.Guid,System.Int32)">
             <summary>
             Sets the layer assignment for a specific node.
             Thread-safe operation.
+            Immediately persists to database and updates cache.
             </summary>
             <param name="nodeId">Node identifier. Cannot be Guid.Empty.</param>
             <param name="layer">Layer number. Minimum: 0, Maximum: 63.</param>
@@ -46,16 +57,17 @@
             <exception cref="T:System.ArgumentOutOfRangeException">Thrown when layer is outside valid range.</exception>
             <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswLayerStorage.RemoveNodeLayer(System.Guid)">
+        <member name="M:Hnsw.SqliteStorage.SqliteHnswLayerStorage.RemoveNodeLayer(System.Guid)">
             <summary>
             Removes the layer assignment for a specific node.
             Thread-safe operation.
+            Immediately removes from database and cache.
             No effect if the node doesn't exist.
             </summary>
             <param name="nodeId">Node identifier.</param>
             <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswLayerStorage.GetAllNodeLayers">
+        <member name="M:Hnsw.SqliteStorage.SqliteHnswLayerStorage.GetAllNodeLayers">
             <summary>
             Gets all node layer assignments.
             Thread-safe operation.
@@ -64,14 +76,15 @@
             <returns>Dictionary mapping node IDs to layer numbers.</returns>
             <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswLayerStorage.Clear">
+        <member name="M:Hnsw.SqliteStorage.SqliteHnswLayerStorage.Clear">
             <summary>
             Removes all layer assignments.
             Thread-safe operation.
+            Clears both database and cache.
             </summary>
             <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswLayerStorage.ContainsNode(System.Guid)">
+        <member name="M:Hnsw.SqliteStorage.SqliteHnswLayerStorage.ContainsNode(System.Guid)">
             <summary>
             Checks if a layer assignment exists for the specified node.
             Thread-safe operation.
@@ -80,7 +93,7 @@
             <returns>true if a layer assignment exists; otherwise, false.</returns>
             <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswLayerStorage.GetAllNodeIds">
+        <member name="M:Hnsw.SqliteStorage.SqliteHnswLayerStorage.GetAllNodeIds">
             <summary>
             Gets all node IDs that have layer assignments.
             Thread-safe operation.
@@ -89,50 +102,65 @@
             <returns>Collection of node IDs with layer assignments.</returns>
             <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswLayerStorage.Dispose">
+        <member name="M:Hnsw.SqliteStorage.SqliteHnswLayerStorage.RefreshCache">
+            <summary>
+            Forces a reload of the cache from the database.
+            Thread-safe operation.
+            Useful for synchronizing with external database changes.
+            </summary>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        </member>
+        <member name="M:Hnsw.SqliteStorage.SqliteHnswLayerStorage.Dispose">
             <summary>
             Disposes of the storage resources.
             </summary>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswLayerStorage.Dispose(System.Boolean)">
+        <member name="M:Hnsw.SqliteStorage.SqliteHnswLayerStorage.Dispose(System.Boolean)">
             <summary>
             Disposes of the storage resources.
             </summary>
             <param name="disposing">true if disposing managed resources; otherwise, false.</param>
         </member>
-        <member name="T:Hnsw.RamStorage.RamHnswNode">
+        <member name="T:Hnsw.SqliteStorage.SqliteHnswNode">
             <summary>
-            In-memory implementation of HNSW node with thread-safe operations.
+            SQLite-based implementation of HNSW node with thread-safe operations.
             </summary>
         </member>
-        <member name="P:Hnsw.RamStorage.RamHnswNode.Id">
+        <member name="P:Hnsw.SqliteStorage.SqliteHnswNode.Id">
             <summary>
             Gets the unique identifier of the node.
             Cannot be Guid.Empty.
             </summary>
         </member>
-        <member name="P:Hnsw.RamStorage.RamHnswNode.Vector">
+        <member name="P:Hnsw.SqliteStorage.SqliteHnswNode.Vector">
             <summary>
             Gets the vector associated with the node.
             Never null. Vector dimension typically ranges from 1 to 4096.
             All values must be finite (not NaN or Infinity).
             </summary>
         </member>
-        <member name="P:Hnsw.RamStorage.RamHnswNode.IsDisposed">
+        <member name="P:Hnsw.SqliteStorage.SqliteHnswNode.IsDisposed">
             <summary>
             Gets whether this node has been disposed.
             </summary>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswNode.#ctor(System.Guid,System.Collections.Generic.List{System.Single})">
+        <member name="P:Hnsw.SqliteStorage.SqliteHnswNode.IsDirty">
             <summary>
-            Initializes a new instance of the RamHnswNode class.
+            Gets whether the node has unsaved changes.
+            </summary>
+        </member>
+        <member name="M:Hnsw.SqliteStorage.SqliteHnswNode.#ctor(System.Guid,System.Collections.Generic.List{System.Single},Microsoft.Data.Sqlite.SqliteConnection,System.String)">
+            <summary>
+            Initializes a new instance of the SqliteHnswNode class.
             </summary>
             <param name="id">Node identifier. Cannot be Guid.Empty.</param>
             <param name="vector">Vector data. Cannot be null or empty. All values must be finite.</param>
+            <param name="connection">SQLite database connection. Cannot be null.</param>
+            <param name="tableName">Table name for storing neighbors. Cannot be null or empty.</param>
             <exception cref="T:System.ArgumentException">Thrown when id is Guid.Empty or vector contains invalid values.</exception>
-            <exception cref="T:System.ArgumentNullException">Thrown when vector is null.</exception>
+            <exception cref="T:System.ArgumentNullException">Thrown when vector, connection, or tableName is null.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswNode.GetNeighbors">
+        <member name="M:Hnsw.SqliteStorage.SqliteHnswNode.GetNeighbors">
             <summary>
             Gets a copy of the node's neighbors organized by layer.
             Thread-safe operation.
@@ -142,7 +170,7 @@
             <returns>A copy of the neighbors dictionary.</returns>
             <exception cref="T:System.ObjectDisposedException">Thrown when the node has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswNode.AddNeighbor(System.Int32,System.Guid)">
+        <member name="M:Hnsw.SqliteStorage.SqliteHnswNode.AddNeighbor(System.Int32,System.Guid)">
             <summary>
             Adds a neighbor connection at the specified layer.
             Thread-safe operation. Idempotent - adding the same neighbor multiple times has no additional effect.
@@ -153,7 +181,7 @@
             <exception cref="T:System.ArgumentException">Thrown when neighborId is invalid.</exception>
             <exception cref="T:System.ObjectDisposedException">Thrown when the node has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswNode.RemoveNeighbor(System.Int32,System.Guid)">
+        <member name="M:Hnsw.SqliteStorage.SqliteHnswNode.RemoveNeighbor(System.Int32,System.Guid)">
             <summary>
             Removes a neighbor connection at the specified layer.
             Thread-safe operation. No effect if the neighbor doesn't exist.
@@ -164,7 +192,7 @@
             <exception cref="T:System.ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
             <exception cref="T:System.ObjectDisposedException">Thrown when the node has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswNode.GetNeighborCount(System.Int32)">
+        <member name="M:Hnsw.SqliteStorage.SqliteHnswNode.GetNeighborCount(System.Int32)">
             <summary>
             Gets the number of neighbors at a specific layer.
             Thread-safe operation.
@@ -174,7 +202,7 @@
             <exception cref="T:System.ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
             <exception cref="T:System.ObjectDisposedException">Thrown when the node has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswNode.GetTotalNeighborCount">
+        <member name="M:Hnsw.SqliteStorage.SqliteHnswNode.GetTotalNeighborCount">
             <summary>
             Gets the total number of neighbors across all layers.
             Thread-safe operation.
@@ -182,7 +210,7 @@
             <returns>The total number of neighbors.</returns>
             <exception cref="T:System.ObjectDisposedException">Thrown when the node has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswNode.HasNeighbor(System.Int32,System.Guid)">
+        <member name="M:Hnsw.SqliteStorage.SqliteHnswNode.HasNeighbor(System.Int32,System.Guid)">
             <summary>
             Checks if a specific neighbor exists at the given layer.
             Thread-safe operation.
@@ -193,24 +221,31 @@
             <exception cref="T:System.ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
             <exception cref="T:System.ObjectDisposedException">Thrown when the node has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswNode.Dispose">
+        <member name="M:Hnsw.SqliteStorage.SqliteHnswNode.Flush">
+            <summary>
+            Forces a save of neighbor data to the database.
+            Thread-safe operation.
+            </summary>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the node has been disposed.</exception>
+        </member>
+        <member name="M:Hnsw.SqliteStorage.SqliteHnswNode.Dispose">
             <summary>
             Disposes of the node's resources.
             </summary>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswNode.Dispose(System.Boolean)">
+        <member name="M:Hnsw.SqliteStorage.SqliteHnswNode.Dispose(System.Boolean)">
             <summary>
             Disposes of the node's resources.
             </summary>
             <param name="disposing">true if disposing managed resources; otherwise, false.</param>
         </member>
-        <member name="T:Hnsw.RamStorage.RamHnswStorage">
+        <member name="T:HnswIndex.SqliteStorage.SqliteHnswStorage">
             <summary>
-            In-memory implementation of HNSW storage with thread-safe operations.
-            Provides high-performance storage for HNSW nodes in RAM.
+            SQLite-based implementation of HNSW storage with thread-safe operations.
+            Provides persistent storage for HNSW nodes in a SQLite database.
             </summary>
         </member>
-        <member name="P:Hnsw.RamStorage.RamHnswStorage.EntryPoint">
+        <member name="P:HnswIndex.SqliteStorage.SqliteHnswStorage.EntryPoint">
             <summary>
             Gets or sets the entry point node ID.
             Can be null when storage is empty.
@@ -219,33 +254,58 @@
             Default: null.
             </summary>
         </member>
-        <member name="P:Hnsw.RamStorage.RamHnswStorage.IsEmpty">
+        <member name="P:HnswIndex.SqliteStorage.SqliteHnswStorage.IsEmpty">
             <summary>
             Gets whether the storage is empty (contains no nodes).
             Thread-safe property.
             </summary>
         </member>
-        <member name="P:Hnsw.RamStorage.RamHnswStorage.IsDisposed">
+        <member name="P:HnswIndex.SqliteStorage.SqliteHnswStorage.IsDisposed">
             <summary>
             Gets whether the storage has been disposed.
             </summary>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswStorage.#ctor">
+        <member name="P:HnswIndex.SqliteStorage.SqliteHnswStorage.DatabasePath">
             <summary>
-            Initializes a new instance of the RamHnswStorage class.
+            Gets the database file path.
             </summary>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswStorage.GetCountAsync(System.Threading.CancellationToken)">
+        <member name="P:HnswIndex.SqliteStorage.SqliteHnswStorage.Connection">
+            <summary>
+            Gets the SQLite database connection.
+            </summary>
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteHnswStorage.#ctor(System.String,System.Boolean)">
+            <summary>
+            Initializes a new instance of the SqliteHnswStorage class.
+            </summary>
+            <param name="databasePath">Path to the SQLite database file. Cannot be null or empty.</param>
+            <param name="createIfNotExists">Whether to create the database if it doesn't exist. Default: true.</param>
+            <exception cref="T:System.ArgumentNullException">Thrown when databasePath is null or empty.</exception>
+            <exception cref="T:System.IO.FileNotFoundException">Thrown when database doesn't exist and createIfNotExists is false.</exception>
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteHnswStorage.#ctor(System.String,System.String,System.String,System.String,System.Boolean)">
+            <summary>
+            Initializes a new instance of the SqliteHnswStorage class with custom table names.
+            </summary>
+            <param name="databasePath">Path to the SQLite database file. Cannot be null or empty.</param>
+            <param name="nodesTableName">Name for the nodes table. Cannot be null or empty.</param>
+            <param name="neighborsTableName">Name for the neighbors table. Cannot be null or empty.</param>
+            <param name="metadataTableName">Name for the metadata table. Cannot be null or empty.</param>
+            <param name="createIfNotExists">Whether to create the database if it doesn't exist. Default: true.</param>
+            <exception cref="T:System.ArgumentNullException">Thrown when any parameter is null or empty.</exception>
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteHnswStorage.GetCountAsync(System.Threading.CancellationToken)">
             <summary>
             Gets the number of nodes in storage.
             Thread-safe operation.
-            Minimum: 0, Maximum: int.MaxValue (limited by available memory).
+            Minimum: 0, Maximum: int.MaxValue (limited by available disk space).
             </summary>
             <param name="cancellationToken">Cancellation token.</param>
             <returns>The number of nodes in storage.</returns>
             <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswStorage.AddNodeAsync(System.Guid,System.Collections.Generic.List{System.Single},System.Threading.CancellationToken)">
+        <member name="M:HnswIndex.SqliteStorage.SqliteHnswStorage.AddNodeAsync(System.Guid,System.Collections.Generic.List{System.Single},System.Threading.CancellationToken)">
             <summary>
             Adds a new node to storage.
             Thread-safe operation.
@@ -259,7 +319,7 @@
             <exception cref="T:System.ArgumentNullException">Thrown when vector is null.</exception>
             <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswStorage.RemoveNodeAsync(System.Guid,System.Threading.CancellationToken)">
+        <member name="M:HnswIndex.SqliteStorage.SqliteHnswStorage.RemoveNodeAsync(System.Guid,System.Threading.CancellationToken)">
             <summary>
             Removes a node from storage.
             Thread-safe operation.
@@ -270,10 +330,11 @@
             <param name="cancellationToken">Cancellation token.</param>
             <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswStorage.GetNodeAsync(System.Guid,System.Threading.CancellationToken)">
+        <member name="M:HnswIndex.SqliteStorage.SqliteHnswStorage.GetNodeAsync(System.Guid,System.Threading.CancellationToken)">
             <summary>
             Gets a node by ID.
             Thread-safe operation.
+            Uses caching for improved performance.
             </summary>
             <param name="id">Node identifier.</param>
             <param name="cancellationToken">Cancellation token.</param>
@@ -281,17 +342,18 @@
             <exception cref="T:System.Collections.Generic.KeyNotFoundException">Thrown when the node doesn't exist.</exception>
             <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswStorage.TryGetNodeAsync(System.Guid,System.Threading.CancellationToken)">
+        <member name="M:HnswIndex.SqliteStorage.SqliteHnswStorage.TryGetNodeAsync(System.Guid,System.Threading.CancellationToken)">
             <summary>
             Tries to get a node by ID.
             Thread-safe operation.
+            Uses caching for improved performance.
             </summary>
             <param name="id">Node identifier.</param>
             <param name="cancellationToken">Cancellation token.</param>
             <returns>A tuple indicating success and the node if found.</returns>
             <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswStorage.GetAllNodeIdsAsync(System.Threading.CancellationToken)">
+        <member name="M:HnswIndex.SqliteStorage.SqliteHnswStorage.GetAllNodeIdsAsync(System.Threading.CancellationToken)">
             <summary>
             Gets all node IDs in storage.
             Thread-safe operation.
@@ -301,7 +363,7 @@
             <returns>A collection of all node IDs in storage.</returns>
             <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswStorage.ContainsNode(System.Guid)">
+        <member name="M:HnswIndex.SqliteStorage.SqliteHnswStorage.ContainsNode(System.Guid)">
             <summary>
             Checks if a node exists in storage.
             Thread-safe operation.
@@ -310,7 +372,7 @@
             <returns>true if the node exists; otherwise, false.</returns>
             <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswStorage.Clear">
+        <member name="M:HnswIndex.SqliteStorage.SqliteHnswStorage.Clear">
             <summary>
             Clears all nodes from storage.
             Thread-safe operation.
@@ -318,16 +380,49 @@
             </summary>
             <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswStorage.Dispose">
+        <member name="M:HnswIndex.SqliteStorage.SqliteHnswStorage.Flush">
+            <summary>
+            Forces a flush of all cached data to the database.
+            Thread-safe operation.
+            </summary>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteHnswStorage.Dispose">
             <summary>
             Disposes of the storage and all contained nodes.
             </summary>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswStorage.Dispose(System.Boolean)">
+        <member name="M:HnswIndex.SqliteStorage.SqliteHnswStorage.Dispose(System.Boolean)">
             <summary>
             Disposes of the storage resources.
             </summary>
             <param name="disposing">true if disposing managed resources; otherwise, false.</param>
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteHnswStorage.SetNodeLayer(System.Guid,System.Int32)">
+            <summary>
+            Sets the layer for a node in the database.
+            Thread-safe operation.
+            </summary>
+            <param name="nodeId">Node identifier.</param>
+            <param name="layer">Layer number.</param>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteHnswStorage.GetNodeLayer(System.Guid)">
+            <summary>
+            Gets the layer for a node from the database.
+            Thread-safe operation.
+            </summary>
+            <param name="nodeId">Node identifier.</param>
+            <returns>The layer number, or 0 if not found.</returns>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteHnswStorage.GetAllNodeLayers">
+            <summary>
+            Gets all node layer assignments from the database.
+            Thread-safe operation.
+            </summary>
+            <returns>Dictionary mapping node IDs to layer numbers.</returns>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
         </member>
     </members>
 </doc>

@@ -14,8 +14,7 @@
     {
         // Private members
         private readonly IHnswStorage storage;
-        private readonly Dictionary<Guid, int> nodeLayers = new Dictionary<Guid, int>();
-        private readonly ReaderWriterLockSlim layersLock = new ReaderWriterLockSlim();
+        private readonly IHnswLayerStorage layerStorage;
         private readonly SemaphoreSlim indexLock = new SemaphoreSlim(1, 1); 
         private readonly int vectorDimension;
 
@@ -198,7 +197,8 @@
         /// </summary>
         /// <param name="dimension">The dimensionality of vectors to be indexed. Minimum: 1, Maximum: 4096.</param>
         /// <param name="storage">Storage backend implementation. Cannot be null.</param>
-        public HnswIndex(int dimension, IHnswStorage storage)
+        /// <param name="layerStorage">Layer storage backend implementation.  Cannot be null.</param>
+        public HnswIndex(int dimension, IHnswStorage storage, IHnswLayerStorage layerStorage)
         {
             if (dimension < 1)
                 throw new ArgumentOutOfRangeException(nameof(dimension),
@@ -208,9 +208,12 @@
                     "Dimension greater than 4096 is not recommended due to memory and performance constraints.");
             if (storage == null)
                 throw new ArgumentNullException(nameof(storage));
+            if (layerStorage == null)
+                throw new ArgumentNullException(nameof(layerStorage));
 
             this.vectorDimension = dimension;
             this.storage = storage;
+            this.layerStorage = layerStorage;
             this.random = new Random();
         }
 
@@ -219,8 +222,9 @@
         /// </summary>
         /// <param name="dimension">The dimensionality of vectors to be indexed. Minimum: 1, Maximum: 4096.</param>
         /// <param name="storage">Storage backend implementation. Cannot be null.</param>
+        /// <param name="layerStorage">Layer storage backend implementation.  Cannot be null.</param>
         /// <param name="seed">Random seed for reproducible results. Use null for random seed.</param>
-        public HnswIndex(int dimension, IHnswStorage storage, int? seed) : this(dimension, storage)
+        public HnswIndex(int dimension, IHnswStorage storage, IHnswLayerStorage layerStorage, int? seed) : this(dimension, storage, layerStorage)
         {
             if (seed.HasValue)
             {
@@ -375,16 +379,8 @@
                 // Remove the node from storage
                 await storage.RemoveNodeAsync(guid, cancellationToken);
 
-                // Remove from layer tracking
-                layersLock.EnterWriteLock();
-                try
-                {
-                    nodeLayers.Remove(guid);
-                }
-                finally
-                {
-                    layersLock.ExitWriteLock();
-                }
+                // Remove from layer storage
+                layerStorage.RemoveNodeLayer(guid);
 
                 // Remove all connections to this node from other nodes
                 var allNodeIds = await storage.GetAllNodeIdsAsync(cancellationToken);
@@ -394,6 +390,34 @@
                     foreach (var layer in neighbors.Keys)
                     {
                         node.RemoveNeighbor(layer, guid);
+                    }
+                }
+
+                // Update entry point if the removed node was the entry point
+                if (storage.EntryPoint == guid)
+                {
+                    // Find a new entry point - pick the node with the highest layer
+                    var remainingNodeIds = await storage.GetAllNodeIdsAsync(cancellationToken);
+                    if (remainingNodeIds.Any())
+                    {
+                        Guid? newEntryPoint = null;
+                        int maxLayer = -1;
+
+                        foreach (var nodeId in remainingNodeIds)
+                        {
+                            int nodeLayer = layerStorage.GetNodeLayer(nodeId);
+                            if (nodeLayer > maxLayer)
+                            {
+                                maxLayer = nodeLayer;
+                                newEntryPoint = nodeId;
+                            }
+                        }
+
+                        storage.EntryPoint = newEntryPoint;
+                    }
+                    else
+                    {
+                        storage.EntryPoint = null;
                     }
                 }
             }
@@ -454,7 +478,7 @@
             var currentNearest = entryPointId.Value;
 
             // Search from top layer to layer 0
-            var entryPointLayer = GetNodeLayer(entryPointId.Value);
+            var entryPointLayer = layerStorage.GetNodeLayer(entryPointId.Value);
             for (int layer = entryPointLayer; layer > 0; layer--)
             {
                 currentNearest = await GreedySearchLayerAsync(vector, currentNearest, layer, cancellationToken);
@@ -463,18 +487,19 @@
             // Search at layer 0 with ef
             var candidates = await SearchLayerAsync(vector, currentNearest, searchEf, 0, cancellationToken);
 
-            return candidates
-                .Take(count)
-                .Select(async c => {
-                    var node = await storage.GetNodeAsync(c.Item2, cancellationToken);
-                    return new VectorResult
-                    {
-                        GUID = c.Item2,
-                        Distance = c.Item1,
-                        Vectors = new List<float>(node.Vector)
-                    };
-                })
-                .Select(t => t.Result);
+            var results = new List<VectorResult>();
+            foreach (var candidate in candidates.Take(count))
+            {
+                var node = await storage.GetNodeAsync(candidate.Item2, cancellationToken);
+                results.Add(new VectorResult
+                {
+                    GUID = candidate.Item2,
+                    Distance = Math.Abs(candidate.Item1), // Use absolute value to handle negative distances
+                    Vectors = new List<float>(node.Vector)
+                });
+            }
+
+            return results;
         }
 
         /// <summary>
@@ -540,21 +565,15 @@
             await indexLock.WaitAsync(cancellationToken);
             try
             {
-                // Clear existing data
+                // Clear existing data from storage
                 var existingIds = await storage.GetAllNodeIdsAsync(cancellationToken);
                 foreach (var nodeId in existingIds.ToList())
                 {
                     await storage.RemoveNodeAsync(nodeId, cancellationToken);
                 }
-                layersLock.EnterWriteLock();
-                try
-                {
-                    nodeLayers.Clear();
-                }
-                finally
-                {
-                    layersLock.ExitWriteLock();
-                }
+
+                // Clear existing layer data
+                layerStorage.Clear();
 
                 // Import parameters
                 this.M = state.Parameters.M;
@@ -577,13 +596,17 @@
                     case "DotProduct":
                         this.DistanceFunction = new DotProductDistance();
                         break;
+                    default:
+                        // Default to Euclidean if unknown
+                        this.DistanceFunction = new EuclideanDistance();
+                        break;
                 }
 
-                // First pass: add all nodes
+                // First pass: add all nodes and their layer assignments
                 foreach (var nodeState in state.Nodes)
                 {
                     await storage.AddNodeAsync(nodeState.Id, nodeState.Vector, cancellationToken);
-                    SetNodeLayer(nodeState.Id, nodeState.Layer);
+                    layerStorage.SetNodeLayer(nodeState.Id, nodeState.Layer);
                 }
 
                 // Second pass: reconstruct connections
@@ -599,6 +622,7 @@
                     }
                 }
 
+                // Set entry point
                 storage.EntryPoint = state.EntryPointId;
             }
             finally
@@ -610,28 +634,12 @@
         // Private methods
         private int GetNodeLayer(Guid nodeId)
         {
-            layersLock.EnterReadLock();
-            try
-            {
-                return nodeLayers.TryGetValue(nodeId, out int layer) ? layer : 0;
-            }
-            finally
-            {
-                layersLock.ExitReadLock();
-            }
+            return layerStorage.GetNodeLayer(nodeId);
         }
 
         private void SetNodeLayer(Guid nodeId, int layer)
         {
-            layersLock.EnterWriteLock();
-            try
-            {
-                nodeLayers[nodeId] = layer;
-            }
-            finally
-            {
-                layersLock.ExitWriteLock();
-            }
+            layerStorage.SetNodeLayer(nodeId, layer);
         }
 
         private int AssignLevel()

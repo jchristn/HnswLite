@@ -19,7 +19,7 @@ HnswLite implements the Hierarchical Navigable Small World algorithm, which prov
 - **Async/await support** - Modern async APIs with cancellation tokens
 - **Pluggable storage** - Extensible storage backend interface
 - **Multiple distance metrics** - Euclidean, Cosine, and Dot Product
-- **State persistence** - Export/import index state
+- **Flexible deployment** - Support for RAM or Sqlite, or build-your-own backend
 - **Batch operations** - Efficient bulk insert and remove
 - **Comprehensive validation** - Input validation and error handling
 
@@ -29,6 +29,7 @@ HnswLite implements the Hierarchical Navigable Small World algorithm, which prov
 
 - Core HNSW algorithm implementation
 - In-memory storage backend
+- Sqlite storage backend
 - Async APIs with cancellation support
 - Three distance functions (Euclidean, Cosine, Dot Product)
 - Batch add/remove operations
@@ -73,20 +74,13 @@ HnswLite is ideal for:
 - `Ef` (search parameter): Size of the candidate list during search (default: 50-200). This controls how many paths the algorithm explores when searching. Higher values find better results but take more time. Set this based on your speed/quality needs.
 
 2. **For Large Datasets**:
-- Consider implementing a custom disk-based storage backend
+- Leverage the Sqlite implementation or build your own disk-based storage backend
 - Use batch operations for initial index building
 - Monitor memory usage closely
 
 3. **For High-Dimensional Data**:
 - Consider dimensionality reduction before indexing
 - Use cosine distance for normalized embeddings
-
-### Limitations
-
-- All vectors must fit in memory (for default RAM storage)
-- No GPU acceleration
-- No built-in filtering or metadata storage
-- Approximate search only (may miss some nearest neighbors)
 
 ## Bugs, Feedback, or Enhancement Requests
 
@@ -101,9 +95,16 @@ We value your input! If you encounter any issues or have suggestions:
 
 ```csharp
 using Hnsw;
+using HnswIndex.RamStorage;
+using HnswIndex.SqliteStorage;
 
-// Create an index for 128-dimensional vectors
-var index = new HnswIndex(dimension: 128);
+// Create an index for 128-dimensional vectors in RAM
+var index = new HnswIndex(128, new RamHnswStorage(), new RamHnswLayerStorage());
+
+// Or using Sqlite
+var sqliteStorage = new SqliteHnswStorage("my-index.db");
+var sqliteLayerStorage = new SqliteHnswLayerStorage(sqliteStorage.Connection);
+var sqliteIndex = new HnswIndex(2, sqliteStorage, sqliteLayerStorage);
 
 // Configure parameters (optional)
 index.M = 16;
@@ -149,17 +150,11 @@ await newIndex.ImportStateAsync(state);
 
 ### Custom Storage Example
 
-```csharp
-// Implement your own storage backend
-public class RedisHNSWStorage : IHNSWStorage
-{
-    // Implementation details...
-}
+Refer to `HnswIndex.RamStorage` and `HnswIndex.SqliteStorage` for actual implementations.  To implement your own backend, you need to implement:
 
-// Use custom storage
-var storage = new MyHnswStorage(connectionString); // implement IHnswStorage
-var index = new HnswIndex(dimension: 128, storage: storage);
-```
+- `IHnswLayerStorage`
+- `IHnswNode`
+- `IHnswStorage`
 
 ## License
 

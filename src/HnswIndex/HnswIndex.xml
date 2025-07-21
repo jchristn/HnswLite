@@ -196,19 +196,21 @@
             Gets the vector dimension for this index.
             </summary>
         </member>
-        <member name="M:Hnsw.HnswIndex.#ctor(System.Int32,Hnsw.IHnswStorage)">
+        <member name="M:Hnsw.HnswIndex.#ctor(System.Int32,Hnsw.IHnswStorage,Hnsw.IHnswLayerStorage)">
             <summary>
             Initializes a new instance of the HNSWIndex class with custom storage.
             </summary>
             <param name="dimension">The dimensionality of vectors to be indexed. Minimum: 1, Maximum: 4096.</param>
             <param name="storage">Storage backend implementation. Cannot be null.</param>
+            <param name="layerStorage">Layer storage backend implementation.  Cannot be null.</param>
         </member>
-        <member name="M:Hnsw.HnswIndex.#ctor(System.Int32,Hnsw.IHnswStorage,System.Nullable{System.Int32})">
+        <member name="M:Hnsw.HnswIndex.#ctor(System.Int32,Hnsw.IHnswStorage,Hnsw.IHnswLayerStorage,System.Nullable{System.Int32})">
             <summary>
             Initializes a new instance of the HNSWIndex class with custom storage and seed.
             </summary>
             <param name="dimension">The dimensionality of vectors to be indexed. Minimum: 1, Maximum: 4096.</param>
             <param name="storage">Storage backend implementation. Cannot be null.</param>
+            <param name="layerStorage">Layer storage backend implementation.  Cannot be null.</param>
             <param name="seed">Random seed for reproducible results. Use null for random seed.</param>
         </member>
         <member name="M:Hnsw.HnswIndex.AddAsync(System.Guid,System.Collections.Generic.List{System.Single},System.Threading.CancellationToken)">
@@ -281,6 +283,59 @@
             <summary>
             Gets the name of the distance function.
             </summary>
+        </member>
+        <member name="T:Hnsw.IHnswLayerStorage">
+            <summary>
+            Interface for storing and retrieving HNSW node layer assignments.
+            Implementations can use in-memory storage, database storage, or other persistence mechanisms.
+            </summary>
+        </member>
+        <member name="M:Hnsw.IHnswLayerStorage.GetNodeLayer(System.Guid)">
+            <summary>
+            Gets the layer assignment for a specific node.
+            Thread-safe operation.
+            </summary>
+            <param name="nodeId">Node identifier.</param>
+            <returns>The layer number for the node, or 0 if not found.</returns>
+        </member>
+        <member name="M:Hnsw.IHnswLayerStorage.SetNodeLayer(System.Guid,System.Int32)">
+            <summary>
+            Sets the layer assignment for a specific node.
+            Thread-safe operation.
+            </summary>
+            <param name="nodeId">Node identifier. Cannot be Guid.Empty.</param>
+            <param name="layer">Layer number. Minimum: 0, Maximum: 63.</param>
+            <exception cref="T:System.ArgumentException">Thrown when nodeId is Guid.Empty.</exception>
+            <exception cref="T:System.ArgumentOutOfRangeException">Thrown when layer is outside valid range.</exception>
+        </member>
+        <member name="M:Hnsw.IHnswLayerStorage.RemoveNodeLayer(System.Guid)">
+            <summary>
+            Removes the layer assignment for a specific node.
+            Thread-safe operation.
+            No effect if the node doesn't exist.
+            </summary>
+            <param name="nodeId">Node identifier.</param>
+        </member>
+        <member name="M:Hnsw.IHnswLayerStorage.GetAllNodeLayers">
+            <summary>
+            Gets all node layer assignments.
+            Thread-safe operation.
+            Returns a copy to prevent external modification.
+            </summary>
+            <returns>Dictionary mapping node IDs to layer numbers.</returns>
+        </member>
+        <member name="M:Hnsw.IHnswLayerStorage.Clear">
+            <summary>
+            Removes all layer assignments.
+            Thread-safe operation.
+            </summary>
+        </member>
+        <member name="P:Hnsw.IHnswLayerStorage.Count">
+            <summary>
+            Gets the number of nodes with layer assignments.
+            Thread-safe operation.
+            </summary>
+            <returns>The count of nodes with layer assignments.</returns>
         </member>
         <member name="T:Hnsw.IHnswNode">
             <summary>

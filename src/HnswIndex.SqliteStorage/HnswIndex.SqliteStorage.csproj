@@ -2,16 +2,14 @@
 
 	<PropertyGroup>
 		<TargetFramework>net8.0</TargetFramework>
-		<Version>1.0.2</Version>
-		<ImplicitUsings>disable</ImplicitUsings>
-		<Nullable>enable</Nullable>
 		<ApplicationIcon>logo.ico</ApplicationIcon>
 		<GenerateDocumentationFile>True</GenerateDocumentationFile>
-		<DocumentationFile>HsnwIndex.RamStorage.xml</DocumentationFile>
+		<DocumentationFile>HsnwIndex.SqliteStorage.xml</DocumentationFile>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-		<Title>RAM storage implementation for HnswIndex</Title>
+		<Title>HnswLite.SqliteStorage</Title>
+		<Version>1.0.2</Version>
 		<Authors>Joel Christner</Authors>
-		<Description>RAM storage implementation for HnswIndex</Description>
+		<Description>Sqlite storage implementation for HnswIndex</Description>
 		<Copyright>(c)2025 Joel Christner</Copyright>
 		<PackageProjectUrl>https://github.com/jchristn/HnswIndex</PackageProjectUrl>
 		<PackageIcon>logo.png</PackageIcon>
@@ -21,10 +19,8 @@
 		<PackageTags>hnsw hierarchical navigable small world index indices vector vectors embedding embeddings</PackageTags>
 		<PackageReleaseNotes>Initial release</PackageReleaseNotes>
 		<PackageLicenseFile>LICENSE.md</PackageLicenseFile>
-		<PackageRequireLicenseAcceptance>False</PackageRequireLicenseAcceptance>
 		<IncludeSymbols>True</IncludeSymbols>
 		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
-		<PackageId>HnswLite.RamStorage</PackageId>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -47,13 +43,17 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.7" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<ProjectReference Include="..\HnswIndex\HnswIndex.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>
-		<None Update="HsnwIndex.RamStorage.xml">
-			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
-		</None>
+	  <None Update="HsnwIndex.SqliteStorage.xml">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </None>
 	</ItemGroup>
 
 </Project>
