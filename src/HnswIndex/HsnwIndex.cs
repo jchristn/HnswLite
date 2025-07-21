@@ -10,13 +10,13 @@
     /// <summary>
     /// Main HNSW (Hierarchical Navigable Small World) index implementation.
     /// </summary>
-    public class HNSWIndex
+    public class HnswIndex
     {
         // Private members
         private readonly IHnswStorage storage;
         private readonly Dictionary<Guid, int> nodeLayers = new Dictionary<Guid, int>();
         private readonly ReaderWriterLockSlim layersLock = new ReaderWriterLockSlim();
-        private readonly SemaphoreSlim indexLock = new SemaphoreSlim(1, 1);
+        private readonly SemaphoreSlim indexLock = new SemaphoreSlim(1, 1); 
         private readonly int vectorDimension;
 
         private Random random;
@@ -198,7 +198,7 @@
         /// </summary>
         /// <param name="dimension">The dimensionality of vectors to be indexed. Minimum: 1, Maximum: 4096.</param>
         /// <param name="storage">Storage backend implementation. Cannot be null.</param>
-        public HNSWIndex(int dimension, IHnswStorage storage)
+        public HnswIndex(int dimension, IHnswStorage storage)
         {
             if (dimension < 1)
                 throw new ArgumentOutOfRangeException(nameof(dimension),
@@ -220,7 +220,7 @@
         /// <param name="dimension">The dimensionality of vectors to be indexed. Minimum: 1, Maximum: 4096.</param>
         /// <param name="storage">Storage backend implementation. Cannot be null.</param>
         /// <param name="seed">Random seed for reproducible results. Use null for random seed.</param>
-        public HNSWIndex(int dimension, IHnswStorage storage, int? seed) : this(dimension, storage)
+        public HnswIndex(int dimension, IHnswStorage storage, int? seed) : this(dimension, storage)
         {
             if (seed.HasValue)
             {

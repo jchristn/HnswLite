@@ -122,47 +122,47 @@
             Validates that all parameters are consistent with each other.
             </summary>
         </member>
-        <member name="T:Hnsw.HNSWIndex">
+        <member name="T:Hnsw.HnswIndex">
             <summary>
             Main HNSW (Hierarchical Navigable Small World) index implementation.
             </summary>
         </member>
-        <member name="P:Hnsw.HNSWIndex.DistanceFunction">
+        <member name="P:Hnsw.HnswIndex.DistanceFunction">
             <summary>
             Gets or sets the distance function used for vector comparisons.
             Cannot be null. Setting to null creates a new EuclideanDistance instance.
             Default: EuclideanDistance.
             </summary>
         </member>
-        <member name="P:Hnsw.HNSWIndex.M">
+        <member name="P:Hnsw.HnswIndex.M">
             <summary>
             Gets or sets the maximum number of connections per layer (except layer 0).
             Minimum: 2, Maximum: 100, Default: 16.
             Typical values range from 8 to 48.
             </summary>
         </member>
-        <member name="P:Hnsw.HNSWIndex.MaxM">
+        <member name="P:Hnsw.HnswIndex.MaxM">
             <summary>
             Gets or sets the maximum number of connections for layer 0.
             Minimum: 1, Maximum: 200, Default: 32.
             Should be greater than or equal to M, typically 2*M.
             </summary>
         </member>
-        <member name="P:Hnsw.HNSWIndex.EfConstruction">
+        <member name="P:Hnsw.HnswIndex.EfConstruction">
             <summary>
             Gets or sets the size of the dynamic candidate list.
             Minimum: 1, Maximum: 2000, Default: 200.
             Higher values improve recall but decrease construction speed.
             </summary>
         </member>
-        <member name="P:Hnsw.HNSWIndex.MaxLayers">
+        <member name="P:Hnsw.HnswIndex.MaxLayers">
             <summary>
             Gets or sets the maximum number of layers in the graph.
             Minimum: 1, Maximum: 64, Default: 16.
             Typically between 10 and 30.
             </summary>
         </member>
-        <member name="P:Hnsw.HNSWIndex.LevelMultiplier">
+        <member name="P:Hnsw.HnswIndex.LevelMultiplier">
             <summary>
             Gets or sets the level assignment multiplier.
             Minimum: Greater than 0, Maximum: 2.0, Default: 1/ln(2) ≈ 1.44.
@@ -170,40 +170,40 @@
             Must be a finite number (not NaN or Infinity).
             </summary>
         </member>
-        <member name="P:Hnsw.HNSWIndex.ExtendCandidates">
+        <member name="P:Hnsw.HnswIndex.ExtendCandidates">
             <summary>
             Gets or sets whether to extend candidates with neighbors' neighbors.
             Default: false.
             Can improve recall at the cost of construction time.
             </summary>
         </member>
-        <member name="P:Hnsw.HNSWIndex.KeepPrunedConnections">
+        <member name="P:Hnsw.HnswIndex.KeepPrunedConnections">
             <summary>
             Gets or sets whether to add pruned connections to lower levels.
             Default: false.
             Can improve connectivity at the cost of more memory usage.
             </summary>
         </member>
-        <member name="P:Hnsw.HNSWIndex.Seed">
+        <member name="P:Hnsw.HnswIndex.Seed">
             <summary>
             Gets or sets the random seed for reproducible results.
             Minimum: -1 (random seed), Maximum: int.MaxValue, Default: -1.
             Use -1 for random seed, or any non-negative value for deterministic behavior.
             </summary>
         </member>
-        <member name="P:Hnsw.HNSWIndex.VectorDimension">
+        <member name="P:Hnsw.HnswIndex.VectorDimension">
             <summary>
             Gets the vector dimension for this index.
             </summary>
         </member>
-        <member name="M:Hnsw.HNSWIndex.#ctor(System.Int32,Hnsw.IHnswStorage)">
+        <member name="M:Hnsw.HnswIndex.#ctor(System.Int32,Hnsw.IHnswStorage)">
             <summary>
             Initializes a new instance of the HNSWIndex class with custom storage.
             </summary>
             <param name="dimension">The dimensionality of vectors to be indexed. Minimum: 1, Maximum: 4096.</param>
             <param name="storage">Storage backend implementation. Cannot be null.</param>
         </member>
-        <member name="M:Hnsw.HNSWIndex.#ctor(System.Int32,Hnsw.IHnswStorage,System.Nullable{System.Int32})">
+        <member name="M:Hnsw.HnswIndex.#ctor(System.Int32,Hnsw.IHnswStorage,System.Nullable{System.Int32})">
             <summary>
             Initializes a new instance of the HNSWIndex class with custom storage and seed.
             </summary>
@@ -211,7 +211,7 @@
             <param name="storage">Storage backend implementation. Cannot be null.</param>
             <param name="seed">Random seed for reproducible results. Use null for random seed.</param>
         </member>
-        <member name="M:Hnsw.HNSWIndex.AddAsync(System.Guid,System.Collections.Generic.List{System.Single},System.Threading.CancellationToken)">
+        <member name="M:Hnsw.HnswIndex.AddAsync(System.Guid,System.Collections.Generic.List{System.Single},System.Threading.CancellationToken)">
             <summary>
             Adds a vector to the index.
             </summary>
@@ -219,28 +219,28 @@
             <param name="vector">Vector data. Cannot be null. Must match index dimension.</param>
             <param name="cancellationToken">Cancellation token.</param>
         </member>
-        <member name="M:Hnsw.HNSWIndex.AddBatchAsync(System.Collections.Generic.IEnumerable{System.ValueTuple{System.Guid,System.Collections.Generic.List{System.Single}}},System.Threading.CancellationToken)">
+        <member name="M:Hnsw.HnswIndex.AddBatchAsync(System.Collections.Generic.IEnumerable{System.ValueTuple{System.Guid,System.Collections.Generic.List{System.Single}}},System.Threading.CancellationToken)">
             <summary>
             Adds multiple vectors to the index.
             </summary>
             <param name="items">Collection of (id, vector) pairs to add. Cannot be null or contain null vectors.</param>
             <param name="cancellationToken">Cancellation token.</param>
         </member>
-        <member name="M:Hnsw.HNSWIndex.RemoveAsync(System.Guid,System.Threading.CancellationToken)">
+        <member name="M:Hnsw.HnswIndex.RemoveAsync(System.Guid,System.Threading.CancellationToken)">
             <summary>
             Removes a vector from the index.
             </summary>
             <param name="guid">Identifier of the vector to remove.</param>
             <param name="cancellationToken">Cancellation token.</param>
         </member>
-        <member name="M:Hnsw.HNSWIndex.RemoveBatchAsync(System.Collections.Generic.IEnumerable{System.Guid},System.Threading.CancellationToken)">
+        <member name="M:Hnsw.HnswIndex.RemoveBatchAsync(System.Collections.Generic.IEnumerable{System.Guid},System.Threading.CancellationToken)">
             <summary>
             Removes multiple vectors from the index.
             </summary>
             <param name="guids">Collection of identifiers to remove. Cannot be null.</param>
             <param name="cancellationToken">Cancellation token.</param>
         </member>
-        <member name="M:Hnsw.HNSWIndex.GetTopKAsync(System.Collections.Generic.List{System.Single},System.Int32,System.Nullable{System.Int32},System.Threading.CancellationToken)">
+        <member name="M:Hnsw.HnswIndex.GetTopKAsync(System.Collections.Generic.List{System.Single},System.Int32,System.Nullable{System.Int32},System.Threading.CancellationToken)">
             <summary>
             Finds the k nearest neighbors to a query vector.
             </summary>
@@ -250,14 +250,14 @@
             <param name="cancellationToken">Cancellation token.</param>
             <returns>Collection of nearest neighbors with distances.</returns>
         </member>
-        <member name="M:Hnsw.HNSWIndex.ExportStateAsync(System.Threading.CancellationToken)">
+        <member name="M:Hnsw.HnswIndex.ExportStateAsync(System.Threading.CancellationToken)">
             <summary>
             Exports the current state of the index.
             </summary>
             <param name="cancellationToken">Cancellation token.</param>
             <returns>Serializable state of the index. Never null.</returns>
         </member>
-        <member name="M:Hnsw.HNSWIndex.ImportStateAsync(Hsnw.HnswState,System.Threading.CancellationToken)">
+        <member name="M:Hnsw.HnswIndex.ImportStateAsync(Hsnw.HnswState,System.Threading.CancellationToken)">
             <summary>
             Imports a previously exported state into the index.
             </summary>

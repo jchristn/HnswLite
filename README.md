@@ -103,7 +103,7 @@ We value your input! If you encounter any issues or have suggestions:
 using Hnsw;
 
 // Create an index for 128-dimensional vectors
-var index = new HnswLite(dimension: 128);
+var index = new HnswIndex(dimension: 128);
 
 // Configure parameters (optional)
 index.M = 16;
@@ -157,8 +157,8 @@ public class RedisHNSWStorage : IHNSWStorage
 }
 
 // Use custom storage
-var storage = new RedisHNSWStorage(connectionString);
-var index = new HnswLite(dimension: 128, storage: storage);
+var storage = new MyHnswStorage(connectionString); // implement IHnswStorage
+var index = new HnswIndex(dimension: 128, storage: storage);
 ```
 
 ## License

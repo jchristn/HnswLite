@@ -32,7 +32,7 @@
         private static async Task TestBasicAddAndSearchAsync()
         {
             Console.WriteLine("Test 1: Basic Add and Search");
-            var index = new HNSWIndex(2, new RamHnswStorage());
+            var index = new HnswIndex(2, new RamHnswStorage());
 
             // Add some 2D vectors
             var vectors = new List<(Guid, List<float>)>
@@ -69,7 +69,7 @@
         private static async Task TestRemoveAsync()
         {
             Console.WriteLine("Test 2: Remove Operation");
-            var index = new HNSWIndex(2, new Hnsw.RamStorage.RamHnswStorage());
+            var index = new HnswIndex(2, new Hnsw.RamStorage.RamHnswStorage());
 
             var id1 = Guid.NewGuid();
             var id2 = Guid.NewGuid();
@@ -93,7 +93,7 @@
         private static async Task TestEmptyIndexAsync()
         {
             Console.WriteLine("Test 3: Empty Index");
-            var index = new HNSWIndex(2, new RamHnswStorage());
+            var index = new HnswIndex(2, new RamHnswStorage());
 
             var results = (await index.GetTopKAsync(new List<float> { 1.0f, 1.0f }, 5)).ToList();
             Console.WriteLine($"Results from empty index: {results.Count}");
@@ -103,7 +103,7 @@
         private static async Task TestSingleElementAsync()
         {
             Console.WriteLine("Test 4: Single Element");
-            var index = new HNSWIndex(2, new RamHnswStorage());
+            var index = new HnswIndex(2, new RamHnswStorage());
 
             var id = Guid.NewGuid();
             await index.AddAsync(id, new List<float> { 5.0f, 5.0f });
@@ -116,7 +116,7 @@
         private static async Task TestDuplicateVectorsAsync()
         {
             Console.WriteLine("Test 5: Duplicate Vectors");
-            var index = new HNSWIndex(2, new RamHnswStorage());
+            var index = new HnswIndex(2, new RamHnswStorage());
 
             // Add multiple vectors at the same location
             for (int i = 0; i < 5; i++)
@@ -136,7 +136,7 @@
         private static async Task TestHighDimensionalAsync()
         {
             Console.WriteLine("Test 6: High-Dimensional Vectors");
-            var index = new HNSWIndex(100, new RamHnswStorage());
+            var index = new HnswIndex(100, new RamHnswStorage());
             var random = new Random(42);
 
             // Add 10 random 100-dimensional vectors
@@ -160,7 +160,7 @@
         private static async Task TestLargerDatasetAsync()
         {
             Console.WriteLine("Test 7: Larger Dataset Performance");
-            var index = new HNSWIndex(2, new RamHnswStorage());
+            var index = new HnswIndex(2, new RamHnswStorage());
             index.Seed = 42; // Set seed for reproducibility
             index.ExtendCandidates = true; // Enable extended candidates for better connectivity
             var random = new Random(42);
@@ -228,24 +228,24 @@
             Console.WriteLine("Test 8: Distance Functions");
 
             // Test Euclidean
-            var euclideanIndex = new HNSWIndex(2, new RamHnswStorage());
+            var euclideanIndex = new HnswIndex(2, new RamHnswStorage());
             euclideanIndex.DistanceFunction = new EuclideanDistance();
             await TestDistanceFunctionAsync(euclideanIndex, "Euclidean");
 
             // Test Cosine
-            var cosineIndex = new HNSWIndex(2, new RamHnswStorage());
+            var cosineIndex = new HnswIndex(2, new RamHnswStorage());
             cosineIndex.DistanceFunction = new CosineDistance();
             await TestDistanceFunctionAsync(cosineIndex, "Cosine");
 
             // Test Dot Product
-            var dotIndex = new HNSWIndex(2, new RamHnswStorage());
+            var dotIndex = new HnswIndex(2, new RamHnswStorage());
             dotIndex.DistanceFunction = new DotProductDistance();
             await TestDistanceFunctionAsync(dotIndex, "Dot Product");
 
             Console.WriteLine();
         }
 
-        private static async Task TestDistanceFunctionAsync(HNSWIndex index, string name)
+        private static async Task TestDistanceFunctionAsync(HnswIndex index, string name)
         {
             var vectors = new List<(Guid, List<float>)>
             {
@@ -273,7 +273,7 @@
         private static async Task TestBatchOperationsAsync()
         {
             Console.WriteLine("Test 9: Batch Operations");
-            var index = new HNSWIndex(2, new RamHnswStorage());
+            var index = new HnswIndex(2, new RamHnswStorage());
             var random = new Random(42);
 
             var batch = new List<(Guid, List<float>)>();
@@ -308,7 +308,7 @@
             Console.WriteLine("Test 10: State Export/Import");
 
             // Create and populate an index
-            var originalIndex = new HNSWIndex(2, new RamHnswStorage());
+            var originalIndex = new HnswIndex(2, new RamHnswStorage());
             originalIndex.M = 8;
             originalIndex.MaxM = 12;
             originalIndex.DistanceFunction = new CosineDistance();
@@ -325,7 +325,7 @@
             var state = await originalIndex.ExportStateAsync();
 
             // Create new index and import
-            var importedIndex = new HNSWIndex(2, new RamHnswStorage());
+            var importedIndex = new HnswIndex(2, new RamHnswStorage());
             await importedIndex.ImportStateAsync(state);
 
             // Test that the imported index works the same
@@ -352,7 +352,7 @@
             // Test dimension validation
             try
             {
-                var index = new HNSWIndex(3, new RamHnswStorage());
+                var index = new HnswIndex(3, new RamHnswStorage());
                 await index.AddAsync(Guid.NewGuid(), new List<float> { 1.0f, 2.0f }); // Wrong dimension
                 Console.WriteLine("Dimension validation: FAILED");
             }
@@ -364,7 +364,7 @@
             // Test null vector
             try
             {
-                var index = new HNSWIndex(2, new RamHnswStorage());
+                var index = new HnswIndex(2, new RamHnswStorage());
                 await index.AddAsync(Guid.NewGuid(), null);
                 Console.WriteLine("Null vector validation: FAILED");
             }
@@ -376,7 +376,7 @@
             // Test parameter bounds
             try
             {
-                var index = new HNSWIndex(2, new RamHnswStorage());
+                var index = new HnswIndex(2, new RamHnswStorage());
                 index.M = -1; // Invalid
                 Console.WriteLine("Parameter bounds validation: FAILED");
             }
@@ -388,7 +388,7 @@
             // Test invalid dimension in constructor
             try
             {
-                var index = new HNSWIndex(0, new RamHnswStorage()); // Invalid dimension
+                var index = new HnswIndex(0, new RamHnswStorage()); // Invalid dimension
                 Console.WriteLine("Constructor dimension validation: FAILED");
             }
             catch (ArgumentOutOfRangeException)
@@ -399,7 +399,7 @@
             // Test cancellation
             using (var cts = new CancellationTokenSource())
             {
-                var index = new HNSWIndex(100, new RamHnswStorage());
+                var index = new HnswIndex(100, new RamHnswStorage());
                 cts.Cancel();
                 try
                 {
