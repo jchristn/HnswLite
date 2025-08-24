@@ -1,12 +1,25 @@
 ﻿namespace Test.Ram
 {
     using System;
+    using System.Diagnostics;
 
     using Hnsw;
     using Hnsw.RamStorage;
 
     public static class Program
     {
+        /// <summary>
+        /// Helper to perform timed search and return results
+        /// </summary>
+        private static async Task<List<VectorResult>> TimedSearchAsync(HnswIndex index, List<float> query, int k, int? ef = null, string label = "Search")
+        {
+            var sw = Stopwatch.StartNew();
+            var results = (await index.GetTopKAsync(query, k, ef)).ToList();
+            sw.Stop();
+            Console.WriteLine($"{label} time: {sw.ElapsedMilliseconds}ms ({sw.Elapsed.TotalMicroseconds:F0}μs)");
+            return results;
+        }
+
         /// <summary>
         /// Main entry point for the test program.
         /// </summary>
@@ -34,26 +47,22 @@
             Console.WriteLine("Test 1: Basic Add and Search");
             var index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
 
-            // Add some 2D vectors
-            var vectors = new List<(Guid, List<float>)>
+            // Add some 2D vectors using batch operation
+            var vectors = new Dictionary<Guid, List<float>>
             {
-                (Guid.NewGuid(), new List<float> { 1.0f, 1.0f }),
-                (Guid.NewGuid(), new List<float> { 2.0f, 2.0f }),
-                (Guid.NewGuid(), new List<float> { 3.0f, 3.0f }),
-                (Guid.NewGuid(), new List<float> { 10.0f, 10.0f }),
-                (Guid.NewGuid(), new List<float> { 11.0f, 11.0f })
+                { Guid.NewGuid(), new List<float> { 1.0f, 1.0f } },
+                { Guid.NewGuid(), new List<float> { 2.0f, 2.0f } },
+                { Guid.NewGuid(), new List<float> { 3.0f, 3.0f } },
+                { Guid.NewGuid(), new List<float> { 10.0f, 10.0f } },
+                { Guid.NewGuid(), new List<float> { 11.0f, 11.0f } }
             };
 
-            foreach (var (id, vector) in vectors)
-            {
-                await index.AddAsync(id, vector);
-            }
+            await index.AddNodesAsync(vectors);
 
             // Search for nearest to (1.5, 1.5)
             var query = new List<float> { 1.5f, 1.5f };
-            var results = (await index.GetTopKAsync(query, 3)).ToList();
-
             Console.WriteLine($"Query: [{string.Join(", ", query)}]");
+            var results = await TimedSearchAsync(index, query, 3);
             Console.WriteLine("Top 3 results:");
             foreach (var result in results)
             {
@@ -75,14 +84,19 @@
             var id2 = Guid.NewGuid();
             var id3 = Guid.NewGuid();
 
-            await index.AddAsync(id1, new List<float> { 1.0f, 1.0f });
-            await index.AddAsync(id2, new List<float> { 2.0f, 2.0f });
-            await index.AddAsync(id3, new List<float> { 3.0f, 3.0f });
+            // Add using batch operation
+            var vectors = new Dictionary<Guid, List<float>>
+            {
+                { id1, new List<float> { 1.0f, 1.0f } },
+                { id2, new List<float> { 2.0f, 2.0f } },
+                { id3, new List<float> { 3.0f, 3.0f } }
+            };
+            await index.AddNodesAsync(vectors);
 
             // Remove the middle vector
             await index.RemoveAsync(id2);
 
-            var results = (await index.GetTopKAsync(new List<float> { 2.0f, 2.0f }, 3)).ToList();
+            var results = await TimedSearchAsync(index, new List<float> { 2.0f, 2.0f }, 3);
             Console.WriteLine($"Results after removing (2,2): {results.Count} vectors found");
 
             // Verify id2 is not in results
@@ -95,7 +109,7 @@
             Console.WriteLine("Test 3: Empty Index");
             var index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
 
-            var results = (await index.GetTopKAsync(new List<float> { 1.0f, 1.0f }, 5)).ToList();
+            var results = await TimedSearchAsync(index, new List<float> { 1.0f, 1.0f }, 5);
             Console.WriteLine($"Results from empty index: {results.Count}");
             Console.WriteLine($"Test passed: {results.Count == 0}\n");
         }
@@ -108,7 +122,7 @@
             var id = Guid.NewGuid();
             await index.AddAsync(id, new List<float> { 5.0f, 5.0f });
 
-            var results = (await index.GetTopKAsync(new List<float> { 0.0f, 0.0f }, 1)).ToList();
+            var results = await TimedSearchAsync(index, new List<float> { 0.0f, 0.0f }, 1);
             Console.WriteLine($"Found {results.Count} result(s)");
             Console.WriteLine($"Test passed: {results.Count == 1 && results[0].GUID == id}\n");
         }
@@ -118,13 +132,15 @@
             Console.WriteLine("Test 5: Duplicate Vectors");
             var index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
 
-            // Add multiple vectors at the same location
+            // Add multiple vectors at the same location using batch
+            var duplicates = new Dictionary<Guid, List<float>>();
             for (int i = 0; i < 5; i++)
             {
-                await index.AddAsync(Guid.NewGuid(), new List<float> { 5.0f, 5.0f });
+                duplicates[Guid.NewGuid()] = new List<float> { 5.0f, 5.0f };
             }
+            await index.AddNodesAsync(duplicates);
 
-            var results = (await index.GetTopKAsync(new List<float> { 5.0f, 5.0f }, 10)).ToList();
+            var results = await TimedSearchAsync(index, new List<float> { 5.0f, 5.0f }, 10);
             Console.WriteLine($"Found {results.Count} duplicate vectors");
 
             // All should have distance 0
@@ -139,20 +155,21 @@
             var index = new HnswIndex(100, new RamHnswStorage(), new RamHnswLayerStorage());
             var random = new Random(42);
 
-            // Add 10 random 100-dimensional vectors
+            // Add 10 random 100-dimensional vectors using batch
+            var vectors = new Dictionary<Guid, List<float>>();
             var ids = new List<Guid>();
             for (int i = 0; i < 10; i++)
             {
                 var id = Guid.NewGuid();
                 ids.Add(id);
-                var vector = Enumerable.Range(0, 100).Select(_ => (float)random.NextDouble()).ToList();
-                await index.AddAsync(id, vector);
+                vectors[id] = Enumerable.Range(0, 100).Select(_ => (float)random.NextDouble()).ToList();
             }
+            await index.AddNodesAsync(vectors);
 
             // Create a query vector
             var query = Enumerable.Range(0, 100).Select(_ => (float)random.NextDouble()).ToList();
 
-            var results = (await index.GetTopKAsync(query, 5)).ToList();
+            var results = await TimedSearchAsync(index, query, 5);
             Console.WriteLine($"Found {results.Count} nearest neighbors in 100D space");
             Console.WriteLine($"Test passed: {results.Count == 5}\n");
         }
@@ -176,7 +193,7 @@
             var sw = System.Diagnostics.Stopwatch.StartNew();
 
             // Add points in a mixed order to ensure better connectivity
-            var allPoints = new List<(Guid id, List<float> vector, int cluster)>();
+            var allPoints = new Dictionary<Guid, List<float>>();
 
             for (int clusterIdx = 0; clusterIdx < clusters.Length; clusterIdx++)
             {
@@ -188,24 +205,21 @@
                         cluster.center[0] + (float)(random.NextDouble() - 0.5),
                         cluster.center[1] + (float)(random.NextDouble() - 0.5)
                     };
-                    allPoints.Add((Guid.NewGuid(), vector, clusterIdx));
+                    allPoints[Guid.NewGuid()] = vector;
                 }
             }
 
-            // Shuffle points to ensure clusters are mixed during insertion
-            allPoints = allPoints.OrderBy(x => random.Next()).ToList();
+            // Shuffle by converting to list and back to dictionary
+            var shuffled = allPoints.OrderBy(x => random.Next()).ToDictionary(x => x.Key, x => x.Value);
 
-            foreach (var point in allPoints)
-            {
-                await index.AddAsync(point.id, point.vector);
-            }
+            await index.AddNodesAsync(shuffled);
 
             sw.Stop();
             Console.WriteLine($"Added 60 vectors in {sw.ElapsedMilliseconds}ms");
 
             // Search near one of the cluster centers with higher ef
             sw.Restart();
-            var results = (await index.GetTopKAsync(new List<float> { 10f, 10f }, 5, ef: 400)).ToList();
+            var results = await TimedSearchAsync(index, new List<float> { 10f, 10f }, 5, 400);
             sw.Stop();
 
             Console.WriteLine($"Search completed in {sw.ElapsedMilliseconds}ms");
@@ -247,21 +261,18 @@
 
         private static async Task TestDistanceFunctionAsync(HnswIndex index, string name)
         {
-            var vectors = new List<(Guid, List<float>)>
+            var vectors = new Dictionary<Guid, List<float>>
             {
-                (Guid.NewGuid(), new List<float> { 1.0f, 0.0f }),
-                (Guid.NewGuid(), new List<float> { 0.0f, 1.0f }),
-                (Guid.NewGuid(), new List<float> { 0.707f, 0.707f }),
-                (Guid.NewGuid(), new List<float> { -1.0f, 0.0f })
+                { Guid.NewGuid(), new List<float> { 1.0f, 0.0f } },
+                { Guid.NewGuid(), new List<float> { 0.0f, 1.0f } },
+                { Guid.NewGuid(), new List<float> { 0.707f, 0.707f } },
+                { Guid.NewGuid(), new List<float> { -1.0f, 0.0f } }
             };
 
-            foreach (var (id, vector) in vectors)
-            {
-                await index.AddAsync(id, vector);
-            }
+            await index.AddNodesAsync(vectors);
 
             var query = new List<float> { 1.0f, 0.0f };
-            var results = (await index.GetTopKAsync(query, 2)).ToList();
+            var results = await TimedSearchAsync(index, query, 2);
 
             Console.WriteLine($"{name} distance - Query: [{string.Join(", ", query)}]");
             Console.WriteLine($"  Nearest: [{string.Join(", ", results[0].Vectors)}], Distance: {results[0].Distance:F4}");
@@ -276,28 +287,31 @@
             var index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
             var random = new Random(42);
 
-            var batch = new List<(Guid, List<float>)>();
+            var batch = new Dictionary<Guid, List<float>>();
+            var ids = new List<Guid>();
             for (int i = 0; i < 20; i++)
             {
-                batch.Add((Guid.NewGuid(), new List<float> { (float)random.NextDouble() * 10, (float)random.NextDouble() * 10 }));
+                var id = Guid.NewGuid();
+                ids.Add(id);
+                batch[id] = new List<float> { (float)random.NextDouble() * 10, (float)random.NextDouble() * 10 };
             }
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            await index.AddBatchAsync(batch);
+            await index.AddNodesAsync(batch);
             sw.Stop();
 
             Console.WriteLine($"Batch inserted {batch.Count} vectors in {sw.ElapsedMilliseconds}ms");
 
             var query = new List<float> { 5.0f, 5.0f };
-            var results = (await index.GetTopKAsync(query, 5)).ToList();
+            var results = await TimedSearchAsync(index, query, 5);
 
             Console.WriteLine($"Found {results.Count} results after batch insert");
 
             // Test batch remove
-            var toRemove = batch.Take(10).Select(x => x.Item1).ToList();
-            await index.RemoveBatchAsync(toRemove);
+            var toRemove = ids.Take(10).ToList();
+            await index.RemoveNodesAsync(toRemove);
 
-            results = (await index.GetTopKAsync(query, 15)).ToList();
+            results = await TimedSearchAsync(index, query, 15, null, "After batch remove");
             Console.WriteLine($"After removing 10 items, found {results.Count} results");
 
             Console.WriteLine($"Test passed: {results.Count == 10}\n");
@@ -313,13 +327,15 @@
             originalIndex.MaxM = 12;
             originalIndex.DistanceFunction = new CosineDistance();
 
+            var vectors = new Dictionary<Guid, List<float>>();
             var ids = new List<Guid>();
             for (int i = 0; i < 10; i++)
             {
                 var id = Guid.NewGuid();
                 ids.Add(id);
-                await originalIndex.AddAsync(id, new List<float> { i * 0.1f, i * 0.2f });
+                vectors[id] = new List<float> { i * 0.1f, i * 0.2f };
             }
+            await originalIndex.AddNodesAsync(vectors);
 
             // Export state
             var state = await originalIndex.ExportStateAsync();
@@ -330,8 +346,8 @@
 
             // Test that the imported index works the same
             var query = new List<float> { 0.5f, 1.0f };
-            var originalResults = (await originalIndex.GetTopKAsync(query, 3)).ToList();
-            var importedResults = (await importedIndex.GetTopKAsync(query, 3)).ToList();
+            var originalResults = await TimedSearchAsync(originalIndex, query, 3, null, "Original index search");
+            var importedResults = await TimedSearchAsync(importedIndex, query, 3, null, "Imported index search");
 
             bool passed = originalResults.Count == importedResults.Count;
             for (int i = 0; i < originalResults.Count && passed; i++)
@@ -365,7 +381,7 @@
             try
             {
                 var index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
-                await index.AddAsync(Guid.NewGuid(), null);
+                await index.AddAsync(Guid.NewGuid(), null!);
                 Console.WriteLine("Null vector validation: FAILED");
             }
             catch (ArgumentNullException)
@@ -394,6 +410,30 @@
             catch (ArgumentOutOfRangeException)
             {
                 Console.WriteLine("Constructor dimension validation: PASSED");
+            }
+
+            // Test batch validation - empty dictionary
+            try
+            {
+                var index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
+                await index.AddNodesAsync(new Dictionary<Guid, List<float>>());
+                Console.WriteLine("Empty batch validation: FAILED");
+            }
+            catch (ArgumentException)
+            {
+                Console.WriteLine("Empty batch validation: PASSED");
+            }
+
+            // Test batch validation - null dictionary
+            try
+            {
+                var index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
+                await index.AddNodesAsync(null!);
+                Console.WriteLine("Null batch validation: FAILED");
+            }
+            catch (ArgumentNullException)
+            {
+                Console.WriteLine("Null batch validation: PASSED");
             }
 
             // Test cancellation

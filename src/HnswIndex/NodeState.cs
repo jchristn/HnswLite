@@ -10,13 +10,17 @@
     /// </summary>
     public class NodeState
     {
-        // Private backing fields
-        private Guid _id = Guid.Empty;
-        private List<float> _vector = new List<float>();
-        private int _layer = 0;
-        private Dictionary<int, List<Guid>> _neighbors = new Dictionary<int, List<Guid>>();
 
-        // Public properties
+        #region Private-Members
+
+        private Guid _Id = Guid.Empty;
+        private List<float> _Vector = new List<float>();
+        private int _Layer = 0;
+        private Dictionary<int, List<Guid>> _Neighbors = new Dictionary<int, List<Guid>>();
+
+        #endregion
+
+        #region Public-Members
         /// <summary>
         /// Gets or sets the node identifier.
         /// Cannot be Guid.Empty.
@@ -24,12 +28,12 @@
         /// </summary>
         public Guid Id
         {
-            get => _id;
+            get => _Id;
             set
             {
                 if (value == Guid.Empty)
                     throw new ArgumentException("Id cannot be Guid.Empty.", nameof(value));
-                _id = value;
+                _Id = value;
             }
         }
 
@@ -42,12 +46,12 @@
         /// </summary>
         public List<float> Vector
         {
-            get => _vector;
+            get => _Vector;
             set
             {
                 if (value == null)
                 {
-                    _vector = new List<float>();
+                    _Vector = new List<float>();
                 }
                 else
                 {
@@ -57,7 +61,7 @@
                         if (float.IsNaN(value[i]) || float.IsInfinity(value[i]))
                             throw new ArgumentException($"Vector contains invalid value at index {i}. All values must be finite.", nameof(value));
                     }
-                    _vector = value;
+                    _Vector = value;
                 }
             }
         }
@@ -69,7 +73,7 @@
         /// </summary>
         public int Layer
         {
-            get => _layer;
+            get => _Layer;
             set
             {
                 if (value < 0)
@@ -78,7 +82,7 @@
                 if (value > 63)
                     throw new ArgumentOutOfRangeException(nameof(value),
                         "Layer cannot exceed 63.");
-                _layer = value;
+                _Layer = value;
             }
         }
 
@@ -93,19 +97,19 @@
         /// </summary>
         public Dictionary<int, List<Guid>> Neighbors
         {
-            get => _neighbors;
+            get => _Neighbors;
             set
             {
                 if (value == null)
                 {
-                    _neighbors = new Dictionary<int, List<Guid>>();
+                    _Neighbors = new Dictionary<int, List<Guid>>();
                 }
                 else
                 {
                     // Validate the dictionary
-                    var validatedNeighbors = new Dictionary<int, List<Guid>>();
+                    Dictionary<int, List<Guid>> validatedNeighbors = new Dictionary<int, List<Guid>>();
 
-                    foreach (var kvp in value)
+                    foreach (KeyValuePair<int, List<Guid>> kvp in value)
                     {
                         // Validate layer number
                         if (kvp.Key < 0)
@@ -121,7 +125,7 @@
                         {
                             if (neighborId == Guid.Empty)
                                 throw new ArgumentException($"Neighbor list for layer {kvp.Key} contains Guid.Empty.", nameof(value));
-                            if (neighborId == _id && _id != Guid.Empty)
+                            if (neighborId == _Id && _Id != Guid.Empty)
                                 throw new ArgumentException($"Node cannot be its own neighbor (layer {kvp.Key}).", nameof(value));
                             validatedList.Add(neighborId);
                         }
@@ -132,12 +136,14 @@
                         }
                     }
 
-                    _neighbors = validatedNeighbors;
+                    _Neighbors = validatedNeighbors;
                 }
             }
         }
 
-        // Constructors
+        #endregion
+
+        #region Constructors-and-Factories
         /// <summary>
         /// Initializes a new instance of the NodeState class with default values.
         /// </summary>
@@ -164,15 +170,17 @@
         /// <param name="vector">The vector data. Cannot be null.</param>
         /// <param name="layer">The layer assignment. Minimum: 0, Maximum: 63.</param>
         /// <param name="neighbors">The neighbor connections. Can be null (creates empty dictionary).</param>
-        public NodeState(Guid id, List<float> vector, int layer, Dictionary<int, List<Guid>> neighbors = null)
+        public NodeState(Guid id, List<float> vector, int layer, Dictionary<int, List<Guid>>? neighbors = null)
         {
             Id = id;
             Vector = vector ?? throw new ArgumentNullException(nameof(vector));
             Layer = layer;
-            Neighbors = neighbors;
+            Neighbors = neighbors ?? new Dictionary<int, List<Guid>>();
         }
 
-        // Public methods
+        #endregion
+
+        #region Public-Methods
         /// <summary>
         /// Validates that the node state is consistent and ready for use.
         /// </summary>
@@ -180,22 +188,22 @@
         public void Validate()
         {
             // Check ID
-            if (_id == Guid.Empty)
+            if (_Id == Guid.Empty)
                 throw new InvalidOperationException("Node ID cannot be Guid.Empty.");
 
             // Check vector
-            if (_vector == null || _vector.Count == 0)
+            if (_Vector == null || _Vector.Count == 0)
                 throw new InvalidOperationException("Node vector cannot be null or empty.");
 
             // Check that all neighbor layers are within valid range
-            foreach (var kvp in _neighbors)
+            foreach (var kvp in _Neighbors)
             {
-                if (kvp.Key < 0 || kvp.Key > _layer)
+                if (kvp.Key < 0 || kvp.Key > _Layer)
                     throw new InvalidOperationException(
-                        $"Neighbor layer {kvp.Key} is outside valid range (0 to {_layer}).");
+                        $"Neighbor layer {kvp.Key} is outside valid range (0 to {_Layer}).");
 
                 // Check for self-references
-                if (kvp.Value.Contains(_id))
+                if (kvp.Value.Contains(_Id))
                     throw new InvalidOperationException(
                         $"Node cannot be its own neighbor (found in layer {kvp.Key}).");
             }
@@ -207,7 +215,7 @@
         /// <returns>The total neighbor count.</returns>
         public int GetTotalNeighborCount()
         {
-            return _neighbors.Values.Sum(list => list.Count);
+            return _Neighbors.Values.Sum(list => list.Count);
         }
 
         /// <summary>
@@ -222,7 +230,7 @@
             if (layer > 63)
                 throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot exceed 63.");
 
-            return _neighbors.TryGetValue(layer, out var neighbors)
+            return _Neighbors.TryGetValue(layer, out var neighbors)
                 ? new List<Guid>(neighbors)
                 : new List<Guid>();
         }
@@ -235,18 +243,20 @@
         {
             var clone = new NodeState
             {
-                _id = this._id,
-                Vector = new List<float>(this._vector),
-                Layer = this._layer,
+                _Id = this._Id,
+                Vector = new List<float>(this._Vector),
+                Layer = this._Layer,
                 Neighbors = new Dictionary<int, List<Guid>>()
             };
 
-            foreach (var kvp in this._neighbors)
+            foreach (var kvp in this._Neighbors)
             {
-                clone._neighbors[kvp.Key] = new List<Guid>(kvp.Value);
+                clone._Neighbors[kvp.Key] = new List<Guid>(kvp.Value);
             }
 
             return clone;
         }
+
+        #endregion
     }
 }

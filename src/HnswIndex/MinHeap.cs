@@ -12,21 +12,25 @@
     /// <typeparam name="T">The type of elements in the heap.</typeparam>
     public class MinHeap<T>
     {
-        // Private members
-        private List<(float priority, T item)> _items = new List<(float, T)>();
-        private IComparer<T> _itemComparer = Comparer<T>.Default;
 
-        // Public members
+        #region Private-Members
+
+        private List<(float priority, T item)> _Items = new List<(float, T)>();
+        private IComparer<T> _ItemComparer = Comparer<T>.Default;
+
+        #endregion
+
+        #region Public-Members
         /// <summary>
         /// Gets the number of items in the heap.
         /// Minimum: 0, Maximum: int.MaxValue (limited by available memory).
         /// </summary>
-        public int Count => _items.Count;
+        public int Count => _Items.Count;
 
         /// <summary>
         /// Gets whether the heap is empty.
         /// </summary>
-        public bool IsEmpty => _items.Count == 0;
+        public bool IsEmpty => _Items.Count == 0;
 
         /// <summary>
         /// Gets or sets the capacity of the internal storage.
@@ -35,26 +39,28 @@
         /// </summary>
         public int Capacity
         {
-            get => _items.Capacity;
+            get => _Items.Capacity;
             set
             {
                 if (value < 0)
                     throw new ArgumentOutOfRangeException(nameof(value),
                         "Capacity cannot be negative.");
-                _items.Capacity = Math.Max(value, _items.Count);
+                _Items.Capacity = Math.Max(value, _Items.Count);
             }
         }
 
-        // Constructors
+        #endregion
+
+        #region Constructors-and-Factories
         /// <summary>
         /// Initializes a new instance of the MinHeap class with default capacity.
         /// </summary>
         /// <param name="itemComparer">Optional comparer for items with equal priority. 
         /// If null, uses Comparer&lt;T&gt;.Default.</param>
-        public MinHeap(IComparer<T> itemComparer = null)
+        public MinHeap(IComparer<T>? itemComparer = null)
         {
-            _itemComparer = itemComparer ?? Comparer<T>.Default;
-            _items = new List<(float, T)>();
+            _ItemComparer = itemComparer ?? Comparer<T>.Default;
+            _Items = new List<(float, T)>();
         }
 
         /// <summary>
@@ -63,17 +69,19 @@
         /// <param name="capacity">Initial capacity. Minimum: 0, Maximum: int.MaxValue.</param>
         /// <param name="itemComparer">Optional comparer for items with equal priority. 
         /// If null, uses Comparer&lt;T&gt;.Default.</param>
-        public MinHeap(int capacity, IComparer<T> itemComparer = null)
+        public MinHeap(int capacity, IComparer<T>? itemComparer = null)
         {
             if (capacity < 0)
                 throw new ArgumentOutOfRangeException(nameof(capacity),
                     "Capacity cannot be negative.");
 
-            _itemComparer = itemComparer ?? Comparer<T>.Default;
-            _items = new List<(float, T)>(capacity);
+            _ItemComparer = itemComparer ?? Comparer<T>.Default;
+            _Items = new List<(float, T)>(capacity);
         }
 
-        // Public methods
+        #endregion
+
+        #region Public-Methods
         /// <summary>
         /// Adds an item to the heap with the specified priority.
         /// Lower priority values are considered higher priority (min-heap).
@@ -86,8 +94,8 @@
             if (float.IsNaN(priority) || float.IsInfinity(priority))
                 throw new ArgumentException("Priority must be a finite number.", nameof(priority));
 
-            _items.Add((priority, item));
-            BubbleUp(_items.Count - 1);
+            _Items.Add((priority, item));
+            BubbleUp(_Items.Count - 1);
         }
 
         /// <summary>
@@ -97,19 +105,19 @@
         /// <exception cref="InvalidOperationException">Thrown when the heap is empty.</exception>
         public (float priority, T item) Pop()
         {
-            if (_items.Count == 0)
+            if (_Items.Count == 0)
                 throw new InvalidOperationException("Cannot pop from an empty heap.");
 
-            var result = _items[0];
+            var result = _Items[0];
 
-            if (_items.Count == 1)
+            if (_Items.Count == 1)
             {
-                _items.Clear();
+                _Items.Clear();
             }
             else
             {
-                _items[0] = _items[_items.Count - 1];
-                _items.RemoveAt(_items.Count - 1);
+                _Items[0] = _Items[_Items.Count - 1];
+                _Items.RemoveAt(_Items.Count - 1);
                 BubbleDown(0);
             }
 
@@ -123,10 +131,10 @@
         /// <exception cref="InvalidOperationException">Thrown when the heap is empty.</exception>
         public (float priority, T item) Peek()
         {
-            if (_items.Count == 0)
+            if (_Items.Count == 0)
                 throw new InvalidOperationException("Cannot peek at an empty heap.");
 
-            return _items[0];
+            return _Items[0];
         }
 
         /// <summary>
@@ -134,7 +142,7 @@
         /// </summary>
         public void Clear()
         {
-            _items.Clear();
+            _Items.Clear();
         }
 
         /// <summary>
@@ -144,7 +152,7 @@
         /// <returns>true if item is found in the heap; otherwise, false.</returns>
         public bool Contains(T item)
         {
-            return _items.Any(x => EqualityComparer<T>.Default.Equals(x.item, item));
+            return _Items.Any(x => EqualityComparer<T>.Default.Equals(x.item, item));
         }
 
         /// <summary>
@@ -155,9 +163,9 @@
         /// <returns>A new list containing all items sorted by priority.</returns>
         public List<(float priority, T item)> GetAll()
         {
-            return _items
+            return _Items
                 .OrderBy(x => x.priority)
-                .ThenBy(x => x.item, _itemComparer)
+                .ThenBy(x => x.item, _ItemComparer)
                 .ToList();
         }
 
@@ -168,7 +176,7 @@
         /// <returns>A new list containing all items in heap order.</returns>
         public List<(float priority, T item)> GetAllUnsorted()
         {
-            return new List<(float priority, T item)>(_items);
+            return new List<(float priority, T item)>(_Items);
         }
 
         /// <summary>
@@ -180,7 +188,10 @@
             return GetAll().ToArray();
         }
 
-        // Private methods
+        #endregion
+
+        #region Private-Methods
+
         private void BubbleUp(int childIndex)
         {
             while (childIndex > 0)
@@ -202,10 +213,10 @@
                 int leftChild = 2 * index + 1;
                 int rightChild = 2 * index + 2;
 
-                if (leftChild < _items.Count && CompareItems(leftChild, smallest) < 0)
+                if (leftChild < _Items.Count && CompareItems(leftChild, smallest) < 0)
                     smallest = leftChild;
 
-                if (rightChild < _items.Count && CompareItems(rightChild, smallest) < 0)
+                if (rightChild < _Items.Count && CompareItems(rightChild, smallest) < 0)
                     smallest = rightChild;
 
                 if (smallest == index)
@@ -218,17 +229,19 @@
 
         private int CompareItems(int i, int j)
         {
-            int priorityComparison = _items[i].priority.CompareTo(_items[j].priority);
+            int priorityComparison = _Items[i].priority.CompareTo(_Items[j].priority);
             if (priorityComparison != 0)
                 return priorityComparison;
 
             // Use item comparer for tie-breaking
-            return _itemComparer.Compare(_items[i].item, _items[j].item);
+            return _ItemComparer.Compare(_Items[i].item, _Items[j].item);
         }
 
         private void Swap(int i, int j)
         {
-            (_items[i], _items[j]) = (_items[j], _items[i]);
+            (_Items[i], _Items[j]) = (_Items[j], _Items[i]);
         }
+
+        #endregion
     }
 }

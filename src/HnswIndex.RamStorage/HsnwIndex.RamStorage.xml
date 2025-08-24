@@ -259,6 +259,19 @@
             <exception cref="T:System.ArgumentNullException">Thrown when vector is null.</exception>
             <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
         </member>
+        <member name="M:Hnsw.RamStorage.RamHnswStorage.AddNodesAsync(System.Collections.Generic.Dictionary{System.Guid,System.Collections.Generic.List{System.Single}},System.Threading.CancellationToken)">
+            <summary>
+            Adds multiple nodes to storage in a batch operation.
+            Thread-safe operation.
+            More efficient than calling AddNodeAsync multiple times.
+            If this is the first batch and EntryPoint is null, the first node becomes the entry point.
+            </summary>
+            <param name="nodes">Dictionary mapping node IDs to their vector data. Cannot be null.</param>
+            <param name="cancellationToken">Cancellation token.</param>
+            <exception cref="T:System.ArgumentNullException">Thrown when nodes is null.</exception>
+            <exception cref="T:System.ArgumentException">Thrown when any node ID is Guid.Empty or vector is invalid.</exception>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        </member>
         <member name="M:Hnsw.RamStorage.RamHnswStorage.RemoveNodeAsync(System.Guid,System.Threading.CancellationToken)">
             <summary>
             Removes a node from storage.
@@ -270,6 +283,18 @@
             <param name="cancellationToken">Cancellation token.</param>
             <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
         </member>
+        <member name="M:Hnsw.RamStorage.RamHnswStorage.RemoveNodesAsync(System.Collections.Generic.IEnumerable{System.Guid},System.Threading.CancellationToken)">
+            <summary>
+            Removes multiple nodes from storage in a batch operation.
+            Thread-safe operation.
+            More efficient than calling RemoveNodeAsync multiple times.
+            If any removed node was the entry point, a new entry point is automatically selected.
+            </summary>
+            <param name="ids">Collection of node IDs to remove. Cannot be null.</param>
+            <param name="cancellationToken">Cancellation token.</param>
+            <exception cref="T:System.ArgumentNullException">Thrown when ids is null.</exception>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        </member>
         <member name="M:Hnsw.RamStorage.RamHnswStorage.GetNodeAsync(System.Guid,System.Threading.CancellationToken)">
             <summary>
             Gets a node by ID.
@@ -279,6 +304,18 @@
             <param name="cancellationToken">Cancellation token.</param>
             <returns>The requested node.</returns>
             <exception cref="T:System.Collections.Generic.KeyNotFoundException">Thrown when the node doesn't exist.</exception>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswStorage.GetNodesAsync(System.Collections.Generic.IEnumerable{System.Guid},System.Threading.CancellationToken)">
+            <summary>
+            Gets multiple nodes by their IDs in a batch operation.
+            Thread-safe operation.
+            More efficient than calling GetNodeAsync multiple times.
+            </summary>
+            <param name="ids">Collection of node IDs to retrieve. Cannot be null.</param>
+            <param name="cancellationToken">Cancellation token.</param>
+            <returns>Dictionary mapping node IDs to their corresponding nodes. Only includes nodes that exist.</returns>
+            <exception cref="T:System.ArgumentNullException">Thrown when ids is null.</exception>
             <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
         </member>
         <member name="M:Hnsw.RamStorage.RamHnswStorage.TryGetNodeAsync(System.Guid,System.Threading.CancellationToken)">

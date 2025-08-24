@@ -167,10 +167,19 @@
             walCommand.CommandText = "PRAGMA journal_mode=WAL";
             walCommand.ExecuteNonQuery();
 
-            // Enable synchronous=NORMAL for better performance with WAL
+            // Use FULL synchronous for complete durability
             var syncCommand = _connection.CreateCommand();
-            syncCommand.CommandText = "PRAGMA synchronous=NORMAL";
+            syncCommand.CommandText = "PRAGMA synchronous=FULL";
             syncCommand.ExecuteNonQuery();
+
+            // Optimize cache and memory settings for better performance
+            var cacheCommand = _connection.CreateCommand();
+            cacheCommand.CommandText = "PRAGMA cache_size=10000";
+            cacheCommand.ExecuteNonQuery();
+
+            var tempStoreCommand = _connection.CreateCommand();
+            tempStoreCommand.CommandText = "PRAGMA temp_store=MEMORY";
+            tempStoreCommand.ExecuteNonQuery();
 
             InitializeDatabase();
         }
@@ -283,14 +292,15 @@
                         _nodeCache.Remove(id);
                     }
 
-                    // Save vector to database
-                    var vectorJson = JsonSerializer.Serialize(vector);
+                    // Save vector to database using binary format for better performance
+                    var vectorBlob = SerializeVector(vector);
                     var command = _connection.CreateCommand();
                     command.CommandText = $@"
-                        INSERT OR REPLACE INTO {_nodesTableName} (id, vector_json) 
-                        VALUES (@id, @vectorJson)";
-                    command.Parameters.AddWithValue("@id", id.ToString());
-                    command.Parameters.AddWithValue("@vectorJson", vectorJson);
+                        INSERT OR REPLACE INTO {_nodesTableName} (id, vector_blob, vector_dimension, updated_at) 
+                        VALUES (@id, @vectorBlob, @dimension, CURRENT_TIMESTAMP)";
+                    command.Parameters.AddWithValue("@id", id.ToByteArray());
+                    command.Parameters.AddWithValue("@vectorBlob", vectorBlob);
+                    command.Parameters.AddWithValue("@dimension", vector.Count);
                     command.ExecuteNonQuery();
 
                     // Create node and add to cache
@@ -308,6 +318,116 @@
                     {
                         _entryPoint = id;
                         SaveEntryPointToDatabase();
+                    }
+                }
+                finally
+                {
+                    _storageLock.ExitWriteLock();
+                }
+            }, cancellationToken);
+        }
+
+        /// <summary>
+        /// Adds multiple nodes to storage in a batch operation.
+        /// Thread-safe operation.
+        /// More efficient than calling AddNodeAsync multiple times.
+        /// If this is the first batch and EntryPoint is null, the first node becomes the entry point.
+        /// </summary>
+        /// <param name="nodes">Dictionary mapping node IDs to their vector data. Cannot be null.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <exception cref="ArgumentNullException">Thrown when nodes is null.</exception>
+        /// <exception cref="ArgumentException">Thrown when any node ID is Guid.Empty or vector is invalid.</exception>
+        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        public async Task AddNodesAsync(Dictionary<Guid, List<float>> nodes, CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            if (nodes == null)
+                throw new ArgumentNullException(nameof(nodes));
+
+            await Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // Validate all nodes first
+                foreach (var kvp in nodes)
+                {
+                    if (kvp.Key == Guid.Empty)
+                        throw new ArgumentException($"Node ID cannot be Guid.Empty.", nameof(nodes));
+                    if (kvp.Value == null)
+                        throw new ArgumentNullException(nameof(nodes), $"Vector for node {kvp.Key} is null.");
+                    if (kvp.Value.Count == 0)
+                        throw new ArgumentException($"Vector for node {kvp.Key} cannot be empty.", nameof(nodes));
+                }
+
+                _storageLock.EnterWriteLock();
+                try
+                {
+                    // Use a transaction for batch operation
+                    using var transaction = _connection.BeginTransaction();
+                    try
+                    {
+                        bool wasEmpty = false;
+
+                        // Check if this is the first batch
+                        if (!_entryPointLoaded)
+                        {
+                            LoadEntryPointFromDatabase();
+                            _entryPointLoaded = true;
+                            wasEmpty = _entryPoint == null;
+                        }
+                        else
+                        {
+                            wasEmpty = _entryPoint == null;
+                        }
+
+                        // Prepare the insert command
+                        var command = _connection.CreateCommand();
+                        command.Transaction = transaction;
+                        command.CommandText = $@"
+                            INSERT OR REPLACE INTO {_nodesTableName} (id, vector_blob, vector_dimension, updated_at) 
+                            VALUES (@id, @vectorBlob, @dimension, CURRENT_TIMESTAMP)";
+
+                        // Add all nodes
+                        Guid? firstNodeId = null;
+                        foreach (var kvp in nodes)
+                        {
+                            if (firstNodeId == null)
+                                firstNodeId = kvp.Key;
+
+                            // Remove from cache if exists
+                            if (_nodeCache.TryGetValue(kvp.Key, out var existingNode))
+                            {
+                                existingNode.Dispose();
+                                _nodeCache.Remove(kvp.Key);
+                            }
+
+                            // Save vector to database using binary format for better performance
+                            var vectorBlob = SerializeVector(kvp.Value);
+                            command.Parameters.Clear();
+                            command.Parameters.AddWithValue("@id", kvp.Key.ToByteArray());
+                            command.Parameters.AddWithValue("@vectorBlob", vectorBlob);
+                            command.Parameters.AddWithValue("@dimension", kvp.Value.Count);
+                            command.ExecuteNonQuery();
+
+                            // Create node and add to cache
+                            var node = new SqliteHnswNode(kvp.Key, kvp.Value, _connection, _neighborsTableName);
+                            _nodeCache[kvp.Key] = node;
+                        }
+
+                        // Set entry point if this was the first batch
+                        if (wasEmpty && firstNodeId.HasValue)
+                        {
+                            _entryPoint = firstNodeId.Value;
+                            SaveEntryPointToDatabase();
+                        }
+
+                        transaction.Commit();
+                    }
+                    catch
+                    {
+                        transaction.Rollback();
+                        throw;
                     }
                 }
                 finally
@@ -347,18 +467,18 @@
                     // Remove from database
                     var deleteNodeCommand = _connection.CreateCommand();
                     deleteNodeCommand.CommandText = $"DELETE FROM {_nodesTableName} WHERE id = @id";
-                    deleteNodeCommand.Parameters.AddWithValue("@id", id.ToString());
+                    deleteNodeCommand.Parameters.AddWithValue("@id", id.ToByteArray());
                     deleteNodeCommand.ExecuteNonQuery();
 
                     var deleteNeighborsCommand = _connection.CreateCommand();
                     deleteNeighborsCommand.CommandText = $"DELETE FROM {_neighborsTableName} WHERE node_id = @id";
-                    deleteNeighborsCommand.Parameters.AddWithValue("@id", id.ToString());
+                    deleteNeighborsCommand.Parameters.AddWithValue("@id", id.ToByteArray());
                     deleteNeighborsCommand.ExecuteNonQuery();
 
                     // Remove layer assignment
                     var deleteLayerCommand = _connection.CreateCommand();
                     deleteLayerCommand.CommandText = $"DELETE FROM {_nodesTableName}_layers WHERE node_id = @id";
-                    deleteLayerCommand.Parameters.AddWithValue("@id", id.ToString());
+                    deleteLayerCommand.Parameters.AddWithValue("@id", id.ToByteArray());
                     deleteLayerCommand.ExecuteNonQuery();
 
                     // Update entry point if necessary
@@ -381,6 +501,115 @@
                         }
 
                         SaveEntryPointToDatabase();
+                    }
+                }
+                finally
+                {
+                    _storageLock.ExitWriteLock();
+                }
+            }, cancellationToken);
+        }
+
+        /// <summary>
+        /// Removes multiple nodes from storage in a batch operation.
+        /// Thread-safe operation.
+        /// More efficient than calling RemoveNodeAsync multiple times.
+        /// If any removed node was the entry point, a new entry point is automatically selected.
+        /// </summary>
+        /// <param name="ids">Collection of node IDs to remove. Cannot be null.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <exception cref="ArgumentNullException">Thrown when ids is null.</exception>
+        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        public async Task RemoveNodesAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            if (ids == null)
+                throw new ArgumentNullException(nameof(ids));
+
+            await Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                _storageLock.EnterWriteLock();
+                try
+                {
+                    // Use a transaction for batch operation
+                    using var transaction = _connection.BeginTransaction();
+                    try
+                    {
+                        bool entryPointRemoved = false;
+
+                        // Prepare delete commands
+                        var deleteNodeCommand = _connection.CreateCommand();
+                        deleteNodeCommand.Transaction = transaction;
+                        deleteNodeCommand.CommandText = $"DELETE FROM {_nodesTableName} WHERE id = @id";
+
+                        var deleteNeighborsCommand = _connection.CreateCommand();
+                        deleteNeighborsCommand.Transaction = transaction;
+                        deleteNeighborsCommand.CommandText = $"DELETE FROM {_neighborsTableName} WHERE node_id = @id";
+
+                        var deleteLayerCommand = _connection.CreateCommand();
+                        deleteLayerCommand.Transaction = transaction;
+                        deleteLayerCommand.CommandText = $"DELETE FROM {_nodesTableName}_layers WHERE node_id = @id";
+
+                        foreach (var id in ids)
+                        {
+                            // Remove from cache
+                            if (_nodeCache.TryGetValue(id, out var node))
+                            {
+                                node.Dispose();
+                                _nodeCache.Remove(id);
+                            }
+
+                            // Remove from database
+                            deleteNodeCommand.Parameters.Clear();
+                            deleteNodeCommand.Parameters.AddWithValue("@id", id.ToByteArray());
+                            deleteNodeCommand.ExecuteNonQuery();
+
+                            deleteNeighborsCommand.Parameters.Clear();
+                            deleteNeighborsCommand.Parameters.AddWithValue("@id", id.ToByteArray());
+                            deleteNeighborsCommand.ExecuteNonQuery();
+
+                            deleteLayerCommand.Parameters.Clear();
+                            deleteLayerCommand.Parameters.AddWithValue("@id", id.ToByteArray());
+                            deleteLayerCommand.ExecuteNonQuery();
+
+                            if (_entryPoint == id)
+                            {
+                                entryPointRemoved = true;
+                            }
+                        }
+
+                        // Update entry point if necessary
+                        if (entryPointRemoved)
+                        {
+                            var newEntryPointCommand = _connection.CreateCommand();
+                            newEntryPointCommand.Transaction = transaction;
+                            newEntryPointCommand.CommandText = $"SELECT id FROM {_nodesTableName} LIMIT 1";
+                            var result = newEntryPointCommand.ExecuteScalar();
+
+                            if (result != null && result != DBNull.Value)
+                            {
+                                if (Guid.TryParse(result.ToString(), out Guid newEntryPoint))
+                                    _entryPoint = newEntryPoint;
+                                else
+                                    _entryPoint = null;
+                            }
+                            else
+                            {
+                                _entryPoint = null;
+                            }
+
+                            SaveEntryPointToDatabase();
+                        }
+
+                        transaction.Commit();
+                    }
+                    catch
+                    {
+                        transaction.Rollback();
+                        throw;
                     }
                 }
                 finally
@@ -430,15 +659,15 @@
 
                     // Load from database
                     var command = _connection.CreateCommand();
-                    command.CommandText = $"SELECT vector_json FROM {_nodesTableName} WHERE id = @id";
-                    command.Parameters.AddWithValue("@id", id.ToString());
+                    command.CommandText = $"SELECT vector_blob FROM {_nodesTableName} WHERE id = @id";
+                    command.Parameters.AddWithValue("@id", id.ToByteArray());
 
                     var result = command.ExecuteScalar();
                     if (result == null || result == DBNull.Value)
                         throw new KeyNotFoundException($"Node with ID {id} not found in storage.");
 
-                    var vectorJson = result.ToString();
-                    var vector = JsonSerializer.Deserialize<List<float>>(vectorJson);
+                    var vectorBlob = (byte[])result;
+                    var vector = DeserializeVector(vectorBlob);
 
                     var node = new SqliteHnswNode(id, vector, _connection, _neighborsTableName);
                     _nodeCache[id] = node;
@@ -452,6 +681,91 @@
         }
 
         /// <summary>
+        /// Gets multiple nodes by their IDs in a batch operation.
+        /// Thread-safe operation.
+        /// More efficient than calling GetNodeAsync multiple times.
+        /// Uses caching for improved performance.
+        /// </summary>
+        /// <param name="ids">Collection of node IDs to retrieve. Cannot be null.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <returns>Dictionary mapping node IDs to their corresponding nodes. Only includes nodes that exist.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when ids is null.</exception>
+        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        public async Task<Dictionary<Guid, IHnswNode>> GetNodesAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            if (ids == null)
+                throw new ArgumentNullException(nameof(ids));
+
+            return await Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var result = new Dictionary<Guid, IHnswNode>();
+                var idsToLoad = new List<Guid>();
+
+                // First pass: get cached nodes
+                _storageLock.EnterReadLock();
+                try
+                {
+                    foreach (var id in ids)
+                    {
+                        if (_nodeCache.TryGetValue(id, out var cachedNode))
+                        {
+                            result[id] = cachedNode;
+                        }
+                        else
+                        {
+                            idsToLoad.Add(id);
+                        }
+                    }
+                }
+                finally
+                {
+                    _storageLock.ExitReadLock();
+                }
+
+                // Second pass: load missing nodes from database
+                if (idsToLoad.Count > 0)
+                {
+                    _storageLock.EnterWriteLock();
+                    try
+                    {
+                        // Build a query to get all nodes in one go
+                        var placeholders = string.Join(",", idsToLoad.Select((_, i) => $"@id{i}"));
+                        var command = _connection.CreateCommand();
+                        command.CommandText = $"SELECT id, vector_blob FROM {_nodesTableName} WHERE id IN ({placeholders})";
+
+                        for (int i = 0; i < idsToLoad.Count; i++)
+                        {
+                            command.Parameters.AddWithValue($"@id{i}", idsToLoad[i].ToByteArray());
+                        }
+
+                        using var reader = command.ExecuteReader();
+                        while (reader.Read())
+                        {
+                            var idBytes = (byte[])reader[0];
+                            var nodeId = new Guid(idBytes);
+                            var vectorBlob = (byte[])reader[1];
+                            var vector = DeserializeVector(vectorBlob);
+
+                            var node = new SqliteHnswNode(nodeId, vector, _connection, _neighborsTableName);
+                            _nodeCache[nodeId] = node;
+                            result[nodeId] = node;
+                        }
+                    }
+                    finally
+                    {
+                        _storageLock.ExitWriteLock();
+                    }
+                }
+
+                return result;
+            }, cancellationToken);
+        }
+
+        /// <summary>
         /// Tries to get a node by ID.
         /// Thread-safe operation.
         /// Uses caching for improved performance.
@@ -460,7 +774,7 @@
         /// <param name="cancellationToken">Cancellation token.</param>
         /// <returns>A tuple indicating success and the node if found.</returns>
         /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public async Task<(bool success, IHnswNode node)> TryGetNodeAsync(Guid id, CancellationToken cancellationToken = default)
+        public async Task<TryGetNodeResult> TryGetNodeAsync(Guid id, CancellationToken cancellationToken = default)
         {
             ThrowIfDisposed();
 
@@ -471,15 +785,15 @@
                 try
                 {
                     var node = GetNodeAsync(id, cancellationToken).Result;
-                    return (true, node);
+                    return TryGetNodeResult.Found(node);
                 }
                 catch (KeyNotFoundException)
                 {
-                    return (false, null);
+                    return TryGetNodeResult.NotFound();
                 }
                 catch (AggregateException ex) when (ex.InnerException is KeyNotFoundException)
                 {
-                    return (false, null);
+                    return TryGetNodeResult.NotFound();
                 }
             }, cancellationToken);
         }
@@ -510,10 +824,9 @@
                     using var reader = command.ExecuteReader();
                     while (reader.Read())
                     {
-                        if (Guid.TryParse(reader.GetString(0), out Guid nodeId))
-                        {
-                            nodeIds.Add(nodeId);
-                        }
+                        var idBytes = (byte[])reader[0];
+                        var nodeId = new Guid(idBytes);
+                        nodeIds.Add(nodeId);
                     }
 
                     return nodeIds;
@@ -676,13 +989,15 @@
 
         private void InitializeDatabase()
         {
-            // Create nodes table
+            // Create nodes table with binary storage for better performance
             var createNodesTableCommand = _connection.CreateCommand();
             createNodesTableCommand.CommandText = $@"
                 CREATE TABLE IF NOT EXISTS {_nodesTableName} (
-                    id TEXT PRIMARY KEY,
-                    vector_json TEXT NOT NULL,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    id BLOB PRIMARY KEY,
+                    vector_blob BLOB NOT NULL,
+                    vector_dimension INTEGER NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )";
             createNodesTableCommand.ExecuteNonQuery();
 
@@ -690,8 +1005,8 @@
             var createNeighborsTableCommand = _connection.CreateCommand();
             createNeighborsTableCommand.CommandText = $@"
                 CREATE TABLE IF NOT EXISTS {_neighborsTableName} (
-                    node_id TEXT PRIMARY KEY,
-                    neighbors_json TEXT,
+                    node_id BLOB PRIMARY KEY,
+                    neighbors_blob BLOB,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )";
             createNeighborsTableCommand.ExecuteNonQuery();
@@ -710,7 +1025,7 @@
             var createNodeLayersTableCommand = _connection.CreateCommand();
             createNodeLayersTableCommand.CommandText = $@"
                 CREATE TABLE IF NOT EXISTS {_nodesTableName}_layers (
-                    node_id TEXT PRIMARY KEY,
+                    node_id BLOB PRIMARY KEY,
                     layer INTEGER NOT NULL,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (node_id) REFERENCES {_nodesTableName}(id) ON DELETE CASCADE
@@ -749,7 +1064,7 @@
                 command.CommandText = $@"
                     INSERT OR REPLACE INTO {_nodesTableName}_layers (node_id, layer, updated_at) 
                     VALUES (@nodeId, @layer, CURRENT_TIMESTAMP)";
-                command.Parameters.AddWithValue("@nodeId", nodeId.ToString());
+                command.Parameters.AddWithValue("@nodeId", nodeId.ToByteArray());
                 command.Parameters.AddWithValue("@layer", layer);
                 command.ExecuteNonQuery();
             }
@@ -775,7 +1090,7 @@
             {
                 var command = _connection.CreateCommand();
                 command.CommandText = $"SELECT layer FROM {_nodesTableName}_layers WHERE node_id = @nodeId";
-                command.Parameters.AddWithValue("@nodeId", nodeId.ToString());
+                command.Parameters.AddWithValue("@nodeId", nodeId.ToByteArray());
 
                 var result = command.ExecuteScalar();
                 if (result != null && result != DBNull.Value)
@@ -810,10 +1125,9 @@
                 using var reader = command.ExecuteReader();
                 while (reader.Read())
                 {
-                    if (Guid.TryParse(reader.GetString(0), out Guid nodeId))
-                    {
-                        layers[nodeId] = reader.GetInt32(1);
-                    }
+                    var idBytes = (byte[])reader[0];
+                    var nodeId = new Guid(idBytes);
+                    layers[nodeId] = reader.GetInt32(1);
                 }
 
                 return layers;
@@ -828,7 +1142,7 @@
         {
             var command = _connection.CreateCommand();
             command.CommandText = $"SELECT COUNT(*) FROM {_nodesTableName} WHERE id = @id";
-            command.Parameters.AddWithValue("@id", id.ToString());
+            command.Parameters.AddWithValue("@id", id.ToByteArray());
             var count = Convert.ToInt32(command.ExecuteScalar());
             return count > 0;
         }
@@ -860,6 +1174,81 @@
                 VALUES ('entry_point', @value, CURRENT_TIMESTAMP)";
             command.Parameters.AddWithValue("@value", _entryPoint?.ToString() ?? string.Empty);
             command.ExecuteNonQuery();
+        }
+
+        // Binary serialization methods for better performance
+        private byte[] SerializeVector(List<float> vector)
+        {
+            using var ms = new MemoryStream();
+            using var writer = new BinaryWriter(ms);
+            
+            writer.Write(vector.Count);
+            foreach (var f in vector)
+            {
+                writer.Write(f);
+            }
+            return ms.ToArray();
+        }
+
+        private List<float> DeserializeVector(byte[] bytes)
+        {
+            using var ms = new MemoryStream(bytes);
+            using var reader = new BinaryReader(ms);
+            
+            int count = reader.ReadInt32();
+            var vector = new List<float>(count);
+            for (int i = 0; i < count; i++)
+            {
+                vector.Add(reader.ReadSingle());
+            }
+            return vector;
+        }
+
+        private byte[] SerializeNeighbors(Dictionary<int, HashSet<Guid>> neighbors)
+        {
+            using var ms = new MemoryStream();
+            using var writer = new BinaryWriter(ms);
+            
+            writer.Write(neighbors.Count);
+            foreach (var kvp in neighbors)
+            {
+                writer.Write(kvp.Key); // layer
+                writer.Write(kvp.Value.Count); // neighbor count
+                foreach (var neighborId in kvp.Value)
+                {
+                    writer.Write(neighborId.ToByteArray());
+                }
+            }
+            return ms.ToArray();
+        }
+
+        private Dictionary<int, HashSet<Guid>> DeserializeNeighbors(byte[] bytes)
+        {
+            if (bytes == null || bytes.Length == 0)
+                return new Dictionary<int, HashSet<Guid>>();
+                
+            using var ms = new MemoryStream(bytes);
+            using var reader = new BinaryReader(ms);
+            
+            var neighbors = new Dictionary<int, HashSet<Guid>>();
+            int layerCount = reader.ReadInt32();
+            
+            for (int i = 0; i < layerCount; i++)
+            {
+                int layer = reader.ReadInt32();
+                int neighborCount = reader.ReadInt32();
+                var layerNeighbors = new HashSet<Guid>();
+                
+                for (int j = 0; j < neighborCount; j++)
+                {
+                    var guidBytes = reader.ReadBytes(16);
+                    layerNeighbors.Add(new Guid(guidBytes));
+                }
+                
+                neighbors[layer] = layerNeighbors;
+            }
+            
+            return neighbors;
         }
 
 #pragma warning restore CS8619 // Nullability of reference types in value doesn't match target type.

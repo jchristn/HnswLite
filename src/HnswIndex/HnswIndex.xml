@@ -7,6 +7,7 @@
         <member name="T:Hnsw.CosineDistance">
             <summary>
             Calculates cosine distance between vectors.
+            Thread-safe implementation.
             </summary>
         </member>
         <member name="P:Hnsw.CosineDistance.Name">
@@ -17,11 +18,18 @@
         <member name="M:Hnsw.CosineDistance.Distance(System.Collections.Generic.List{System.Single},System.Collections.Generic.List{System.Single})">
             <summary>
             Calculates the cosine distance between two vectors.
+            Returns 0 for identical vectors and approaches 2 for opposite vectors.
             </summary>
+            <param name="a">First vector. Cannot be null.</param>
+            <param name="b">Second vector. Cannot be null.</param>
+            <returns>The cosine distance between the vectors (1 - cosine similarity).</returns>
+            <exception cref="T:System.ArgumentNullException">Thrown when a or b is null.</exception>
+            <exception cref="T:System.ArgumentException">Thrown when vectors have different dimensions.</exception>
         </member>
         <member name="T:Hnsw.DotProductDistance">
             <summary>
             Calculates dot product distance between vectors (negated for use as distance metric).
+            Thread-safe implementation.
             </summary>
         </member>
         <member name="P:Hnsw.DotProductDistance.Name">
@@ -32,11 +40,18 @@
         <member name="M:Hnsw.DotProductDistance.Distance(System.Collections.Generic.List{System.Single},System.Collections.Generic.List{System.Single})">
             <summary>
             Calculates the negative dot product between two vectors.
+            Higher dot product results in lower distance (negated).
             </summary>
+            <param name="a">First vector. Cannot be null.</param>
+            <param name="b">Second vector. Cannot be null.</param>
+            <returns>The negative dot product between the vectors.</returns>
+            <exception cref="T:System.ArgumentNullException">Thrown when a or b is null.</exception>
+            <exception cref="T:System.ArgumentException">Thrown when vectors have different dimensions.</exception>
         </member>
         <member name="T:Hnsw.EuclideanDistance">
             <summary>
             Calculates Euclidean distance between vectors.
+            Thread-safe implementation.
             </summary>
         </member>
         <member name="P:Hnsw.EuclideanDistance.Name">
@@ -48,6 +63,11 @@
             <summary>
             Calculates the Euclidean distance between two vectors.
             </summary>
+            <param name="a">First vector. Cannot be null.</param>
+            <param name="b">Second vector. Cannot be null.</param>
+            <returns>The Euclidean distance between the vectors.</returns>
+            <exception cref="T:System.ArgumentNullException">Thrown when a or b is null.</exception>
+            <exception cref="T:System.ArgumentException">Thrown when vectors have different dimensions.</exception>
         </member>
         <member name="T:Hnsw.HnswParameters">
             <summary>
@@ -186,9 +206,9 @@
         </member>
         <member name="P:Hnsw.HnswIndex.Seed">
             <summary>
-            Gets or sets the random seed for reproducible results.
-            Minimum: -1 (random seed), Maximum: int.MaxValue, Default: -1.
-            Use -1 for random seed, or any non-negative value for deterministic behavior.
+            Gets or sets the _Random seed for reproducible results.
+            Minimum: -1 (_Random seed), Maximum: int.MaxValue, Default: -1.
+            Use -1 for _Random seed, or any non-negative value for deterministic behavior.
             </summary>
         </member>
         <member name="P:Hnsw.HnswIndex.VectorDimension">
@@ -198,20 +218,20 @@
         </member>
         <member name="M:Hnsw.HnswIndex.#ctor(System.Int32,Hnsw.IHnswStorage,Hnsw.IHnswLayerStorage)">
             <summary>
-            Initializes a new instance of the HNSWIndex class with custom storage.
+            Initializes a new instance of the HNSWIndex class with custom _Storage.
             </summary>
             <param name="dimension">The dimensionality of vectors to be indexed. Minimum: 1, Maximum: 4096.</param>
-            <param name="storage">Storage backend implementation. Cannot be null.</param>
-            <param name="layerStorage">Layer storage backend implementation.  Cannot be null.</param>
+            <param name="_Storage">Storage backend implementation. Cannot be null.</param>
+            <param name="_LayerStorage">Layer _Storage backend implementation.  Cannot be null.</param>
         </member>
         <member name="M:Hnsw.HnswIndex.#ctor(System.Int32,Hnsw.IHnswStorage,Hnsw.IHnswLayerStorage,System.Nullable{System.Int32})">
             <summary>
-            Initializes a new instance of the HNSWIndex class with custom storage and seed.
+            Initializes a new instance of the HNSWIndex class with custom _Storage and seed.
             </summary>
             <param name="dimension">The dimensionality of vectors to be indexed. Minimum: 1, Maximum: 4096.</param>
-            <param name="storage">Storage backend implementation. Cannot be null.</param>
-            <param name="layerStorage">Layer storage backend implementation.  Cannot be null.</param>
-            <param name="seed">Random seed for reproducible results. Use null for random seed.</param>
+            <param name="_Storage">Storage backend implementation. Cannot be null.</param>
+            <param name="_LayerStorage">Layer _Storage backend implementation.  Cannot be null.</param>
+            <param name="seed">Random seed for reproducible results. Use null for _Random seed.</param>
         </member>
         <member name="M:Hnsw.HnswIndex.AddAsync(System.Guid,System.Collections.Generic.List{System.Single},System.Threading.CancellationToken)">
             <summary>
@@ -221,12 +241,16 @@
             <param name="vector">Vector data. Cannot be null. Must match index dimension.</param>
             <param name="cancellationToken">Cancellation token.</param>
         </member>
-        <member name="M:Hnsw.HnswIndex.AddBatchAsync(System.Collections.Generic.IEnumerable{System.ValueTuple{System.Guid,System.Collections.Generic.List{System.Single}}},System.Threading.CancellationToken)">
+        <member name="M:Hnsw.HnswIndex.AddNodesAsync(System.Collections.Generic.Dictionary{System.Guid,System.Collections.Generic.List{System.Single}},System.Threading.CancellationToken)">
             <summary>
-            Adds multiple vectors to the index.
+            Adds multiple vectors to the index in a single atomic operation.
+            Acquires write lock once, updates _Storage and graph structure, then releases lock.
+            More efficient than calling AddAsync multiple times.
             </summary>
-            <param name="items">Collection of (id, vector) pairs to add. Cannot be null or contain null vectors.</param>
+            <param name="nodes">Dictionary mapping node IDs to their vector data. Cannot be null or empty.</param>
             <param name="cancellationToken">Cancellation token.</param>
+            <exception cref="T:System.ArgumentNullException">Thrown when nodes is null.</exception>
+            <exception cref="T:System.ArgumentException">Thrown when nodes is empty, any ID is Guid.Empty, or vector dimensions don't match.</exception>
         </member>
         <member name="M:Hnsw.HnswIndex.RemoveAsync(System.Guid,System.Threading.CancellationToken)">
             <summary>
@@ -235,12 +259,16 @@
             <param name="guid">Identifier of the vector to remove.</param>
             <param name="cancellationToken">Cancellation token.</param>
         </member>
-        <member name="M:Hnsw.HnswIndex.RemoveBatchAsync(System.Collections.Generic.IEnumerable{System.Guid},System.Threading.CancellationToken)">
+        <member name="M:Hnsw.HnswIndex.RemoveNodesAsync(System.Collections.Generic.List{System.Guid},System.Threading.CancellationToken)">
             <summary>
-            Removes multiple vectors from the index.
+            Removes multiple vectors from the index in a single atomic operation.
+            Acquires write lock once, updates _Storage and graph structure, then releases lock.
+            More efficient than calling RemoveAsync multiple times.
             </summary>
-            <param name="guids">Collection of identifiers to remove. Cannot be null.</param>
+            <param name="nodeIds">List of node IDs to remove. Cannot be null or empty.</param>
             <param name="cancellationToken">Cancellation token.</param>
+            <exception cref="T:System.ArgumentNullException">Thrown when nodeIds is null.</exception>
+            <exception cref="T:System.ArgumentException">Thrown when nodeIds is empty.</exception>
         </member>
         <member name="M:Hnsw.HnswIndex.GetTopKAsync(System.Collections.Generic.List{System.Single},System.Int32,System.Nullable{System.Int32},System.Threading.CancellationToken)">
             <summary>
@@ -271,18 +299,20 @@
             Interface for distance calculation between vectors.
             </summary>
         </member>
-        <member name="M:Hnsw.IDistanceFunction.Distance(System.Collections.Generic.List{System.Single},System.Collections.Generic.List{System.Single})">
-            <summary>
-            Calculates the distance between two vectors.
-            </summary>
-            <param name="a">First vector.</param>
-            <param name="b">Second vector.</param>
-            <returns>Distance between the vectors.</returns>
-        </member>
         <member name="P:Hnsw.IDistanceFunction.Name">
             <summary>
             Gets the name of the distance function.
             </summary>
+        </member>
+        <member name="M:Hnsw.IDistanceFunction.Distance(System.Collections.Generic.List{System.Single},System.Collections.Generic.List{System.Single})">
+            <summary>
+            Calculates the distance between two vectors.
+            </summary>
+            <param name="a">First vector. Cannot be null.</param>
+            <param name="b">Second vector. Cannot be null.</param>
+            <returns>Distance between the vectors.</returns>
+            <exception cref="T:System.ArgumentNullException">Thrown when a or b is null.</exception>
+            <exception cref="T:System.ArgumentException">Thrown when vectors have different dimensions.</exception>
         </member>
         <member name="T:Hnsw.IHnswLayerStorage">
             <summary>
@@ -377,15 +407,42 @@
             Adds a new node to storage.
             </summary>
         </member>
+        <member name="M:Hnsw.IHnswStorage.AddNodesAsync(System.Collections.Generic.Dictionary{System.Guid,System.Collections.Generic.List{System.Single}},System.Threading.CancellationToken)">
+            <summary>
+            Adds multiple nodes to storage in a batch operation.
+            More efficient than calling AddNodeAsync multiple times.
+            </summary>
+            <param name="nodes">Dictionary mapping node IDs to their vector data. Cannot be null.</param>
+            <param name="cancellationToken">Cancellation token.</param>
+            <returns>Task representing the asynchronous operation.</returns>
+        </member>
         <member name="M:Hnsw.IHnswStorage.RemoveNodeAsync(System.Guid,System.Threading.CancellationToken)">
             <summary>
             Removes a node from storage.
             </summary>
         </member>
+        <member name="M:Hnsw.IHnswStorage.RemoveNodesAsync(System.Collections.Generic.IEnumerable{System.Guid},System.Threading.CancellationToken)">
+            <summary>
+            Removes multiple nodes from storage in a batch operation.
+            More efficient than calling RemoveNodeAsync multiple times.
+            </summary>
+            <param name="ids">Collection of node IDs to remove. Cannot be null.</param>
+            <param name="cancellationToken">Cancellation token.</param>
+            <returns>Task representing the asynchronous operation.</returns>
+        </member>
         <member name="M:Hnsw.IHnswStorage.GetNodeAsync(System.Guid,System.Threading.CancellationToken)">
             <summary>
             Gets a node by ID.
             </summary>
+        </member>
+        <member name="M:Hnsw.IHnswStorage.GetNodesAsync(System.Collections.Generic.IEnumerable{System.Guid},System.Threading.CancellationToken)">
+            <summary>
+            Gets multiple nodes by their IDs in a batch operation.
+            More efficient than calling GetNodeAsync multiple times.
+            </summary>
+            <param name="ids">Collection of node IDs to retrieve. Cannot be null.</param>
+            <param name="cancellationToken">Cancellation token.</param>
+            <returns>Dictionary mapping node IDs to their corresponding nodes. Only includes nodes that exist.</returns>
         </member>
         <member name="M:Hnsw.IHnswStorage.TryGetNodeAsync(System.Guid,System.Threading.CancellationToken)">
             <summary>
@@ -587,6 +644,176 @@
             Creates a deep copy of this NodeState.
             </summary>
             <returns>A new NodeState instance with copied values.</returns>
+        </member>
+        <member name="T:Hnsw.PriorityItem`1">
+            <summary>
+            Represents an item with an associated priority for use in priority queues.
+            </summary>
+            <typeparam name="T">The type of the item.</typeparam>
+        </member>
+        <member name="P:Hnsw.PriorityItem`1.Priority">
+            <summary>
+            Gets the priority of the item.
+            Lower values indicate higher priority.
+            </summary>
+        </member>
+        <member name="P:Hnsw.PriorityItem`1.Item">
+            <summary>
+            Gets the item associated with the priority.
+            </summary>
+        </member>
+        <member name="M:Hnsw.PriorityItem`1.#ctor(System.Single,`0)">
+            <summary>
+            Initializes a new instance of the PriorityItem class.
+            </summary>
+            <param name="priority">The priority of the item. Must be a finite number.</param>
+            <param name="item">The item associated with the priority.</param>
+            <exception cref="T:System.ArgumentException">Thrown when priority is NaN or Infinity.</exception>
+        </member>
+        <member name="M:Hnsw.PriorityItem`1.ToString">
+            <summary>
+            Returns a string representation of the priority item.
+            </summary>
+            <returns>A string containing the priority and item information.</returns>
+        </member>
+        <member name="M:Hnsw.PriorityItem`1.Equals(System.Object)">
+            <summary>
+            Determines whether the specified object is equal to the current priority item.
+            </summary>
+            <param name="obj">The object to compare with the current priority item.</param>
+            <returns>true if the specified object is equal to the current priority item; otherwise, false.</returns>
+        </member>
+        <member name="M:Hnsw.PriorityItem`1.GetHashCode">
+            <summary>
+            Returns the hash code for this priority item.
+            </summary>
+            <returns>A hash code for the current priority item.</returns>
+        </member>
+        <member name="T:Hnsw.SearchCandidate">
+            <summary>
+            Represents a candidate node during HNSW search operations.
+            </summary>
+        </member>
+        <member name="P:Hnsw.SearchCandidate.Distance">
+            <summary>
+            Gets or sets the distance from the query vector.
+            </summary>
+        </member>
+        <member name="P:Hnsw.SearchCandidate.NodeId">
+            <summary>
+            Gets or sets the node identifier.
+            </summary>
+        </member>
+        <member name="M:Hnsw.SearchCandidate.#ctor">
+            <summary>
+            Initializes a new instance of the SearchCandidate class.
+            </summary>
+        </member>
+        <member name="M:Hnsw.SearchCandidate.#ctor(System.Single,System.Guid)">
+            <summary>
+            Initializes a new instance of the SearchCandidate class with specified values.
+            </summary>
+            <param name="distance">Distance from the query vector.</param>
+            <param name="nodeId">Node identifier.</param>
+        </member>
+        <member name="M:Hnsw.SearchCandidate.CompareTo(Hnsw.SearchCandidate)">
+            <summary>
+            Compares this candidate to another based on distance.
+            </summary>
+            <param name="other">The other candidate to compare to. Can be null.</param>
+            <returns>A value indicating the relative order.</returns>
+        </member>
+        <member name="T:Hnsw.SearchContext">
+            <summary>
+            Search context that provides caching of nodes during search operations.
+            This dramatically reduces the number of storage reads during search traversal.
+            </summary>
+        </member>
+        <member name="P:Hnsw.SearchContext.CachedNodeCount">
+            <summary>
+            Gets the number of nodes currently cached.
+            </summary>
+        </member>
+        <member name="M:Hnsw.SearchContext.#ctor(Hnsw.IHnswStorage,System.Threading.CancellationToken)">
+            <summary>
+            Initializes a new instance of the SearchContext class.
+            </summary>
+            <param name="storage">The storage backend to read nodes from.</param>
+            <param name="cancellationToken">Cancellation token for the search operation.</param>
+            <exception cref="T:System.ArgumentNullException">Thrown when storage is null.</exception>
+        </member>
+        <member name="M:Hnsw.SearchContext.GetNodeAsync(System.Guid)">
+            <summary>
+            Gets a node by ID, using the cache if available.
+            </summary>
+            <param name="id">The node ID to retrieve.</param>
+            <returns>The requested node.</returns>
+        </member>
+        <member name="M:Hnsw.SearchContext.GetNodesAsync(System.Collections.Generic.IEnumerable{System.Guid})">
+            <summary>
+            Gets multiple nodes by their IDs, using cache where possible and batch-loading the rest.
+            </summary>
+            <param name="ids">Collection of node IDs to retrieve.</param>
+            <returns>Dictionary mapping node IDs to nodes.</returns>
+        </member>
+        <member name="M:Hnsw.SearchContext.PrefetchNodesAsync(System.Collections.Generic.IEnumerable{System.Guid})">
+            <summary>
+            Pre-fetches nodes into the cache to avoid individual loads later.
+            </summary>
+            <param name="ids">Collection of node IDs to pre-fetch.</param>
+        </member>
+        <member name="M:Hnsw.SearchContext.TryGetNodeAsync(System.Guid)">
+            <summary>
+            Tries to get a node, returning success status.
+            </summary>
+            <param name="id">The node ID to retrieve.</param>
+            <returns>Result indicating success and the node if found.</returns>
+        </member>
+        <member name="M:Hnsw.SearchContext.ClearCache">
+            <summary>
+            Clears the cache. Useful for long-running operations to control memory usage.
+            </summary>
+        </member>
+        <member name="T:Hnsw.TryGetNodeResult">
+            <summary>
+            Represents the result of a TryGetNode operation.
+            </summary>
+        </member>
+        <member name="P:Hnsw.TryGetNodeResult.Success">
+            <summary>
+            Gets or sets a value indicating whether the node was found.
+            </summary>
+        </member>
+        <member name="P:Hnsw.TryGetNodeResult.Node">
+            <summary>
+            Gets or sets the node if found, null otherwise.
+            </summary>
+        </member>
+        <member name="M:Hnsw.TryGetNodeResult.#ctor">
+            <summary>
+            Initializes a new instance of the TryGetNodeResult class.
+            </summary>
+        </member>
+        <member name="M:Hnsw.TryGetNodeResult.#ctor(System.Boolean,Hnsw.IHnswNode)">
+            <summary>
+            Initializes a new instance of the TryGetNodeResult class with specified values.
+            </summary>
+            <param name="success">Whether the node was found.</param>
+            <param name="node">The node if found. Can be null.</param>
+        </member>
+        <member name="M:Hnsw.TryGetNodeResult.Found(Hnsw.IHnswNode)">
+            <summary>
+            Creates a successful result with the specified node.
+            </summary>
+            <param name="node">The found node. Cannot be null.</param>
+            <returns>A successful result.</returns>
+            <exception cref="T:System.ArgumentNullException">Thrown when node is null.</exception>
+        </member>
+        <member name="M:Hnsw.TryGetNodeResult.NotFound">
+            <summary>
+            Creates a failed result indicating the node was not found.
+            </summary>
+            <returns>A failed result.</returns>
         </member>
         <member name="T:Hnsw.VectorResult">
             <summary>

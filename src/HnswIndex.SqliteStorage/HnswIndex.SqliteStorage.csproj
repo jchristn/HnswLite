@@ -2,12 +2,13 @@
 
 	<PropertyGroup>
 		<TargetFramework>net8.0</TargetFramework>
+		<Version>1.0.3</Version>
+		<Nullable>enable</Nullable>
 		<ApplicationIcon>logo.ico</ApplicationIcon>
 		<GenerateDocumentationFile>True</GenerateDocumentationFile>
 		<DocumentationFile>HsnwIndex.SqliteStorage.xml</DocumentationFile>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<Title>HnswLite.SqliteStorage</Title>
-		<Version>1.0.2</Version>
 		<Authors>Joel Christner</Authors>
 		<Description>Sqlite storage implementation for HnswIndex</Description>
 		<Copyright>(c)2025 Joel Christner</Copyright>

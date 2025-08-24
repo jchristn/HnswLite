@@ -178,6 +178,72 @@
         }
 
         /// <summary>
+        /// Adds multiple nodes to storage in a batch operation.
+        /// Thread-safe operation.
+        /// More efficient than calling AddNodeAsync multiple times.
+        /// If this is the first batch and EntryPoint is null, the first node becomes the entry point.
+        /// </summary>
+        /// <param name="nodes">Dictionary mapping node IDs to their vector data. Cannot be null.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <exception cref="ArgumentNullException">Thrown when nodes is null.</exception>
+        /// <exception cref="ArgumentException">Thrown when any node ID is Guid.Empty or vector is invalid.</exception>
+        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        public async Task AddNodesAsync(Dictionary<Guid, List<float>> nodes, CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            if (nodes == null)
+                throw new ArgumentNullException(nameof(nodes));
+
+            await Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // Validate and create all nodes first (outside of lock)
+                var newNodes = new Dictionary<Guid, RamHnswNode>(nodes.Count);
+                foreach (var kvp in nodes)
+                {
+                    if (kvp.Key == Guid.Empty)
+                        throw new ArgumentException($"Node ID cannot be Guid.Empty.", nameof(nodes));
+                    if (kvp.Value == null)
+                        throw new ArgumentNullException(nameof(nodes), $"Vector for node {kvp.Key} is null.");
+                    if (kvp.Value.Count == 0)
+                        throw new ArgumentException($"Vector for node {kvp.Key} cannot be empty.", nameof(nodes));
+
+                    newNodes[kvp.Key] = new RamHnswNode(kvp.Key, kvp.Value);
+                }
+
+                _storageLock.EnterWriteLock();
+                try
+                {
+                    bool wasEmpty = _entryPoint == null;
+
+                    // Add all nodes
+                    foreach (var kvp in newNodes)
+                    {
+                        // Dispose of existing node if replacing
+                        if (_nodes.TryGetValue(kvp.Key, out var existingNode))
+                        {
+                            existingNode.Dispose();
+                        }
+
+                        _nodes[kvp.Key] = kvp.Value;
+                    }
+
+                    // Set entry point if this was the first batch
+                    if (wasEmpty && newNodes.Count > 0)
+                    {
+                        _entryPoint = newNodes.Keys.First();
+                    }
+                }
+                finally
+                {
+                    _storageLock.ExitWriteLock();
+                }
+            }, cancellationToken);
+        }
+
+        /// <summary>
         /// Removes a node from storage.
         /// Thread-safe operation.
         /// If the removed node was the entry point, a new entry point is automatically selected.
@@ -219,6 +285,61 @@
         }
 
         /// <summary>
+        /// Removes multiple nodes from storage in a batch operation.
+        /// Thread-safe operation.
+        /// More efficient than calling RemoveNodeAsync multiple times.
+        /// If any removed node was the entry point, a new entry point is automatically selected.
+        /// </summary>
+        /// <param name="ids">Collection of node IDs to remove. Cannot be null.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <exception cref="ArgumentNullException">Thrown when ids is null.</exception>
+        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        public async Task RemoveNodesAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            if (ids == null)
+                throw new ArgumentNullException(nameof(ids));
+
+            await Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                _storageLock.EnterWriteLock();
+                try
+                {
+                    bool entryPointRemoved = false;
+
+                    foreach (var id in ids)
+                    {
+                        if (_nodes.TryGetValue(id, out var node))
+                        {
+                            node.Dispose();
+                            _nodes.Remove(id);
+
+                            if (_entryPoint == id)
+                            {
+                                entryPointRemoved = true;
+                            }
+                        }
+                    }
+
+                    // Update entry point if necessary
+                    if (entryPointRemoved)
+                    {
+                        _entryPoint = _nodes.Keys.FirstOrDefault();
+                        if (_entryPoint.Value == Guid.Empty)
+                            _entryPoint = null;
+                    }
+                }
+                finally
+                {
+                    _storageLock.ExitWriteLock();
+                }
+            }, cancellationToken);
+        }
+
+        /// <summary>
         /// Gets a node by ID.
         /// Thread-safe operation.
         /// </summary>
@@ -250,6 +371,47 @@
         }
 
         /// <summary>
+        /// Gets multiple nodes by their IDs in a batch operation.
+        /// Thread-safe operation.
+        /// More efficient than calling GetNodeAsync multiple times.
+        /// </summary>
+        /// <param name="ids">Collection of node IDs to retrieve. Cannot be null.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <returns>Dictionary mapping node IDs to their corresponding nodes. Only includes nodes that exist.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when ids is null.</exception>
+        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        public async Task<Dictionary<Guid, IHnswNode>> GetNodesAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            if (ids == null)
+                throw new ArgumentNullException(nameof(ids));
+
+            return await Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                _storageLock.EnterReadLock();
+                try
+                {
+                    var result = new Dictionary<Guid, IHnswNode>();
+                    foreach (var id in ids)
+                    {
+                        if (_nodes.TryGetValue(id, out var node))
+                        {
+                            result[id] = node;
+                        }
+                    }
+                    return result;
+                }
+                finally
+                {
+                    _storageLock.ExitReadLock();
+                }
+            }, cancellationToken);
+        }
+
+        /// <summary>
         /// Tries to get a node by ID.
         /// Thread-safe operation.
         /// </summary>
@@ -257,7 +419,7 @@
         /// <param name="cancellationToken">Cancellation token.</param>
         /// <returns>A tuple indicating success and the node if found.</returns>
         /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public async Task<(bool success, IHnswNode node)> TryGetNodeAsync(Guid id, CancellationToken cancellationToken = default)
+        public async Task<TryGetNodeResult> TryGetNodeAsync(Guid id, CancellationToken cancellationToken = default)
         {
             ThrowIfDisposed();
 
@@ -270,9 +432,9 @@
                 {
                     if (_nodes.TryGetValue(id, out var node))
                     {
-                        return (true, node);
+                        return TryGetNodeResult.Found(node);
                     }
-                    return (false, null);
+                    return TryGetNodeResult.NotFound();
                 }
                 finally
                 {

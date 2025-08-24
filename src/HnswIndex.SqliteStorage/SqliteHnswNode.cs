@@ -1,11 +1,11 @@
-﻿namespace Hnsw.SqliteStorage
+namespace Hnsw.SqliteStorage
 {
     using System;
     using System.Collections.Generic;
+    using System.IO;
     using System.Linq;
     using System.Threading;
     using Microsoft.Data.Sqlite;
-    using System.Text.Json;
     using Hnsw;
 
     /// <summary>
@@ -13,41 +13,48 @@
     /// </summary>
     public class SqliteHnswNode : IHnswNode, IDisposable
     {
-        // Private members
-        private readonly Guid _id;
-        private readonly List<float> _vector;
-        private readonly Dictionary<int, HashSet<Guid>> _neighbors = new Dictionary<int, HashSet<Guid>>();
-        private readonly ReaderWriterLockSlim _nodeLock = new ReaderWriterLockSlim();
-        private readonly SqliteConnection _connection;
-        private readonly string _tableName;
-        private bool _disposed = false;
-        private bool _isDirty = false;
+        #region Public-Members
 
-        // Public properties
         /// <summary>
         /// Gets the unique identifier of the node.
         /// Cannot be Guid.Empty.
         /// </summary>
-        public Guid Id => _id;
+        public Guid Id => _Id;
 
         /// <summary>
         /// Gets the vector associated with the node.
         /// Never null. Vector dimension typically ranges from 1 to 4096.
         /// All values must be finite (not NaN or Infinity).
         /// </summary>
-        public List<float> Vector => _vector;
+        public List<float> Vector => _Vector;
 
         /// <summary>
         /// Gets whether this node has been disposed.
         /// </summary>
-        public bool IsDisposed => _disposed;
+        public bool IsDisposed => _Disposed;
 
         /// <summary>
         /// Gets whether the node has unsaved changes.
         /// </summary>
-        public bool IsDirty => _isDirty;
+        public bool IsDirty => _IsDirty;
 
-        // Constructors
+        #endregion
+
+        #region Private-Members
+
+        private readonly Guid _Id;
+        private readonly List<float> _Vector;
+        private readonly Dictionary<int, HashSet<Guid>> _Neighbors = new Dictionary<int, HashSet<Guid>>();
+        private readonly ReaderWriterLockSlim _NodeLock = new ReaderWriterLockSlim();
+        private readonly SqliteConnection _Connection;
+        private readonly string _TableName;
+        private bool _Disposed = false;
+        private bool _IsDirty = false;
+
+        #endregion
+
+        #region Constructors-and-Factories
+
         /// <summary>
         /// Initializes a new instance of the SqliteHnswNode class.
         /// </summary>
@@ -60,32 +67,44 @@
         public SqliteHnswNode(Guid id, List<float> vector, SqliteConnection connection, string tableName)
         {
             if (id == Guid.Empty)
+            {
                 throw new ArgumentException("Id cannot be Guid.Empty.", nameof(id));
-            if (vector == null)
-                throw new ArgumentNullException(nameof(vector));
+            }
+            
+            ArgumentNullException.ThrowIfNull(vector, nameof(vector));
+            ArgumentNullException.ThrowIfNull(connection, nameof(connection));
+            
             if (vector.Count == 0)
+            {
                 throw new ArgumentException("Vector cannot be empty.", nameof(vector));
-            if (connection == null)
-                throw new ArgumentNullException(nameof(connection));
+            }
+            
             if (string.IsNullOrWhiteSpace(tableName))
+            {
                 throw new ArgumentNullException(nameof(tableName));
+            }
 
             // Validate vector values
             for (int i = 0; i < vector.Count; i++)
             {
                 if (float.IsNaN(vector[i]) || float.IsInfinity(vector[i]))
+                {
                     throw new ArgumentException($"Vector contains invalid value at index {i}. All values must be finite.", nameof(vector));
+                }
             }
 
-            _id = id;
-            _vector = new List<float>(vector); // Create defensive copy
-            _connection = connection;
-            _tableName = tableName;
+            _Id = id;
+            _Vector = new List<float>(vector); // Create defensive copy
+            _Connection = connection;
+            _TableName = tableName;
 
             LoadNeighborsFromDatabase();
         }
 
-        // Public methods
+        #endregion
+
+        #region Public-Methods
+
         /// <summary>
         /// Gets a copy of the node's neighbors organized by layer.
         /// Thread-safe operation.
@@ -98,11 +117,11 @@
         {
             ThrowIfDisposed();
 
-            _nodeLock.EnterReadLock();
+            _NodeLock.EnterReadLock();
             try
             {
-                var result = new Dictionary<int, HashSet<Guid>>();
-                foreach (var kvp in _neighbors)
+                Dictionary<int, HashSet<Guid>> result = new Dictionary<int, HashSet<Guid>>();
+                foreach (KeyValuePair<int, HashSet<Guid>> kvp in _Neighbors)
                 {
                     result[kvp.Key] = new HashSet<Guid>(kvp.Value);
                 }
@@ -110,7 +129,7 @@
             }
             finally
             {
-                _nodeLock.ExitReadLock();
+                _NodeLock.ExitReadLock();
             }
         }
 
@@ -128,29 +147,43 @@
             ThrowIfDisposed();
 
             if (layer < 0)
+            {
                 throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot be negative.");
+            }
+            
             if (layer > 63)
+            {
                 throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot exceed 63.");
+            }
+            
             if (neighborId == Guid.Empty)
+            {
                 throw new ArgumentException("NeighborId cannot be Guid.Empty.", nameof(neighborId));
-            if (neighborId == _id)
+            }
+            
+            if (neighborId == _Id)
+            {
                 throw new ArgumentException("Node cannot be its own neighbor.", nameof(neighborId));
+            }
 
-            _nodeLock.EnterWriteLock();
+            _NodeLock.EnterWriteLock();
             try
             {
-                if (!_neighbors.ContainsKey(layer))
-                    _neighbors[layer] = new HashSet<Guid>();
-
-                if (_neighbors[layer].Add(neighborId))
+                if (!_Neighbors.ContainsKey(layer))
                 {
-                    _isDirty = true;
-                    SaveNeighborsToDatabase();
+                    _Neighbors[layer] = new HashSet<Guid>();
+                }
+
+                if (_Neighbors[layer].Add(neighborId))
+                {
+                    _IsDirty = true;
+                    // Don't save immediately - wait for explicit Flush() call for better batch performance
+                    // SaveNeighborsToDatabase();
                 }
             }
             finally
             {
-                _nodeLock.ExitWriteLock();
+                _NodeLock.ExitWriteLock();
             }
         }
 
@@ -168,27 +201,35 @@
             ThrowIfDisposed();
 
             if (layer < 0)
+            {
                 throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot be negative.");
+            }
+            
             if (layer > 63)
+            {
                 throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot exceed 63.");
+            }
 
-            _nodeLock.EnterWriteLock();
+            _NodeLock.EnterWriteLock();
             try
             {
-                if (_neighbors.ContainsKey(layer))
+                if (_Neighbors.ContainsKey(layer))
                 {
-                    if (_neighbors[layer].Remove(neighborId))
+                    if (_Neighbors[layer].Remove(neighborId))
                     {
-                        _isDirty = true;
-                        if (_neighbors[layer].Count == 0)
-                            _neighbors.Remove(layer);
-                        SaveNeighborsToDatabase();
+                        _IsDirty = true;
+                        if (_Neighbors[layer].Count == 0)
+                        {
+                            _Neighbors.Remove(layer);
+                        }
+                        // Don't save immediately - wait for explicit Flush() call for better batch performance
+                        // SaveNeighborsToDatabase();
                     }
                 }
             }
             finally
             {
-                _nodeLock.ExitWriteLock();
+                _NodeLock.ExitWriteLock();
             }
         }
 
@@ -205,18 +246,23 @@
             ThrowIfDisposed();
 
             if (layer < 0)
+            {
                 throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot be negative.");
+            }
+            
             if (layer > 63)
+            {
                 throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot exceed 63.");
+            }
 
-            _nodeLock.EnterReadLock();
+            _NodeLock.EnterReadLock();
             try
             {
-                return _neighbors.TryGetValue(layer, out var layerNeighbors) ? layerNeighbors.Count : 0;
+                return _Neighbors.TryGetValue(layer, out HashSet<Guid>? layerNeighbors) ? layerNeighbors.Count : 0;
             }
             finally
             {
-                _nodeLock.ExitReadLock();
+                _NodeLock.ExitReadLock();
             }
         }
 
@@ -230,14 +276,14 @@
         {
             ThrowIfDisposed();
 
-            _nodeLock.EnterReadLock();
+            _NodeLock.EnterReadLock();
             try
             {
-                return _neighbors.Values.Sum(set => set.Count);
+                return _Neighbors.Values.Sum(set => set.Count);
             }
             finally
             {
-                _nodeLock.ExitReadLock();
+                _NodeLock.ExitReadLock();
             }
         }
 
@@ -255,18 +301,23 @@
             ThrowIfDisposed();
 
             if (layer < 0)
+            {
                 throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot be negative.");
+            }
+            
             if (layer > 63)
+            {
                 throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot exceed 63.");
+            }
 
-            _nodeLock.EnterReadLock();
+            _NodeLock.EnterReadLock();
             try
             {
-                return _neighbors.TryGetValue(layer, out var layerNeighbors) && layerNeighbors.Contains(neighborId);
+                return _Neighbors.TryGetValue(layer, out HashSet<Guid>? layerNeighbors) && layerNeighbors.Contains(neighborId);
             }
             finally
             {
-                _nodeLock.ExitReadLock();
+                _NodeLock.ExitReadLock();
             }
         }
 
@@ -279,18 +330,18 @@
         {
             ThrowIfDisposed();
 
-            _nodeLock.EnterWriteLock();
+            _NodeLock.EnterWriteLock();
             try
             {
-                if (_isDirty)
+                if (_IsDirty)
                 {
                     SaveNeighborsToDatabase();
-                    _isDirty = false;
+                    _IsDirty = false;
                 }
             }
             finally
             {
-                _nodeLock.ExitWriteLock();
+                _NodeLock.ExitWriteLock();
             }
         }
 
@@ -303,14 +354,17 @@
             GC.SuppressFinalize(this);
         }
 
-        // Protected methods
+        #endregion
+
+        #region Private-Methods
+
         /// <summary>
         /// Disposes of the node's resources.
         /// </summary>
         /// <param name="disposing">true if disposing managed resources; otherwise, false.</param>
         protected virtual void Dispose(bool disposing)
         {
-            if (!_disposed)
+            if (!_Disposed)
             {
                 if (disposing)
                 {
@@ -322,47 +376,39 @@
                     {
                         // Ignore errors during disposal
                     }
-                    _nodeLock?.Dispose();
+                    _NodeLock?.Dispose();
                 }
-                _disposed = true;
+                _Disposed = true;
             }
         }
 
-        // Private methods
         private void ThrowIfDisposed()
         {
-            if (_disposed)
+            if (_Disposed)
+            {
                 throw new ObjectDisposedException(nameof(SqliteHnswNode));
+            }
         }
 
         private void LoadNeighborsFromDatabase()
         {
             try
             {
-                var command = _connection.CreateCommand();
-                command.CommandText = $"SELECT neighbors_json FROM {_tableName} WHERE node_id = @nodeId";
-                command.Parameters.AddWithValue("@nodeId", _id.ToString());
+                SqliteCommand command = _Connection.CreateCommand();
+                command.CommandText = $"SELECT neighbors_blob FROM {_TableName} WHERE node_id = @nodeId";
+                command.Parameters.AddWithValue("@nodeId", _Id.ToByteArray());
 
-                var result = command.ExecuteScalar();
+                object? result = command.ExecuteScalar();
                 if (result != null && result != DBNull.Value)
                 {
-                    var json = result.ToString();
-                    if (!string.IsNullOrWhiteSpace(json))
+                    byte[]? blob = (byte[]?)result;
+                    if (blob != null && blob.Length > 0)
                     {
-                        var neighborData = JsonSerializer.Deserialize<Dictionary<string, List<string>>>(json);
-                        foreach (var kvp in neighborData)
+                        Dictionary<int, HashSet<Guid>> deserializedNeighbors = DeserializeNeighbors(blob);
+                        _Neighbors.Clear();
+                        foreach (KeyValuePair<int, HashSet<Guid>> kvp in deserializedNeighbors)
                         {
-                            if (int.TryParse(kvp.Key, out int layer))
-                            {
-                                _neighbors[layer] = new HashSet<Guid>();
-                                foreach (var neighborIdStr in kvp.Value)
-                                {
-                                    if (Guid.TryParse(neighborIdStr, out Guid neighborId))
-                                    {
-                                        _neighbors[layer].Add(neighborId);
-                                    }
-                                }
-                            }
+                            _Neighbors[kvp.Key] = kvp.Value;
                         }
                     }
                 }
@@ -370,7 +416,7 @@
             catch
             {
                 // If loading fails, start with empty neighbors
-                _neighbors.Clear();
+                _Neighbors.Clear();
             }
         }
 
@@ -378,30 +424,75 @@
         {
             try
             {
-                var neighborData = new Dictionary<string, List<string>>();
-                foreach (var kvp in _neighbors)
-                {
-                    neighborData[kvp.Key.ToString()] = kvp.Value.Select(g => g.ToString()).ToList();
-                }
+                byte[] blob = SerializeNeighbors(_Neighbors);
 
-                var json = JsonSerializer.Serialize(neighborData);
-
-                var command = _connection.CreateCommand();
+                SqliteCommand command = _Connection.CreateCommand();
                 command.CommandText = $@"
-                    INSERT OR REPLACE INTO {_tableName} (node_id, neighbors_json) 
-                    VALUES (@nodeId, @neighborsJson)";
-                command.Parameters.AddWithValue("@nodeId", _id.ToString());
-                command.Parameters.AddWithValue("@neighborsJson", json);
+                    INSERT OR REPLACE INTO {_TableName} (node_id, neighbors_blob, updated_at) 
+                    VALUES (@nodeId, @neighborsBlob, CURRENT_TIMESTAMP)";
+                command.Parameters.AddWithValue("@nodeId", _Id.ToByteArray());
+                command.Parameters.AddWithValue("@neighborsBlob", blob);
 
                 command.ExecuteNonQuery();
-                _isDirty = false;
+                _IsDirty = false;
             }
             catch
             {
                 // Mark as dirty if save fails so we can retry later
-                _isDirty = true;
+                _IsDirty = true;
                 throw;
             }
         }
+
+        private byte[] SerializeNeighbors(Dictionary<int, HashSet<Guid>> neighbors)
+        {
+            using MemoryStream ms = new MemoryStream();
+            using BinaryWriter writer = new BinaryWriter(ms);
+            
+            writer.Write(neighbors.Count);
+            foreach (KeyValuePair<int, HashSet<Guid>> kvp in neighbors)
+            {
+                writer.Write(kvp.Key); // layer
+                writer.Write(kvp.Value.Count); // neighbor count
+                foreach (Guid neighborId in kvp.Value)
+                {
+                    writer.Write(neighborId.ToByteArray());
+                }
+            }
+            return ms.ToArray();
+        }
+
+        private Dictionary<int, HashSet<Guid>> DeserializeNeighbors(byte[] bytes)
+        {
+            if (bytes == null || bytes.Length == 0)
+            {
+                return new Dictionary<int, HashSet<Guid>>();
+            }
+                
+            using MemoryStream ms = new MemoryStream(bytes);
+            using BinaryReader reader = new BinaryReader(ms);
+            
+            Dictionary<int, HashSet<Guid>> neighbors = new Dictionary<int, HashSet<Guid>>();
+            int layerCount = reader.ReadInt32();
+            
+            for (int i = 0; i < layerCount; i++)
+            {
+                int layer = reader.ReadInt32();
+                int neighborCount = reader.ReadInt32();
+                HashSet<Guid> layerNeighbors = new HashSet<Guid>();
+                
+                for (int j = 0; j < neighborCount; j++)
+                {
+                    byte[] guidBytes = reader.ReadBytes(16);
+                    layerNeighbors.Add(new Guid(guidBytes));
+                }
+                
+                neighbors[layer] = layerNeighbors;
+            }
+            
+            return neighbors;
+        }
+
+        #endregion
     }
 }

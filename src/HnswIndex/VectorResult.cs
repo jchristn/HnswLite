@@ -173,7 +173,7 @@
         /// </summary>
         /// <param name="other">The VectorResult to compare with.</param>
         /// <returns>true if the instances are equal; otherwise, false.</returns>
-        public bool Equals(VectorResult other)
+        public bool Equals(VectorResult? other)
         {
             if (other == null) return false;
             if (ReferenceEquals(this, other)) return true;
@@ -189,7 +189,7 @@
         /// </summary>
         /// <param name="obj">The object to compare with.</param>
         /// <returns>true if the instances are equal; otherwise, false.</returns>
-        public override bool Equals(object obj)
+        public override bool Equals(object? obj)
         {
             return Equals(obj as VectorResult);
         }

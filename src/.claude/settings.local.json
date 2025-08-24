@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet build)",
+      "Bash(dotnet run:*)",
+      "Bash(pkill:*)",
+      "Bash(find:*)",
+      "Read(/C:\\Code\\Misc\\HnswLite/**)",
+      "Read(/C:\\Code\\Misc\\HnswLite/**)",
+      "Read(/C:\\Code\\Misc\\HnswLite/**)",
+      "Read(/C:\\Code\\Misc\\HnswLite/**)",
+      "Read(/C:\\Code\\Misc\\HnswLite/**)",
+      "Bash(taskkill:*)",
+      "Bash(dotnet build:*)",
+      "Read(/C:\\Code\\Misc\\HnswLite/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
