@@ -12,7 +12,20 @@
       "Read(/C:\\Code\\Misc\\HnswLite/**)",
       "Bash(taskkill:*)",
       "Bash(dotnet build:*)",
-      "Read(/C:\\Code\\Misc\\HnswLite/**)"
+      "Read(/C:\\Code\\Misc\\HnswLite/**)",
+      "Bash(timeout:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:www.nuget.org)",
+      "Bash(dotnet add package:*)",
+      "Bash(dotnet restore:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "WebSearch",
+      "Bash(chmod:*)",
+      "Bash(cmd //c:*)",
+      "Bash(bash:*)",
+      "Bash(dotnet publish:*)"
     ],
     "deny": [],
     "ask": []

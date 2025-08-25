@@ -138,11 +138,11 @@ namespace Hnsw.SqliteStorage
         /// Thread-safe operation. Idempotent - adding the same neighbor multiple times has no additional effect.
         /// </summary>
         /// <param name="layer">The layer number. Minimum: 0, Maximum: 63.</param>
-        /// <param name="neighborId">The ID of the neighbor to add. Cannot be Guid.Empty or equal to this node's ID.</param>
+        /// <param name="NeighborGUID">The ID of the neighbor to add. Cannot be Guid.Empty or equal to this node's ID.</param>
         /// <exception cref="ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
-        /// <exception cref="ArgumentException">Thrown when neighborId is invalid.</exception>
+        /// <exception cref="ArgumentException">Thrown when NeighborGUID is invalid.</exception>
         /// <exception cref="ObjectDisposedException">Thrown when the node has been disposed.</exception>
-        public void AddNeighbor(int layer, Guid neighborId)
+        public void AddNeighbor(int layer, Guid NeighborGUID)
         {
             ThrowIfDisposed();
 
@@ -156,14 +156,14 @@ namespace Hnsw.SqliteStorage
                 throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot exceed 63.");
             }
             
-            if (neighborId == Guid.Empty)
+            if (NeighborGUID == Guid.Empty)
             {
-                throw new ArgumentException("NeighborId cannot be Guid.Empty.", nameof(neighborId));
+                throw new ArgumentException("NeighborId cannot be Guid.Empty.", nameof(NeighborGUID));
             }
             
-            if (neighborId == _Id)
+            if (NeighborGUID == _Id)
             {
-                throw new ArgumentException("Node cannot be its own neighbor.", nameof(neighborId));
+                throw new ArgumentException("Node cannot be its own neighbor.", nameof(NeighborGUID));
             }
 
             _NodeLock.EnterWriteLock();
@@ -174,7 +174,7 @@ namespace Hnsw.SqliteStorage
                     _Neighbors[layer] = new HashSet<Guid>();
                 }
 
-                if (_Neighbors[layer].Add(neighborId))
+                if (_Neighbors[layer].Add(NeighborGUID))
                 {
                     _IsDirty = true;
                     // Don't save immediately - wait for explicit Flush() call for better batch performance
@@ -193,10 +193,10 @@ namespace Hnsw.SqliteStorage
         /// Removes the layer entry if it becomes empty after neighbor removal.
         /// </summary>
         /// <param name="layer">The layer number. Minimum: 0, Maximum: 63.</param>
-        /// <param name="neighborId">The ID of the neighbor to remove.</param>
+        /// <param name="NeighborGUID">The ID of the neighbor to remove.</param>
         /// <exception cref="ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
         /// <exception cref="ObjectDisposedException">Thrown when the node has been disposed.</exception>
-        public void RemoveNeighbor(int layer, Guid neighborId)
+        public void RemoveNeighbor(int layer, Guid NeighborGUID)
         {
             ThrowIfDisposed();
 
@@ -215,7 +215,7 @@ namespace Hnsw.SqliteStorage
             {
                 if (_Neighbors.ContainsKey(layer))
                 {
-                    if (_Neighbors[layer].Remove(neighborId))
+                    if (_Neighbors[layer].Remove(NeighborGUID))
                     {
                         _IsDirty = true;
                         if (_Neighbors[layer].Count == 0)
@@ -292,11 +292,11 @@ namespace Hnsw.SqliteStorage
         /// Thread-safe operation.
         /// </summary>
         /// <param name="layer">The layer number. Minimum: 0, Maximum: 63.</param>
-        /// <param name="neighborId">The neighbor ID to check.</param>
+        /// <param name="NeighborGUID">The neighbor ID to check.</param>
         /// <returns>true if the neighbor exists at the specified layer; otherwise, false.</returns>
         /// <exception cref="ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
         /// <exception cref="ObjectDisposedException">Thrown when the node has been disposed.</exception>
-        public bool HasNeighbor(int layer, Guid neighborId)
+        public bool HasNeighbor(int layer, Guid NeighborGUID)
         {
             ThrowIfDisposed();
 
@@ -313,7 +313,7 @@ namespace Hnsw.SqliteStorage
             _NodeLock.EnterReadLock();
             try
             {
-                return _Neighbors.TryGetValue(layer, out HashSet<Guid>? layerNeighbors) && layerNeighbors.Contains(neighborId);
+                return _Neighbors.TryGetValue(layer, out HashSet<Guid>? layerNeighbors) && layerNeighbors.Contains(NeighborGUID);
             }
             finally
             {
@@ -454,9 +454,9 @@ namespace Hnsw.SqliteStorage
             {
                 writer.Write(kvp.Key); // layer
                 writer.Write(kvp.Value.Count); // neighbor count
-                foreach (Guid neighborId in kvp.Value)
+                foreach (Guid NeighborGUID in kvp.Value)
                 {
-                    writer.Write(neighborId.ToByteArray());
+                    writer.Write(NeighborGUID.ToByteArray());
                 }
             }
             return ms.ToArray();

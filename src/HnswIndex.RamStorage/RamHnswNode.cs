@@ -98,11 +98,11 @@
         /// Thread-safe operation. Idempotent - adding the same neighbor multiple times has no additional effect.
         /// </summary>
         /// <param name="layer">The layer number. Minimum: 0, Maximum: 63.</param>
-        /// <param name="neighborId">The ID of the neighbor to add. Cannot be Guid.Empty or equal to this node's ID.</param>
+        /// <param name="NeighborGUID">The ID of the neighbor to add. Cannot be Guid.Empty or equal to this node's ID.</param>
         /// <exception cref="ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
-        /// <exception cref="ArgumentException">Thrown when neighborId is invalid.</exception>
+        /// <exception cref="ArgumentException">Thrown when NeighborGUID is invalid.</exception>
         /// <exception cref="ObjectDisposedException">Thrown when the node has been disposed.</exception>
-        public void AddNeighbor(int layer, Guid neighborId)
+        public void AddNeighbor(int layer, Guid NeighborGUID)
         {
             ThrowIfDisposed();
 
@@ -110,17 +110,17 @@
                 throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot be negative.");
             if (layer > 63)
                 throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot exceed 63.");
-            if (neighborId == Guid.Empty)
-                throw new ArgumentException("NeighborId cannot be Guid.Empty.", nameof(neighborId));
-            if (neighborId == _id)
-                throw new ArgumentException("Node cannot be its own neighbor.", nameof(neighborId));
+            if (NeighborGUID == Guid.Empty)
+                throw new ArgumentException("NeighborId cannot be Guid.Empty.", nameof(NeighborGUID));
+            if (NeighborGUID == _id)
+                throw new ArgumentException("Node cannot be its own neighbor.", nameof(NeighborGUID));
 
             _nodeLock.EnterWriteLock();
             try
             {
                 if (!_neighbors.ContainsKey(layer))
                     _neighbors[layer] = new HashSet<Guid>();
-                _neighbors[layer].Add(neighborId);
+                _neighbors[layer].Add(NeighborGUID);
             }
             finally
             {
@@ -134,10 +134,10 @@
         /// Removes the layer entry if it becomes empty after neighbor removal.
         /// </summary>
         /// <param name="layer">The layer number. Minimum: 0, Maximum: 63.</param>
-        /// <param name="neighborId">The ID of the neighbor to remove.</param>
+        /// <param name="NeighborGUID">The ID of the neighbor to remove.</param>
         /// <exception cref="ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
         /// <exception cref="ObjectDisposedException">Thrown when the node has been disposed.</exception>
-        public void RemoveNeighbor(int layer, Guid neighborId)
+        public void RemoveNeighbor(int layer, Guid NeighborGUID)
         {
             ThrowIfDisposed();
 
@@ -151,7 +151,7 @@
             {
                 if (_neighbors.ContainsKey(layer))
                 {
-                    _neighbors[layer].Remove(neighborId);
+                    _neighbors[layer].Remove(NeighborGUID);
                     if (_neighbors[layer].Count == 0)
                         _neighbors.Remove(layer);
                 }
@@ -216,11 +216,11 @@
         /// Thread-safe operation.
         /// </summary>
         /// <param name="layer">The layer number. Minimum: 0, Maximum: 63.</param>
-        /// <param name="neighborId">The neighbor ID to check.</param>
+        /// <param name="NeighborGUID">The neighbor ID to check.</param>
         /// <returns>true if the neighbor exists at the specified layer; otherwise, false.</returns>
         /// <exception cref="ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
         /// <exception cref="ObjectDisposedException">Thrown when the node has been disposed.</exception>
-        public bool HasNeighbor(int layer, Guid neighborId)
+        public bool HasNeighbor(int layer, Guid NeighborGUID)
         {
             ThrowIfDisposed();
 
@@ -232,7 +232,7 @@
             _nodeLock.EnterReadLock();
             try
             {
-                return _neighbors.TryGetValue(layer, out var layerNeighbors) && layerNeighbors.Contains(neighborId);
+                return _neighbors.TryGetValue(layer, out var layerNeighbors) && layerNeighbors.Contains(NeighborGUID);
             }
             finally
             {

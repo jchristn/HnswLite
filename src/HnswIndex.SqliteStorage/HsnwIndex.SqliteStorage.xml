@@ -176,9 +176,9 @@
             Thread-safe operation. Idempotent - adding the same neighbor multiple times has no additional effect.
             </summary>
             <param name="layer">The layer number. Minimum: 0, Maximum: 63.</param>
-            <param name="neighborId">The ID of the neighbor to add. Cannot be Guid.Empty or equal to this node's ID.</param>
+            <param name="NeighborGUID">The ID of the neighbor to add. Cannot be Guid.Empty or equal to this node's ID.</param>
             <exception cref="T:System.ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
-            <exception cref="T:System.ArgumentException">Thrown when neighborId is invalid.</exception>
+            <exception cref="T:System.ArgumentException">Thrown when NeighborGUID is invalid.</exception>
             <exception cref="T:System.ObjectDisposedException">Thrown when the node has been disposed.</exception>
         </member>
         <member name="M:Hnsw.SqliteStorage.SqliteHnswNode.RemoveNeighbor(System.Int32,System.Guid)">
@@ -188,7 +188,7 @@
             Removes the layer entry if it becomes empty after neighbor removal.
             </summary>
             <param name="layer">The layer number. Minimum: 0, Maximum: 63.</param>
-            <param name="neighborId">The ID of the neighbor to remove.</param>
+            <param name="NeighborGUID">The ID of the neighbor to remove.</param>
             <exception cref="T:System.ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
             <exception cref="T:System.ObjectDisposedException">Thrown when the node has been disposed.</exception>
         </member>
@@ -216,7 +216,7 @@
             Thread-safe operation.
             </summary>
             <param name="layer">The layer number. Minimum: 0, Maximum: 63.</param>
-            <param name="neighborId">The neighbor ID to check.</param>
+            <param name="NeighborGUID">The neighbor ID to check.</param>
             <returns>true if the neighbor exists at the specified layer; otherwise, false.</returns>
             <exception cref="T:System.ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
             <exception cref="T:System.ObjectDisposedException">Thrown when the node has been disposed.</exception>

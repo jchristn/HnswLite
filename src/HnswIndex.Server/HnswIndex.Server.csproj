@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SerializationHelper" Version="2.0.3" />
+    <PackageReference Include="SyslogLogging" Version="2.0.8" />
+    <PackageReference Include="Watson" Version="6.3.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HnswIndex\HnswIndex.csproj" />
+    <ProjectReference Include="..\HnswIndex.RamStorage\HnswIndex.RamStorage.csproj" />
+    <ProjectReference Include="..\HnswIndex.SqliteStorage\HnswIndex.SqliteStorage.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="*.bat" CopyToOutputDirectory="Always" />
+    <None Include="*.sh" CopyToOutputDirectory="Always" />
+    <None Include="Dockerfile" CopyToOutputDirectory="Always" />
+    <None Include="*.json" CopyToOutputDirectory="Always" />
+    <None Update="assets\logo.ico">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="assets\logo.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="assets\favicon.ico">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

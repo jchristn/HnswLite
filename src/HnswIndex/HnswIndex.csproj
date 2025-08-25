@@ -2,12 +2,12 @@
 
 	<PropertyGroup>
 		<TargetFramework>net8.0</TargetFramework>
-		<Version>1.0.3</Version>
+		<Version>1.0.4</Version>
 		<Nullable>enable</Nullable>
 		<ApplicationIcon>logo.ico</ApplicationIcon>
 		<GenerateDocumentationFile>True</GenerateDocumentationFile>
 		<DocumentationFile>HnswIndex.xml</DocumentationFile>
-		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+		<GeneratePackageOnBuild Condition="Exists('..\..\assets\logo.png')">True</GeneratePackageOnBuild>
 		<Title>Embeddable, extensible implementation of a Hierarchical Navigable Small Network (HNSW) index</Title>
 		<Authors>Joel Christner</Authors>
 		<Description>Embeddable, extensible implementation of a Hierarchical Navigable Small Network (HNSW) index</Description>
@@ -30,7 +30,7 @@
 		<Content Include="logo.ico" />
 	</ItemGroup>
 
-	<ItemGroup>
+	<ItemGroup Condition="Exists('..\..\assets\logo.png')">
 		<None Include="..\..\assets\logo.png">
 			<Pack>True</Pack>
 			<PackagePath>\</PackagePath>
@@ -44,11 +44,24 @@
 			<PackagePath>\</PackagePath>
 		</None>
 	</ItemGroup>
+	<!-- Assets are handled by the Server project for web deployment -->
+	<!--<ItemGroup Condition="Exists('assets\')">
+		<None Update="assets\favicon.ico">
+		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
+		<None Update="assets\logo.ico">
+		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
+		<None Update="assets\logo.png">
+		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>-->
 
-	<ItemGroup>
+	<!-- XML documentation copying is handled automatically by the build system -->
+	<!--<ItemGroup>
 		<None Update="HnswIndex.xml">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>
-	</ItemGroup>
+	</ItemGroup>-->
 
 </Project>

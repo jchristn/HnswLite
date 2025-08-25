@@ -25,13 +25,11 @@ HnswLite implements the Hierarchical Navigable Small World algorithm, which prov
 
 ## New in v1.0.x
 
-**v1.0.3** - Performance optimizations:
 - SQLite backend with optimized binary serialization (4x faster than JSON)
 - Deferred flush for batch operations (100x improvement for large insertions)
 - SearchContext caching reduces database queries by 90%+
 - WAL mode and optimized PRAGMA settings for SQLite
-
-**v1.0.0** - Initial release:
+- Standalone REST server (`HnswIndex.Server`) with Docker image and Postman collection
 - Core HNSW algorithm implementation
 - In-memory storage backend
 - SQLite storage backend  
@@ -192,6 +190,10 @@ Refer to `Hnsw.RamStorage` and `Hnsw.SqliteStorage` for actual implementations. 
 - `IHnswLayerStorage` - Manages layer assignments for nodes
 - `IHnswNode` - Represents a single node with its vector and neighbors
 - `IHnswStorage` - Handles node persistence and retrieval
+
+## Running in Docker
+
+Refer to the `src/Docker` directory for assets related to running in Docker.  The Docker image can be found on [Docker Hub](https://hub.docker.com/repository/docker/jchristn/hnswindex-server/general) and a Postman collection is contained within this repository's root directory.
 
 ## License
 

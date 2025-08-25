@@ -1,0 +1,94 @@
+2025-08-25 20:57:21 e3f6390233d6 Debug [HnswIndexServer] logging initialized
+2025-08-25 20:57:21 e3f6390233d6 Info [IndexManager] initialized with SQLite directory: ./data/indexes/
+2025-08-25 20:57:21 e3f6390233d6 Info [HnswIndexServer] global objects initialized
+2025-08-25 20:57:21 e3f6390233d6 Info [HnswIndexServer] web server started
+2025-08-25 20:57:21 e3f6390233d6 Info [HnswIndexServer] HNSW index server started successfully
+2025-08-25 20:57:21 e3f6390233d6 Info [HnswIndexServer] listening on http://localhost:8080
+2025-08-25 20:57:21 e3f6390233d6 Info [HnswIndexServer] admin API key: 947f143b-47e9-43c3-9334-671178fdff6c
+2025-08-25 20:57:21 e3f6390233d6 Info [HnswIndexServer] press CTRL+C to exit
+2025-08-25 20:58:01 e3f6390233d6 Info [HnswIndexServer] shutdown requested
+2025-08-25 20:59:00 2803ab1ae476 Debug [HnswIndexServer] logging initialized
+2025-08-25 20:59:01 2803ab1ae476 Info [IndexManager] initialized with SQLite directory: ./data/indexes/
+2025-08-25 20:59:01 2803ab1ae476 Info [HnswIndexServer] global objects initialized
+2025-08-25 20:59:01 2803ab1ae476 Info [HnswIndexServer] web server started
+2025-08-25 20:59:01 2803ab1ae476 Info [HnswIndexServer] HNSW index server started successfully
+2025-08-25 20:59:01 2803ab1ae476 Info [HnswIndexServer] listening on http://*:8080
+2025-08-25 20:59:01 2803ab1ae476 Info [HnswIndexServer] admin API key: b6b6f6b0-c251-4733-93c8-5587370baa42
+2025-08-25 20:59:01 2803ab1ae476 Info [HnswIndexServer] press CTRL+C to exit
+2025-08-25 20:59:06 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 GET / 200 (18.35ms)
+2025-08-25 20:59:06 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 HEAD / 200 (1.36ms)
+2025-08-25 20:59:06 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 OPTIONS / 200 (1.63ms)
+2025-08-25 20:59:05 2803ab1ae476 Warn [API] unauthorized access attempt from 172.17.0.1:52904
+2025-08-25 20:59:05 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 GET /v1.0/indexes 401 (30.76ms)
+2025-08-25 20:59:05 2803ab1ae476 Warn [API] unauthorized access attempt from 172.17.0.1:52916
+2025-08-25 20:59:05 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 POST /v1.0/indexes 401 (6.28ms)
+2025-08-25 20:59:05 2803ab1ae476 Warn [API] unauthorized access attempt from 172.17.0.1:52918
+2025-08-25 20:59:05 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 GET /v1.0/indexes/test-index-windows 401 (-732.55ms)
+2025-08-25 20:59:05 2803ab1ae476 Warn [API] unauthorized access attempt from 172.17.0.1:52922
+2025-08-25 20:59:05 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 POST /v1.0/indexes/test-index-windows/vectors 401 (5.93ms)
+2025-08-25 20:59:05 2803ab1ae476 Warn [API] unauthorized access attempt from 172.17.0.1:52932
+2025-08-25 20:59:05 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 POST /v1.0/indexes/test-index-windows/vectors/batch 401 (4.50ms)
+2025-08-25 20:59:05 2803ab1ae476 Warn [API] unauthorized access attempt from 172.17.0.1:52944
+2025-08-25 20:59:05 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 POST /v1.0/indexes/test-index-windows/search 401 (10.86ms)
+2025-08-25 20:59:05 2803ab1ae476 Warn [API] unauthorized access attempt from 172.17.0.1:52956
+2025-08-25 20:59:05 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 GET /v1.0/indexes 401 (10.20ms)
+2025-08-25 20:59:05 2803ab1ae476 Warn [API] unauthorized access attempt from 172.17.0.1:52970
+2025-08-25 20:59:05 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 DELETE /v1.0/indexes/test-index-windows/vectors/11111111-1111-1111-1111-111111111111 401 (6.17ms)
+2025-08-25 20:59:05 2803ab1ae476 Warn [API] unauthorized access attempt from 172.17.0.1:52984
+2025-08-25 20:59:05 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 POST /v1.0/indexes/test-index-windows/search 401 (6.38ms)
+2025-08-25 20:59:05 2803ab1ae476 Warn [API] unauthorized access attempt from 172.17.0.1:52988
+2025-08-25 20:59:05 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 DELETE /v1.0/indexes/test-index-windows 401 (6.03ms)
+2025-08-25 20:59:05 2803ab1ae476 Warn [API] unauthorized access attempt from 172.17.0.1:53000
+2025-08-25 20:59:05 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 GET /v1.0/indexes 401 (5.76ms)
+2025-08-25 20:59:05 2803ab1ae476 Warn [API] unauthorized access attempt from 172.17.0.1:53004
+2025-08-25 20:59:05 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 GET /v1.0/indexes/non-existent-index 401 (7.48ms)
+2025-08-25 20:59:05 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 GET /v1.0/invalid-endpoint 404 (3.70ms)
+2025-08-25 20:59:05 2803ab1ae476 Warn [API] unauthorized access attempt from 172.17.0.1:53024
+2025-08-25 20:59:05 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 GET /v1.0/indexes 401 (7.07ms)
+2025-08-25 20:59:05 2803ab1ae476 Warn [API] unauthorized access attempt from 172.17.0.1:53040
+2025-08-25 20:59:05 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 POST /v1.0/indexes 401 (6.49ms)
+2025-08-25 20:59:23 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 GET / 200 (0.73ms)
+2025-08-25 20:59:23 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 HEAD / 200 (0.46ms)
+2025-08-25 20:59:23 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 OPTIONS / 200 (0.62ms)
+2025-08-25 20:59:23 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 GET /v1.0/indexes 200 (18.02ms)
+2025-08-25 20:59:24 2803ab1ae476 Info [IndexManager] created index 'test-index-windows' with 3D vectors using Sqlite storage
+2025-08-25 20:59:24 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 POST /v1.0/indexes 201 (238.92ms)
+2025-08-25 20:59:24 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 GET /v1.0/indexes/test-index-windows 200 (2.66ms)
+2025-08-25 20:59:24 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 POST /v1.0/indexes/test-index-windows/vectors 201 (68.69ms)
+2025-08-25 20:59:24 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 POST /v1.0/indexes/test-index-windows/vectors/batch 201 (95.29ms)
+2025-08-25 20:59:24 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 POST /v1.0/indexes/test-index-windows/search 200 (30.81ms)
+2025-08-25 20:59:24 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 GET /v1.0/indexes 200 (1.00ms)
+2025-08-25 20:59:24 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 DELETE /v1.0/indexes/test-index-windows/vectors/11111111-1111-1111-1111-111111111111 204 (75.14ms)
+2025-08-25 20:59:24 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 POST /v1.0/indexes/test-index-windows/search 200 (1.92ms)
+2025-08-25 20:59:24 2803ab1ae476 Info [IndexManager] deleted index 'test-index-windows'
+2025-08-25 20:59:24 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 DELETE /v1.0/indexes/test-index-windows 204 (29.72ms)
+2025-08-25 20:59:24 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 GET /v1.0/indexes 200 (1.05ms)
+2025-08-25 20:59:24 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 GET /v1.0/indexes/non-existent-index 404 (0.77ms)
+2025-08-25 20:59:25 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 GET /v1.0/invalid-endpoint 404 (0.74ms)
+2025-08-25 20:59:25 2803ab1ae476 Warn [API] unauthorized access attempt from 172.17.0.1:53496
+2025-08-25 20:59:25 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 GET /v1.0/indexes 401 (9.44ms)
+2025-08-25 20:59:25 2803ab1ae476 Info [HnswIndexServer] 172.17.0.1 POST /v1.0/indexes 400 (5.52ms)
+2025-08-25 20:59:29 2803ab1ae476 Info [HnswIndexServer] shutdown requested
+2025-08-25 20:59:50 c455d5c318f5 Debug [HnswIndexServer] logging initialized
+2025-08-25 20:59:50 c455d5c318f5 Info [IndexManager] initialized with SQLite directory: ./data/indexes/
+2025-08-25 20:59:50 c455d5c318f5 Info [HnswIndexServer] global objects initialized
+2025-08-25 20:59:50 c455d5c318f5 Info [HnswIndexServer] web server started
+2025-08-25 20:59:50 c455d5c318f5 Info [HnswIndexServer] HNSW index server started successfully
+2025-08-25 20:59:50 c455d5c318f5 Info [HnswIndexServer] listening on http://*:8080
+2025-08-25 20:59:50 c455d5c318f5 Info [HnswIndexServer] admin API key: b6b6f6b0-c251-4733-93c8-5587370baa42
+2025-08-25 20:59:50 c455d5c318f5 Info [HnswIndexServer] press CTRL+C to exit
+2025-08-25 21:00:20 c455d5c318f5 Info [HnswIndexServer] 172.17.0.1 GET / 200 (70.71ms)
+2025-08-25 21:01:19 c455d5c318f5 Warn [API] unauthorized access attempt from 172.17.0.1:39632
+2025-08-25 21:01:19 c455d5c318f5 Info [HnswIndexServer] 172.17.0.1 GET /v1.0/indexes 401 (30.83ms)
+2025-08-25 21:02:24 c455d5c318f5 Info [HnswIndexServer] 172.17.0.1 GET / 200 (0.56ms)
+2025-08-25 21:02:31 c455d5c318f5 Warn [API] unauthorized access attempt from 172.17.0.1:57566
+2025-08-25 21:02:31 c455d5c318f5 Info [HnswIndexServer] 172.17.0.1 GET /v1.0/indexes 401 (6.50ms)
+2025-08-25 21:02:41 c455d5c318f5 Info [HnswIndexServer] 172.17.0.1 GET /v1.0/indexes 200 (10.27ms)
+2025-08-25 21:04:07 c455d5c318f5 Info [IndexManager] created index 'My Index' with 3D vectors using Sqlite storage
+2025-08-25 21:04:07 c455d5c318f5 Info [HnswIndexServer] 172.17.0.1 POST /v1.0/indexes 201 (281.15ms)
+2025-08-25 21:04:25 c455d5c318f5 Info [IndexManager] created index 'my-index' with 3D vectors using Sqlite storage
+2025-08-25 21:04:25 c455d5c318f5 Info [HnswIndexServer] 172.17.0.1 POST /v1.0/indexes 201 (127.35ms)
+2025-08-25 21:04:44 c455d5c318f5 Info [HnswIndexServer] 172.17.0.1 GET /v1.0/indexes/my-index 200 (3.16ms)
+2025-08-25 21:05:41 c455d5c318f5 Info [HnswIndexServer] 172.17.0.1 POST /v1.0/indexes/my-index/vectors 201 (69.03ms)
+2025-08-25 21:08:26 c455d5c318f5 Info [HnswIndexServer] 172.17.0.1 POST /v1.0/indexes/my-index/search 200 (46.78ms)
+2025-08-25 21:13:31 c455d5c318f5 Info [HnswIndexServer] shutdown requested

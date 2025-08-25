@@ -1,0 +1,34 @@
+{
+  "Server": {
+    "Hostname": "*",
+    "Port": 8080,
+    "Ssl": false,
+    "AdminApiKeyHeader": "x-api-key",
+    "AdminApiKey": "b6b6f6b0-c251-4733-93c8-5587370baa42",
+    "RequireAuthentication": true
+  },
+  "Debug": {
+    "HttpRequests": false,
+    "Api": false,
+    "Authentication": false,
+    "Storage": false
+  },
+  "Logging": {
+    "Console": true,
+    "Syslog": true,
+    "SyslogServerIp": "127.0.0.1",
+    "SyslogServerPort": 514,
+    "File": true,
+    "LogFilename": "./logs/hnswindex.log",
+    "MinimumLevel": "Info",
+    "IncludeUtc": true,
+    "IncludeSeverity": true
+  },
+  "Authentication": {
+    "DefaultApiKey": "58c06582-88de-4dbe-bb24-46ce52ec4452",
+    "TokenExpirySeconds": 3600
+  },
+  "Storage": {
+    "SqliteDirectory": "./data/indexes/"
+  }
+}

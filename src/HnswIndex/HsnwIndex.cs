@@ -289,6 +289,9 @@
                     var newNode = await _Storage.GetNodeAsync(guid, cancellationToken);
                     foreach (var neighborId in neighbors)
                     {
+                        if (neighborId == guid)
+                            continue; // Skip self-connections
+                            
                         // Add bidirectional connections
                         newNode.AddNeighbor(layer, neighborId);
                         var neighbor = await _Storage.GetNodeAsync(neighborId, cancellationToken);
@@ -422,6 +425,9 @@
                         var newNode = await context.GetNodeAsync(nodeId);
                         foreach (var neighborId in neighbors)
                         {
+                            if (neighborId == nodeId)
+                                continue; // Skip self-connections
+                                
                             // Add bidirectional connections
                             newNode.AddNeighbor(layer, neighborId);
                             var neighbor = await context.GetNodeAsync(neighborId);
@@ -466,14 +472,8 @@
                     }
                     
                     processedCount++;
-                    // More frequent progress for smaller datasets, every 10% or every 50 nodes, whichever is smaller
-                    int progressInterval = Math.Min(totalCount / 10, 50);
-                    if (totalCount > 50 && progressInterval > 0 && processedCount % progressInterval == 0)
-                    {
-                        Console.WriteLine($"  Progress: {processedCount}/{totalCount} nodes processed ({100.0 * processedCount / totalCount:F0}%)");
-                        
-                        // TODO: Add Flush() to IHnswStorage interface for better batch performance
-                    }
+                    
+                    // TODO: Add Flush() to IHnswStorage interface for better batch performance
                 }
                 
                 // TODO: Call Flush() here when added to interface

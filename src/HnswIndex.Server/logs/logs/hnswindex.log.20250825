@@ -1,0 +1,121 @@
+2025-08-25 20:16:56 joel-laptop Debug [HnswIndexServer] logging initialized
+2025-08-25 20:16:56 joel-laptop Info [IndexManager] initialized with SQLite directory: ./data/indexes/
+2025-08-25 20:16:56 joel-laptop Info [HnswIndexServer] global objects initialized
+2025-08-25 20:16:56 joel-laptop Info [HnswIndexServer] web server started
+2025-08-25 20:16:56 joel-laptop Info [HnswIndexServer] HNSW index server started successfully
+2025-08-25 20:16:56 joel-laptop Info [HnswIndexServer] listening on http://localhost:8080
+2025-08-25 20:16:56 joel-laptop Info [HnswIndexServer] admin API key: b6b6f6b0-c251-4733-93c8-5587370baa42
+2025-08-25 20:16:56 joel-laptop Info [HnswIndexServer] press CTRL+C to exit
+2025-08-25 20:17:10 joel-laptop Info [HnswIndexServer] ::1 GET / 200 (16.03ms)
+2025-08-25 20:17:10 joel-laptop Info [HnswIndexServer] ::1 HEAD / 200 (1.41ms)
+2025-08-25 20:17:10 joel-laptop Info [HnswIndexServer] ::1 OPTIONS / 200 (0.97ms)
+2025-08-25 20:17:10 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes 200 (20.48ms)
+2025-08-25 20:17:11 joel-laptop Info [IndexManager] created index 'test-index-windows' with 3D vectors using Sqlite storage
+2025-08-25 20:17:11 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes 201 (716.15ms)
+2025-08-25 20:17:11 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes/test-index-windows 200 (49.96ms)
+2025-08-25 20:17:11 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes/test-index-windows/vectors 201 (67.46ms)
+2025-08-25 20:17:12 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes/test-index-windows/vectors/batch 201 (61.13ms)
+2025-08-25 20:17:12 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes/test-index-windows/search 200 (21.46ms)
+2025-08-25 20:17:12 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes 200 (0.77ms)
+2025-08-25 20:17:12 joel-laptop Info [HnswIndexServer] ::1 DELETE /v1.0/indexes/test-index-windows/vectors/11111111-1111-1111-1111-111111111111 204 (17.99ms)
+2025-08-25 20:17:12 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes/test-index-windows/search 200 (1.07ms)
+2025-08-25 20:17:12 joel-laptop Info [IndexManager] deleted index 'test-index-windows'
+2025-08-25 20:17:12 joel-laptop Info [HnswIndexServer] ::1 DELETE /v1.0/indexes/test-index-windows 204 (8.80ms)
+2025-08-25 20:17:12 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes 200 (0.58ms)
+2025-08-25 20:17:12 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes/non-existent-index 404 (6.33ms)
+2025-08-25 20:17:12 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/invalid-endpoint 404 (2.90ms)
+2025-08-25 20:17:12 joel-laptop Warn [API] unauthorized access attempt from ::1:59710
+2025-08-25 20:17:12 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes 401 (1.80ms)
+2025-08-25 20:17:12 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes 400 (3.08ms)
+2025-08-25 20:17:37 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes/test-index-windows/vectors/batch 404 (1.38ms)
+2025-08-25 20:18:23 joel-laptop Info [IndexManager] created index 'test-index-temp' with 3D vectors using Sqlite storage
+2025-08-25 20:18:23 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes 201 (43.65ms)
+2025-08-25 20:18:37 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes/test-index-temp/vectors/batch 201 (19.30ms)
+2025-08-25 20:19:25 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes/test-index-temp/search 200 (1.15ms)
+2025-08-25 20:19:50 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes 400 (1.00ms)
+2025-08-25 20:28:15 joel-laptop Debug [HnswIndexServer] logging initialized
+2025-08-25 20:28:15 joel-laptop Info [IndexManager] initialized with SQLite directory: ./data/indexes/
+2025-08-25 20:28:15 joel-laptop Info [HnswIndexServer] global objects initialized
+2025-08-25 20:28:15 joel-laptop Info [HnswIndexServer] web server started
+2025-08-25 20:28:15 joel-laptop Info [HnswIndexServer] HNSW index server started successfully
+2025-08-25 20:28:15 joel-laptop Info [HnswIndexServer] listening on http://localhost:8080
+2025-08-25 20:28:15 joel-laptop Info [HnswIndexServer] admin API key: b6b6f6b0-c251-4733-93c8-5587370baa42
+2025-08-25 20:28:15 joel-laptop Info [HnswIndexServer] press CTRL+C to exit
+2025-08-25 20:28:42 joel-laptop Info [IndexManager] created index 'test-index-fix' with 3D vectors using Sqlite storage
+2025-08-25 20:28:42 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes 201 (494.21ms)
+2025-08-25 20:29:13 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes/test-index-fix/vectors/batch 201 (79.33ms)
+2025-08-25 20:29:35 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes/test-index-fix/search 200 (29.65ms)
+2025-08-25 20:33:01 joel-laptop Debug [HnswIndexServer] logging initialized
+2025-08-25 20:33:01 joel-laptop Info [IndexManager] initialized with SQLite directory: ./data/indexes/
+2025-08-25 20:33:01 joel-laptop Info [HnswIndexServer] global objects initialized
+2025-08-25 20:33:02 joel-laptop Info [HnswIndexServer] web server started
+2025-08-25 20:33:02 joel-laptop Info [HnswIndexServer] HNSW index server started successfully
+2025-08-25 20:33:02 joel-laptop Info [HnswIndexServer] listening on http://localhost:8080
+2025-08-25 20:33:02 joel-laptop Info [HnswIndexServer] admin API key: b6b6f6b0-c251-4733-93c8-5587370baa42
+2025-08-25 20:33:02 joel-laptop Info [HnswIndexServer] press CTRL+C to exit
+2025-08-25 20:33:27 joel-laptop Info [IndexManager] created index 'test-batch-response' with 3D vectors using Sqlite storage
+2025-08-25 20:33:27 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes 201 (107.73ms)
+2025-08-25 20:34:11 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes/test-batch-response/vectors/batch 201 (77.22ms)
+2025-08-25 20:34:20 joel-laptop Info [HnswIndexServer] ::1 GET / 200 (1.21ms)
+2025-08-25 20:34:20 joel-laptop Info [HnswIndexServer] ::1 HEAD / 200 (1.10ms)
+2025-08-25 20:34:20 joel-laptop Info [HnswIndexServer] ::1 OPTIONS / 200 (1.04ms)
+2025-08-25 20:34:20 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes 200 (3.72ms)
+2025-08-25 20:34:21 joel-laptop Info [IndexManager] created index 'test-index-windows' with 3D vectors using Sqlite storage
+2025-08-25 20:34:21 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes 201 (93.88ms)
+2025-08-25 20:34:21 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes/test-index-windows 200 (1.63ms)
+2025-08-25 20:34:21 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes/test-index-windows/vectors 201 (18.30ms)
+2025-08-25 20:34:21 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes/test-index-windows/vectors/batch 201 (17.77ms)
+2025-08-25 20:34:21 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes/test-index-windows/search 200 (19.40ms)
+2025-08-25 20:34:21 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes 200 (0.65ms)
+2025-08-25 20:34:21 joel-laptop Info [HnswIndexServer] ::1 DELETE /v1.0/indexes/test-index-windows/vectors/11111111-1111-1111-1111-111111111111 204 (16.65ms)
+2025-08-25 20:34:21 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes/test-index-windows/search 200 (1.03ms)
+2025-08-25 20:34:21 joel-laptop Info [IndexManager] deleted index 'test-index-windows'
+2025-08-25 20:34:21 joel-laptop Info [HnswIndexServer] ::1 DELETE /v1.0/indexes/test-index-windows 204 (8.63ms)
+2025-08-25 20:34:21 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes 200 (0.62ms)
+2025-08-25 20:34:21 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes/non-existent-index 404 (5.49ms)
+2025-08-25 20:34:21 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/invalid-endpoint 404 (2.70ms)
+2025-08-25 20:34:21 joel-laptop Warn [API] unauthorized access attempt from ::1:61425
+2025-08-25 20:34:21 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes 401 (1.78ms)
+2025-08-25 20:34:21 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes 400 (2.69ms)
+2025-08-25 20:34:28 joel-laptop Info [HnswIndexServer] ::1 GET / 200 (0.61ms)
+2025-08-25 20:34:28 joel-laptop Info [HnswIndexServer] ::1 HEAD / 200 (0.35ms)
+2025-08-25 20:34:28 joel-laptop Info [HnswIndexServer] ::1 OPTIONS / 200 (0.40ms)
+2025-08-25 20:34:28 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes 200 (0.84ms)
+2025-08-25 20:34:28 joel-laptop Info [IndexManager] created index 'test-index-windows' with 3D vectors using Sqlite storage
+2025-08-25 20:34:28 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes 201 (2.70ms)
+2025-08-25 20:34:28 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes/test-index-windows 200 (0.52ms)
+2025-08-25 20:34:28 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes/test-index-windows/vectors 201 (5.98ms)
+2025-08-25 20:34:28 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes/test-index-windows/vectors/batch 201 (8.95ms)
+2025-08-25 20:34:28 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes/test-index-windows/search 200 (1.25ms)
+2025-08-25 20:34:28 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes 200 (0.60ms)
+2025-08-25 20:34:28 joel-laptop Info [HnswIndexServer] ::1 DELETE /v1.0/indexes/test-index-windows/vectors/11111111-1111-1111-1111-111111111111 204 (8.39ms)
+2025-08-25 20:34:28 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes/test-index-windows/search 200 (1.10ms)
+2025-08-25 20:34:28 joel-laptop Info [IndexManager] deleted index 'test-index-windows'
+2025-08-25 20:34:28 joel-laptop Info [HnswIndexServer] ::1 DELETE /v1.0/indexes/test-index-windows 204 (3.22ms)
+2025-08-25 20:34:28 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes 200 (0.49ms)
+2025-08-25 20:34:28 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes/non-existent-index 404 (0.61ms)
+2025-08-25 20:34:29 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/invalid-endpoint 404 (0.50ms)
+2025-08-25 20:34:29 joel-laptop Warn [API] unauthorized access attempt from ::1:61546
+2025-08-25 20:34:29 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes 401 (0.89ms)
+2025-08-25 20:34:29 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes 400 (1.01ms)
+2025-08-25 20:34:36 joel-laptop Info [HnswIndexServer] ::1 GET / 200 (0.37ms)
+2025-08-25 20:34:36 joel-laptop Info [HnswIndexServer] ::1 HEAD / 200 (0.22ms)
+2025-08-25 20:34:36 joel-laptop Info [HnswIndexServer] ::1 OPTIONS / 200 (0.39ms)
+2025-08-25 20:34:36 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes 200 (0.44ms)
+2025-08-25 20:34:36 joel-laptop Info [IndexManager] created index 'test-index-windows' with 3D vectors using Sqlite storage
+2025-08-25 20:34:36 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes 201 (1.74ms)
+2025-08-25 20:34:36 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes/test-index-windows 200 (0.44ms)
+2025-08-25 20:34:36 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes/test-index-windows/vectors 201 (8.55ms)
+2025-08-25 20:34:36 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes/test-index-windows/vectors/batch 201 (9.39ms)
+2025-08-25 20:34:36 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes/test-index-windows/search 200 (1.34ms)
+2025-08-25 20:34:36 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes 200 (0.63ms)
+2025-08-25 20:34:36 joel-laptop Info [HnswIndexServer] ::1 DELETE /v1.0/indexes/test-index-windows/vectors/11111111-1111-1111-1111-111111111111 204 (7.50ms)
+2025-08-25 20:34:36 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes/test-index-windows/search 200 (0.67ms)
+2025-08-25 20:34:36 joel-laptop Info [IndexManager] deleted index 'test-index-windows'
+2025-08-25 20:34:36 joel-laptop Info [HnswIndexServer] ::1 DELETE /v1.0/indexes/test-index-windows 204 (4.77ms)
+2025-08-25 20:34:36 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes 200 (0.41ms)
+2025-08-25 20:34:36 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes/non-existent-index 404 (0.36ms)
+2025-08-25 20:34:36 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/invalid-endpoint 404 (0.35ms)
+2025-08-25 20:34:36 joel-laptop Warn [API] unauthorized access attempt from ::1:61643
+2025-08-25 20:34:36 joel-laptop Info [HnswIndexServer] ::1 GET /v1.0/indexes 401 (0.76ms)
+2025-08-25 20:34:36 joel-laptop Info [HnswIndexServer] ::1 POST /v1.0/indexes 400 (0.57ms)

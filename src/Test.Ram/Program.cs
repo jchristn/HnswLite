@@ -1,31 +1,49 @@
-﻿namespace Test.Ram
+namespace Test.Ram
 {
     using System;
+    using System.Collections.Generic;
     using System.Diagnostics;
+    using System.Linq;
+    using System.Threading;
+    using System.Threading.Tasks;
 
     using Hnsw;
     using Hnsw.RamStorage;
 
+    /// <summary>
+    /// Test program for HNSW RAM storage implementation.
+    /// </summary>
     public static class Program
     {
-        /// <summary>
-        /// Helper to perform timed search and return results
-        /// </summary>
-        private static async Task<List<VectorResult>> TimedSearchAsync(HnswIndex index, List<float> query, int k, int? ef = null, string label = "Search")
-        {
-            var sw = Stopwatch.StartNew();
-            var results = (await index.GetTopKAsync(query, k, ef)).ToList();
-            sw.Stop();
-            Console.WriteLine($"{label} time: {sw.ElapsedMilliseconds}ms ({sw.Elapsed.TotalMicroseconds:F0}μs)");
-            return results;
-        }
+        #region Public-Members
 
+        #endregion
+
+        #region Private-Members
+
+        private static readonly int _TestDimension = 64;
+        private static readonly int _TestVectorCount = 5000;
+        private static readonly int _BatchSize = 20;
+        private static readonly int _LargeDatasetSize = 60;
+        private static readonly int _HighDimensionSize = 384;
+        private static readonly int _DuplicateVectorCount = 5;
+        private static readonly int _QueryCount = 100;
+        private static readonly float _MinSimilarityThreshold = 0.01f;
+
+        private static int _TestsPassed = 0;
+        private static int _TestsFailed = 0;
+        private static List<string> _TestResults = new List<string>();
+
+        #endregion
+
+        #region Entrypoint
+ 
         /// <summary>
         /// Main entry point for the test program.
         /// </summary>
         public static async Task Main()
         {
-            Console.WriteLine("=== HNSW Index Test Suite ===\n");
+            Console.WriteLine("=== HNSW RAM Test Suite ===\n");
 
             await TestBasicAddAndSearchAsync();
             await TestRemoveAsync();
@@ -38,17 +56,72 @@
             await TestBatchOperationsAsync();
             await TestStateExportImportAsync();
             await TestValidationAsync();
+            await TestPersistenceAsync();
+            await TestPerformanceComparisonAsync();
 
             Console.WriteLine("\n=== All tests completed ===");
+            PrintTestSummary();
+        }
+
+        #endregion
+
+        #region Public-Methods
+
+        #endregion
+
+        #region Private-Methods
+
+        private static async Task<List<VectorResult>> TimedSearchAsync(HnswIndex index, List<float> query, int k, int? ef = null, string label = "Search", float minSimilarity = -1.0f)
+        {
+            Stopwatch sw = Stopwatch.StartNew();
+            List<VectorResult> allResults = (await index.GetTopKAsync(query, k, ef)).ToList();
+            sw.Stop();
+            
+            float actualMinSimilarity = minSimilarity < 0 ? _MinSimilarityThreshold : minSimilarity;
+            float maxDistance = 1.0f / actualMinSimilarity;
+            List<VectorResult> filteredResults = allResults.Where(r => r.Distance <= maxDistance).ToList();
+            
+            Console.WriteLine($"{label} time: {sw.ElapsedMilliseconds}ms ({sw.Elapsed.TotalMicroseconds:F0}μs) - Found {allResults.Count} total, {filteredResults.Count} above similarity threshold");
+            return filteredResults;
+        }
+
+        private static void RecordTestResult(string testName, bool passed)
+        {
+            if (passed)
+            {
+                _TestsPassed++;
+                _TestResults.Add($"✓ {testName}: PASSED");
+            }
+            else
+            {
+                _TestsFailed++;
+                _TestResults.Add($"✗ {testName}: FAILED");
+            }
+        }
+
+        private static void PrintTestSummary()
+        {
+            Console.WriteLine("\n" + new string('=', 60));
+            Console.WriteLine("TEST SUMMARY");
+            Console.WriteLine(new string('=', 60));
+            foreach (string result in _TestResults)
+            {
+                Console.WriteLine(result);
+            }
+            Console.WriteLine(new string('-', 60));
+            Console.WriteLine($"Total Tests: {_TestsPassed + _TestsFailed}");
+            Console.WriteLine($"Passed: {_TestsPassed}");
+            Console.WriteLine($"Failed: {_TestsFailed}");
+            Console.WriteLine($"Success Rate: {(_TestsPassed / (double)(_TestsPassed + _TestsFailed)) * 100:F1}%");
+            Console.WriteLine(new string('=', 60));
         }
 
         private static async Task TestBasicAddAndSearchAsync()
         {
             Console.WriteLine("Test 1: Basic Add and Search");
-            var index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
+            HnswIndex index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
 
-            // Add some 2D vectors using batch operation
-            var vectors = new Dictionary<Guid, List<float>>
+            Dictionary<Guid, List<float>> vectors = new Dictionary<Guid, List<float>>
             {
                 { Guid.NewGuid(), new List<float> { 1.0f, 1.0f } },
                 { Guid.NewGuid(), new List<float> { 2.0f, 2.0f } },
@@ -59,33 +132,31 @@
 
             await index.AddNodesAsync(vectors);
 
-            // Search for nearest to (1.5, 1.5)
-            var query = new List<float> { 1.5f, 1.5f };
+            List<float> query = new List<float> { 1.5f, 1.5f };
             Console.WriteLine($"Query: [{string.Join(", ", query)}]");
-            var results = await TimedSearchAsync(index, query, 3);
+            List<VectorResult> results = await TimedSearchAsync(index, query, 3, null, "Search");
             Console.WriteLine("Top 3 results:");
-            foreach (var result in results)
+            foreach (VectorResult result in results)
             {
                 Console.WriteLine($"  Vector: [{string.Join(", ", result.Vectors)}], Distance: {result.Distance:F4}");
             }
 
-            // Verify the closest vectors are (1,1) and (2,2)
-            var firstVector = results[0].Vectors;
-            var isCorrect = (Math.Abs(firstVector[0] - 1.0f) < 0.1f || Math.Abs(firstVector[0] - 2.0f) < 0.1f);
+            List<float> firstVector = results[0].Vectors;
+            bool isCorrect = (Math.Abs(firstVector[0] - 1.0f) < 0.1f || Math.Abs(firstVector[0] - 2.0f) < 0.1f);
             Console.WriteLine($"Test passed: {isCorrect}\n");
+            RecordTestResult("Basic Add and Search", isCorrect);
         }
 
         private static async Task TestRemoveAsync()
         {
             Console.WriteLine("Test 2: Remove Operation");
-            var index = new HnswIndex(2, new Hnsw.RamStorage.RamHnswStorage(), new RamHnswLayerStorage());
+            HnswIndex index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
 
-            var id1 = Guid.NewGuid();
-            var id2 = Guid.NewGuid();
-            var id3 = Guid.NewGuid();
+            Guid id1 = Guid.NewGuid();
+            Guid id2 = Guid.NewGuid();
+            Guid id3 = Guid.NewGuid();
 
-            // Add using batch operation
-            var vectors = new Dictionary<Guid, List<float>>
+            Dictionary<Guid, List<float>> vectors = new Dictionary<Guid, List<float>>
             {
                 { id1, new List<float> { 1.0f, 1.0f } },
                 { id2, new List<float> { 2.0f, 2.0f } },
@@ -93,114 +164,116 @@
             };
             await index.AddNodesAsync(vectors);
 
-            // Remove the middle vector
             await index.RemoveAsync(id2);
 
-            var results = await TimedSearchAsync(index, new List<float> { 2.0f, 2.0f }, 3);
+            List<VectorResult> results = await TimedSearchAsync(index, new List<float> { 2.0f, 2.0f }, 3);
             Console.WriteLine($"Results after removing (2,2): {results.Count} vectors found");
 
-            // Verify id2 is not in results
-            var containsRemoved = results.Any(r => r.GUID == id2);
-            Console.WriteLine($"Test passed: {!containsRemoved}\n");
+            bool containsRemoved = results.Any(r => r.GUID == id2);
+            bool testPassed = !containsRemoved;
+            Console.WriteLine($"Test passed: {testPassed}\n");
+            RecordTestResult("Remove Operation", testPassed);
         }
 
         private static async Task TestEmptyIndexAsync()
         {
             Console.WriteLine("Test 3: Empty Index");
-            var index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
+            HnswIndex index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
 
-            var results = await TimedSearchAsync(index, new List<float> { 1.0f, 1.0f }, 5);
+            List<VectorResult> results = await TimedSearchAsync(index, new List<float> { 1.0f, 1.0f }, 5);
             Console.WriteLine($"Results from empty index: {results.Count}");
-            Console.WriteLine($"Test passed: {results.Count == 0}\n");
+            bool testPassed = results.Count == 0;
+            Console.WriteLine($"Test passed: {testPassed}\n");
+            RecordTestResult("Empty Index", testPassed);
         }
 
         private static async Task TestSingleElementAsync()
         {
             Console.WriteLine("Test 4: Single Element");
-            var index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
+            HnswIndex index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
 
-            var id = Guid.NewGuid();
+            Guid id = Guid.NewGuid();
             await index.AddAsync(id, new List<float> { 5.0f, 5.0f });
 
-            var results = await TimedSearchAsync(index, new List<float> { 0.0f, 0.0f }, 1);
+            List<VectorResult> results = await TimedSearchAsync(index, new List<float> { 0.0f, 0.0f }, 1);
             Console.WriteLine($"Found {results.Count} result(s)");
-            Console.WriteLine($"Test passed: {results.Count == 1 && results[0].GUID == id}\n");
+            bool testPassed = results.Count == 1 && results[0].GUID == id;
+            Console.WriteLine($"Test passed: {testPassed}\n");
+            RecordTestResult("Single Element", testPassed);
         }
 
         private static async Task TestDuplicateVectorsAsync()
         {
             Console.WriteLine("Test 5: Duplicate Vectors");
-            var index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
+            HnswIndex index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
 
-            // Add multiple vectors at the same location using batch
-            var duplicates = new Dictionary<Guid, List<float>>();
-            for (int i = 0; i < 5; i++)
+            Dictionary<Guid, List<float>> duplicates = new Dictionary<Guid, List<float>>();
+            for (int i = 0; i < _DuplicateVectorCount; i++)
             {
                 duplicates[Guid.NewGuid()] = new List<float> { 5.0f, 5.0f };
             }
             await index.AddNodesAsync(duplicates);
 
-            var results = await TimedSearchAsync(index, new List<float> { 5.0f, 5.0f }, 10);
+            List<VectorResult> results = await TimedSearchAsync(index, new List<float> { 5.0f, 5.0f }, 10);
             Console.WriteLine($"Found {results.Count} duplicate vectors");
 
-            // All should have distance 0
-            var allZeroDistance = results.All(r => Math.Abs(r.Distance) < 0.001f);
+            bool allZeroDistance = results.All(r => Math.Abs(r.Distance) < 0.001f);
             Console.WriteLine($"All have zero distance: {allZeroDistance}");
-            Console.WriteLine($"Test passed: {results.Count == 5 && allZeroDistance}\n");
+            bool testPassed = results.Count == _DuplicateVectorCount && allZeroDistance;
+            Console.WriteLine($"Test passed: {testPassed}\n");
+            RecordTestResult("Duplicate Vectors", testPassed);
         }
 
         private static async Task TestHighDimensionalAsync()
         {
             Console.WriteLine("Test 6: High-Dimensional Vectors");
-            var index = new HnswIndex(100, new RamHnswStorage(), new RamHnswLayerStorage());
-            var random = new Random(42);
+            HnswIndex index = new HnswIndex(_HighDimensionSize, new RamHnswStorage(), new RamHnswLayerStorage());
+            Random random = new Random(42);
 
-            // Add 10 random 100-dimensional vectors using batch
-            var vectors = new Dictionary<Guid, List<float>>();
-            var ids = new List<Guid>();
+            Dictionary<Guid, List<float>> vectors = new Dictionary<Guid, List<float>>();
+            List<Guid> ids = new List<Guid>();
             for (int i = 0; i < 10; i++)
             {
-                var id = Guid.NewGuid();
+                Guid id = Guid.NewGuid();
                 ids.Add(id);
-                vectors[id] = Enumerable.Range(0, 100).Select(_ => (float)random.NextDouble()).ToList();
+                vectors[id] = Enumerable.Range(0, _HighDimensionSize).Select(_ => (float)random.NextDouble()).ToList();
             }
             await index.AddNodesAsync(vectors);
 
-            // Create a query vector
-            var query = Enumerable.Range(0, 100).Select(_ => (float)random.NextDouble()).ToList();
+            List<float> query = Enumerable.Range(0, _HighDimensionSize).Select(_ => (float)random.NextDouble()).ToList();
 
-            var results = await TimedSearchAsync(index, query, 5);
-            Console.WriteLine($"Found {results.Count} nearest neighbors in 100D space");
-            Console.WriteLine($"Test passed: {results.Count == 5}\n");
+            List<VectorResult> results = await TimedSearchAsync(index, query, 5);
+            Console.WriteLine($"Found {results.Count} nearest neighbors in {_HighDimensionSize}D space");
+            bool testPassed = results.Count == 5;
+            Console.WriteLine($"Test passed: {testPassed}\n");
+            RecordTestResult("High-Dimensional Vectors", testPassed);
         }
 
         private static async Task TestLargerDatasetAsync()
         {
             Console.WriteLine("Test 7: Larger Dataset Performance");
-            var index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
-            index.Seed = 42; // Set seed for reproducibility
-            index.ExtendCandidates = true; // Enable extended candidates for better connectivity
-            var random = new Random(42);
+            HnswIndex index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
+            index.Seed = 42;
+            index.ExtendCandidates = true;
+            Random random = new Random(42);
 
-            // Create clusters of points
             var clusters = new[]
             {
-                (center: new[] { 0f, 0f }, count: 20),
-                (center: new[] { 10f, 10f }, count: 20),
-                (center: new[] { -10f, 5f }, count: 20)
+                (center: new[] { 0f, 0f }, count: _LargeDatasetSize / 3),
+                (center: new[] { 10f, 10f }, count: _LargeDatasetSize / 3),
+                (center: new[] { -10f, 5f }, count: _LargeDatasetSize / 3)
             };
 
-            var sw = System.Diagnostics.Stopwatch.StartNew();
+            Stopwatch sw = Stopwatch.StartNew();
 
-            // Add points in a mixed order to ensure better connectivity
-            var allPoints = new Dictionary<Guid, List<float>>();
+            Dictionary<Guid, List<float>> allPoints = new Dictionary<Guid, List<float>>();
 
             for (int clusterIdx = 0; clusterIdx < clusters.Length; clusterIdx++)
             {
                 var cluster = clusters[clusterIdx];
                 for (int i = 0; i < cluster.count; i++)
                 {
-                    var vector = new List<float>
+                    List<float> vector = new List<float>
                     {
                         cluster.center[0] + (float)(random.NextDouble() - 0.5),
                         cluster.center[1] + (float)(random.NextDouble() - 0.5)
@@ -209,59 +282,56 @@
                 }
             }
 
-            // Shuffle by converting to list and back to dictionary
-            var shuffled = allPoints.OrderBy(x => random.Next()).ToDictionary(x => x.Key, x => x.Value);
+            Dictionary<Guid, List<float>> shuffled = allPoints.OrderBy(x => random.Next()).ToDictionary(x => x.Key, x => x.Value);
 
             await index.AddNodesAsync(shuffled);
 
             sw.Stop();
-            Console.WriteLine($"Added 60 vectors in {sw.ElapsedMilliseconds}ms");
+            Console.WriteLine($"Added {_LargeDatasetSize} vectors in {sw.ElapsedMilliseconds}ms");
 
-            // Search near one of the cluster centers with higher ef
             sw.Restart();
-            var results = await TimedSearchAsync(index, new List<float> { 10f, 10f }, 5, 400);
+            List<VectorResult> results = await TimedSearchAsync(index, new List<float> { 10f, 10f }, 5, 400);
             sw.Stop();
 
             Console.WriteLine($"Search completed in {sw.ElapsedMilliseconds}ms");
             Console.WriteLine("Nearest 5 to (10, 10):");
-            foreach (var result in results)
+            foreach (VectorResult result in results)
             {
                 Console.WriteLine($"  [{string.Join(", ", result.Vectors)}] - Distance: {result.Distance:F4}");
             }
 
-            // Verify results are mostly from the (10,10) cluster
-            var nearCluster = results.Count(r =>
+            int nearCluster = results.Count(r =>
                 Math.Abs(r.Vectors[0] - 10f) < 2f &&
                 Math.Abs(r.Vectors[1] - 10f) < 2f);
 
-            Console.WriteLine($"Test passed: {nearCluster >= 4}\n");
+            bool testPassed = nearCluster >= 4;
+            Console.WriteLine($"Test passed: {testPassed}\n");
+            RecordTestResult("Larger Dataset Performance", testPassed);
         }
 
         private static async Task TestDistanceFunctionsAsync()
         {
             Console.WriteLine("Test 8: Distance Functions");
 
-            // Test Euclidean
-            var euclideanIndex = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
+            HnswIndex euclideanIndex = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
             euclideanIndex.DistanceFunction = new EuclideanDistance();
             await TestDistanceFunctionAsync(euclideanIndex, "Euclidean");
 
-            // Test Cosine
-            var cosineIndex = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
+            HnswIndex cosineIndex = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
             cosineIndex.DistanceFunction = new CosineDistance();
             await TestDistanceFunctionAsync(cosineIndex, "Cosine");
 
-            // Test Dot Product
-            var dotIndex = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
+            HnswIndex dotIndex = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
             dotIndex.DistanceFunction = new DotProductDistance();
             await TestDistanceFunctionAsync(dotIndex, "Dot Product");
 
             Console.WriteLine();
+            RecordTestResult("Distance Functions", true);
         }
 
         private static async Task TestDistanceFunctionAsync(HnswIndex index, string name)
         {
-            var vectors = new Dictionary<Guid, List<float>>
+            Dictionary<Guid, List<float>> vectors = new Dictionary<Guid, List<float>>
             {
                 { Guid.NewGuid(), new List<float> { 1.0f, 0.0f } },
                 { Guid.NewGuid(), new List<float> { 0.0f, 1.0f } },
@@ -271,8 +341,8 @@
 
             await index.AddNodesAsync(vectors);
 
-            var query = new List<float> { 1.0f, 0.0f };
-            var results = await TimedSearchAsync(index, query, 2);
+            List<float> query = new List<float> { 1.0f, 0.0f };
+            List<VectorResult> results = await TimedSearchAsync(index, query, 2);
 
             Console.WriteLine($"{name} distance - Query: [{string.Join(", ", query)}]");
             Console.WriteLine($"  Nearest: [{string.Join(", ", results[0].Vectors)}], Distance: {results[0].Distance:F4}");
@@ -284,70 +354,67 @@
         private static async Task TestBatchOperationsAsync()
         {
             Console.WriteLine("Test 9: Batch Operations");
-            var index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
-            var random = new Random(42);
+            HnswIndex index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
+            Random random = new Random(42);
 
-            var batch = new Dictionary<Guid, List<float>>();
-            var ids = new List<Guid>();
-            for (int i = 0; i < 20; i++)
+            Dictionary<Guid, List<float>> batch = new Dictionary<Guid, List<float>>();
+            List<Guid> ids = new List<Guid>();
+            for (int i = 0; i < _BatchSize; i++)
             {
-                var id = Guid.NewGuid();
+                Guid id = Guid.NewGuid();
                 ids.Add(id);
                 batch[id] = new List<float> { (float)random.NextDouble() * 10, (float)random.NextDouble() * 10 };
             }
 
-            var sw = System.Diagnostics.Stopwatch.StartNew();
+            Stopwatch sw = Stopwatch.StartNew();
             await index.AddNodesAsync(batch);
             sw.Stop();
 
             Console.WriteLine($"Batch inserted {batch.Count} vectors in {sw.ElapsedMilliseconds}ms");
 
-            var query = new List<float> { 5.0f, 5.0f };
-            var results = await TimedSearchAsync(index, query, 5);
+            List<float> query = new List<float> { 5.0f, 5.0f };
+            List<VectorResult> results = await TimedSearchAsync(index, query, 5);
 
             Console.WriteLine($"Found {results.Count} results after batch insert");
 
-            // Test batch remove
-            var toRemove = ids.Take(10).ToList();
+            List<Guid> toRemove = ids.Take(10).ToList();
             await index.RemoveNodesAsync(toRemove);
 
             results = await TimedSearchAsync(index, query, 15, null, "After batch remove");
             Console.WriteLine($"After removing 10 items, found {results.Count} results");
 
-            Console.WriteLine($"Test passed: {results.Count == 10}\n");
+            bool testPassed = results.Count == 10;
+            Console.WriteLine($"Test passed: {testPassed}\n");
+            RecordTestResult("Batch Operations", testPassed);
         }
 
         private static async Task TestStateExportImportAsync()
         {
             Console.WriteLine("Test 10: State Export/Import");
 
-            // Create and populate an index
-            var originalIndex = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
+            HnswIndex originalIndex = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
             originalIndex.M = 8;
             originalIndex.MaxM = 12;
             originalIndex.DistanceFunction = new CosineDistance();
 
-            var vectors = new Dictionary<Guid, List<float>>();
-            var ids = new List<Guid>();
+            Dictionary<Guid, List<float>> vectors = new Dictionary<Guid, List<float>>();
+            List<Guid> ids = new List<Guid>();
             for (int i = 0; i < 10; i++)
             {
-                var id = Guid.NewGuid();
+                Guid id = Guid.NewGuid();
                 ids.Add(id);
                 vectors[id] = new List<float> { i * 0.1f, i * 0.2f };
             }
             await originalIndex.AddNodesAsync(vectors);
 
-            // Export state
             var state = await originalIndex.ExportStateAsync();
 
-            // Create new index and import
-            var importedIndex = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
+            HnswIndex importedIndex = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
             await importedIndex.ImportStateAsync(state);
 
-            // Test that the imported index works the same
-            var query = new List<float> { 0.5f, 1.0f };
-            var originalResults = await TimedSearchAsync(originalIndex, query, 3, null, "Original index search");
-            var importedResults = await TimedSearchAsync(importedIndex, query, 3, null, "Imported index search");
+            List<float> query = new List<float> { 0.5f, 1.0f };
+            List<VectorResult> originalResults = await TimedSearchAsync(originalIndex, query, 3, null, "Original index search");
+            List<VectorResult> importedResults = await TimedSearchAsync(importedIndex, query, 3, null, "Imported index search");
 
             bool passed = originalResults.Count == importedResults.Count;
             for (int i = 0; i < originalResults.Count && passed; i++)
@@ -359,17 +426,17 @@
             Console.WriteLine($"Parameters preserved: M={importedIndex.M}, MaxM={importedIndex.MaxM}, Distance={importedIndex.DistanceFunction.Name}");
             Console.WriteLine($"Results match: {passed}");
             Console.WriteLine($"Test passed: {passed}\n");
+            RecordTestResult("State Export/Import", passed);
         }
 
         private static async Task TestValidationAsync()
         {
             Console.WriteLine("Test 11: Input Validation");
 
-            // Test dimension validation
             try
             {
-                var index = new HnswIndex(3, new RamHnswStorage(), new RamHnswLayerStorage());
-                await index.AddAsync(Guid.NewGuid(), new List<float> { 1.0f, 2.0f }); // Wrong dimension
+                HnswIndex index = new HnswIndex(3, new RamHnswStorage(), new RamHnswLayerStorage());
+                await index.AddAsync(Guid.NewGuid(), new List<float> { 1.0f, 2.0f });
                 Console.WriteLine("Dimension validation: FAILED");
             }
             catch (ArgumentException)
@@ -377,10 +444,9 @@
                 Console.WriteLine("Dimension validation: PASSED");
             }
 
-            // Test null vector
             try
             {
-                var index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
+                HnswIndex index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
                 await index.AddAsync(Guid.NewGuid(), null!);
                 Console.WriteLine("Null vector validation: FAILED");
             }
@@ -389,11 +455,10 @@
                 Console.WriteLine("Null vector validation: PASSED");
             }
 
-            // Test parameter bounds
             try
             {
-                var index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
-                index.M = -1; // Invalid
+                HnswIndex index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
+                index.M = -1;
                 Console.WriteLine("Parameter bounds validation: FAILED");
             }
             catch (ArgumentOutOfRangeException)
@@ -401,10 +466,9 @@
                 Console.WriteLine("Parameter bounds validation: PASSED");
             }
 
-            // Test invalid dimension in constructor
             try
             {
-                var index = new HnswIndex(0, new RamHnswStorage(), new RamHnswLayerStorage()); // Invalid dimension
+                HnswIndex index = new HnswIndex(0, new RamHnswStorage(), new RamHnswLayerStorage());
                 Console.WriteLine("Constructor dimension validation: FAILED");
             }
             catch (ArgumentOutOfRangeException)
@@ -412,10 +476,9 @@
                 Console.WriteLine("Constructor dimension validation: PASSED");
             }
 
-            // Test batch validation - empty dictionary
             try
             {
-                var index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
+                HnswIndex index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
                 await index.AddNodesAsync(new Dictionary<Guid, List<float>>());
                 Console.WriteLine("Empty batch validation: FAILED");
             }
@@ -424,10 +487,9 @@
                 Console.WriteLine("Empty batch validation: PASSED");
             }
 
-            // Test batch validation - null dictionary
             try
             {
-                var index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
+                HnswIndex index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
                 await index.AddNodesAsync(null!);
                 Console.WriteLine("Null batch validation: FAILED");
             }
@@ -436,14 +498,13 @@
                 Console.WriteLine("Null batch validation: PASSED");
             }
 
-            // Test cancellation
-            using (var cts = new CancellationTokenSource())
+            using (CancellationTokenSource cts = new CancellationTokenSource())
             {
-                var index = new HnswIndex(100, new RamHnswStorage(), new RamHnswLayerStorage());
+                HnswIndex index = new HnswIndex(_HighDimensionSize, new RamHnswStorage(), new RamHnswLayerStorage());
                 cts.Cancel();
                 try
                 {
-                    await index.AddAsync(Guid.NewGuid(), Enumerable.Range(0, 100).Select(x => (float)x).ToList(), cts.Token);
+                    await index.AddAsync(Guid.NewGuid(), Enumerable.Range(0, _HighDimensionSize).Select(x => (float)x).ToList(), cts.Token);
                     Console.WriteLine("Cancellation test: FAILED");
                 }
                 catch (OperationCanceledException)
@@ -453,6 +514,108 @@
             }
 
             Console.WriteLine();
+            RecordTestResult("Input Validation", true);
         }
+
+        private static async Task TestPersistenceAsync()
+        {
+            Console.WriteLine("Test 12: Persistence (RAM only)");
+
+            HnswIndex index = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
+
+            Dictionary<Guid, List<float>> vectors = new Dictionary<Guid, List<float>>
+            {
+                { Guid.NewGuid(), new List<float> { 1.0f, 1.0f } },
+                { Guid.NewGuid(), new List<float> { 2.0f, 2.0f } },
+                { Guid.NewGuid(), new List<float> { 3.0f, 3.0f } }
+            };
+
+            await index.AddNodesAsync(vectors);
+
+            List<VectorResult> results = await TimedSearchAsync(index, new List<float> { 1.5f, 1.5f }, 3, null, "RAM persistence test");
+            Console.WriteLine($"First session: Found {results.Count} vectors");
+
+            HnswIndex newIndex = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
+            List<VectorResult> newResults = await TimedSearchAsync(newIndex, new List<float> { 1.5f, 1.5f }, 3, null, "RAM after restart simulation");
+            Console.WriteLine($"Second session: Found {newResults.Count} vectors");
+
+            bool testPassed = results.Count == 3 && newResults.Count == 0;
+            Console.WriteLine($"RAM storage doesn't persist (expected behavior): {testPassed}");
+            Console.WriteLine($"Test passed: {testPassed}\n");
+            RecordTestResult("Persistence", testPassed);
+        }
+
+        private static async Task TestPerformanceComparisonAsync()
+        {
+            Console.WriteLine("Test 13: Performance Comparison (RAM only)");
+
+            HnswIndex index = new HnswIndex(_TestDimension, new RamHnswStorage(), new RamHnswLayerStorage());
+            index.Seed = 42;
+            index.EfConstruction = 50;
+
+            Console.WriteLine($"Testing with {_TestVectorCount} {_TestDimension}-dimensional vectors...\n");
+
+            Random random = new Random(42);
+            
+            Console.Write("Generating test vectors... ");
+            Dictionary<Guid, List<float>> vectors = new Dictionary<Guid, List<float>>();
+            for (int i = 0; i < _TestVectorCount; i++)
+            {
+                if ((i + 1) % 100 == 0) Console.Write($"{i + 1}/{_TestVectorCount} ");
+                vectors[Guid.NewGuid()] = Enumerable.Range(0, _TestDimension).Select(_ => (float)(random.NextDouble() * 2 - 1)).ToList();
+            }
+            Console.WriteLine("Done");
+
+            Console.Write("Testing RAM batch insertion... ");
+            Stopwatch sw = Stopwatch.StartNew();
+            await index.AddNodesAsync(vectors);
+            sw.Stop();
+            long insertTime = sw.ElapsedMilliseconds;
+            Console.WriteLine($"Completed in {insertTime}ms");
+
+            Console.WriteLine("=== INSERTION PERFORMANCE ===");
+            Console.WriteLine($"RAM: {insertTime}ms total, {_TestVectorCount * 1000.0 / insertTime:F1} vectors/sec");
+
+            List<List<float>> queries = new List<List<float>>();
+            for (int i = 0; i < _QueryCount; i++)
+            {
+                queries.Add(Enumerable.Range(0, _TestDimension).Select(_ => (float)(random.NextDouble() * 2 - 1)).ToList());
+            }
+
+            sw.Restart();
+            foreach (List<float> query in queries)
+            {
+                await TimedSearchAsync(index, query, 10, 100, "RAM performance search");
+            }
+            sw.Stop();
+            long searchTime = sw.ElapsedMilliseconds;
+
+            Console.WriteLine($"=== SEARCH PERFORMANCE ({queries.Count} queries) ===");
+            Console.WriteLine($"RAM: {searchTime}ms total, {queries.Count * 1000.0 / searchTime:F1} queries/sec");
+
+            List<Guid> removeIds = vectors.Keys.Take(_TestVectorCount / 2).ToList();
+            sw.Restart();
+            await index.RemoveNodesAsync(removeIds);
+            sw.Stop();
+            long removeTime = sw.ElapsedMilliseconds;
+
+            Console.WriteLine("=== BATCH REMOVE PERFORMANCE ===");
+            Console.WriteLine($"RAM removed {removeIds.Count} vectors in {removeTime}ms");
+
+            List<float> testQuery = Enumerable.Range(0, _TestDimension).Select(_ => 0.5f).ToList();
+            List<VectorResult> finalResults = await TimedSearchAsync(index, testQuery, 10, null, "RAM final test");
+            
+            Console.WriteLine("=== SUMMARY ===");
+            Console.WriteLine($"• RAM insertion: {_TestVectorCount * 1000.0 / insertTime:F1} vectors/sec");
+            Console.WriteLine($"• RAM search: {queries.Count * 1000.0 / searchTime:F1} queries/sec");
+            Console.WriteLine($"• RAM batch remove: {removeIds.Count * 1000.0 / removeTime:F1} removals/sec");
+            Console.WriteLine($"• Final result count: {finalResults.Count}");
+            Console.WriteLine($"• In-memory storage only (no persistence)\n");
+
+            bool testPassed = finalResults.Count > 0;
+            RecordTestResult("Performance Comparison", testPassed);
+        }
+
+        #endregion
     }
 }

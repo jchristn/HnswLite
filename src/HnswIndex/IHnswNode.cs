@@ -26,11 +26,11 @@
         /// <summary>
         /// Adds a neighbor connection at the specified layer.
         /// </summary>
-        void AddNeighbor(int layer, Guid neighborId);
+        void AddNeighbor(int layer, Guid NeighborGUID);
 
         /// <summary>
         /// Removes a neighbor connection at the specified layer.
         /// </summary>
-        void RemoveNeighbor(int layer, Guid neighborId);
+        void RemoveNeighbor(int layer, Guid NeighborGUID);
     }
 }
