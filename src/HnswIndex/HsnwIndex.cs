@@ -769,8 +769,7 @@
 
             // Pre-fetch entry point and its neighbors for better performance
             var entryNode = await context.GetNodeAsync(entryPointId.Value);
-            if (entryNode == null)
-                return Enumerable.Empty<VectorResult>();
+            if (entryNode == null) return Enumerable.Empty<VectorResult>();
             var entryNeighbors = entryNode.GetNeighbors();
 
             // Pre-fetch all neighbors at higher layers
