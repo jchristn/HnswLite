@@ -15,7 +15,7 @@
         // Private members
         private readonly IHnswStorage _Storage;
         private readonly IHnswLayerStorage _LayerStorage;
-        private readonly SemaphoreSlim _IndexLock = new SemaphoreSlim(1, 1); 
+        private readonly SemaphoreSlim _IndexLock = new SemaphoreSlim(1, 1);
         private readonly int _VectorDimension;
 
         private Random _Random;
@@ -265,7 +265,7 @@
                 var entryPoint = _Storage.EntryPoint;
                 if (!entryPoint.HasValue)
                     throw new InvalidOperationException("Entry point should exist when there are multiple nodes in the index.");
-                
+
                 var entryPointId = entryPoint.Value;
                 var currentNearest = entryPointId;
 
@@ -291,7 +291,7 @@
                     {
                         if (neighborId == guid)
                             continue; // Skip self-connections
-                            
+
                         // Add bidirectional connections
                         newNode.AddNeighbor(layer, neighborId);
                         var neighbor = await _Storage.GetNodeAsync(neighborId, cancellationToken);
@@ -377,7 +377,7 @@
                 // Use SearchContext to cache nodes during graph construction for better performance
                 var context = new SearchContext(_Storage, cancellationToken);
                 bool isFirstNode = await _Storage.GetCountAsync(cancellationToken) == nodes.Count;
-                
+
                 int processedCount = 0;
                 int totalCount = nodes.Count;
                 foreach (var kvp in nodes)
@@ -402,7 +402,7 @@
                     var entryPoint = _Storage.EntryPoint;
                     if (!entryPoint.HasValue)
                         throw new InvalidOperationException("Entry point should exist when there are multiple nodes in the index.");
-                    
+
                     var entryPointId = entryPoint.Value;
                     var currentNearest = entryPointId;
 
@@ -427,7 +427,7 @@
                         {
                             if (neighborId == nodeId)
                                 continue; // Skip self-connections
-                                
+
                             // Add bidirectional connections
                             newNode.AddNeighbor(layer, neighborId);
                             var neighbor = await context.GetNodeAsync(neighborId);
@@ -470,12 +470,12 @@
                     {
                         _Storage.EntryPoint = nodeId;
                     }
-                    
+
                     processedCount++;
-                    
+
                     // TODO: Add Flush() to IHnswStorage interface for better batch performance
                 }
-                
+
                 // TODO: Call Flush() here when added to interface
             }
             finally
@@ -769,8 +769,10 @@
 
             // Pre-fetch entry point and its neighbors for better performance
             var entryNode = await context.GetNodeAsync(entryPointId.Value);
+            if (entryNode == null)
+                return Enumerable.Empty<VectorResult>();
             var entryNeighbors = entryNode.GetNeighbors();
-            
+
             // Pre-fetch all neighbors at higher layers
             var neighborsToPrefetch = new HashSet<Guid>();
             foreach (var layerNeighbors in entryNeighbors.Values)
@@ -1137,7 +1139,7 @@
                     if (layerNeighbors.Count > 0)
                     {
                         await context.PrefetchNodesAsync(layerNeighbors);
-                        
+
                         foreach (var neighborId in layerNeighbors)
                         {
                             var neighbor = await context.GetNodeAsync(neighborId);
