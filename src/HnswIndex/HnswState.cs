@@ -64,7 +64,7 @@
                 else
                 {
                     // Validate that the list doesn't contain null elements
-                    foreach (var node in value)
+                    foreach (NodeState node in value)
                     {
                         if (node == null)
                             throw new ArgumentException("Nodes list cannot contain null elements.", nameof(value));
@@ -114,7 +114,7 @@
             if (EntryPointId.HasValue && Nodes.Count > 0)
             {
                 bool entryPointExists = false;
-                foreach (var node in Nodes)
+                foreach (NodeState node in Nodes)
                 {
                     if (node.Id == EntryPointId.Value)
                     {
@@ -136,7 +136,7 @@
             }
 
             // Validate all nodes have consistent vector dimensions
-            foreach (var node in Nodes)
+            foreach (NodeState node in Nodes)
             {
                 if (node.Vector != null && node.Vector.Count != VectorDimension)
                 {

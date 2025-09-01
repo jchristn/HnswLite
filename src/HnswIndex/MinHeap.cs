@@ -108,7 +108,7 @@
             if (_Items.Count == 0)
                 throw new InvalidOperationException("Cannot pop from an empty heap.");
 
-            var result = _Items[0];
+            (float priority, T item) result = _Items[0];
 
             if (_Items.Count == 1)
             {
