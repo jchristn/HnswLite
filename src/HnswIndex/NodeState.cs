@@ -118,10 +118,10 @@
                             throw new ArgumentException($"Layer {kvp.Key} cannot exceed 63.", nameof(value));
 
                         // Ensure list is not null and doesn't contain empty GUIDs
-                        var neighborList = kvp.Value ?? new List<Guid>();
-                        var validatedList = new List<Guid>();
+                        List<Guid> neighborList = kvp.Value ?? new List<Guid>();
+                        List<Guid> validatedList = new List<Guid>();
 
-                        foreach (var neighborId in neighborList)
+                        foreach (Guid neighborId in neighborList)
                         {
                             if (neighborId == Guid.Empty)
                                 throw new ArgumentException($"Neighbor list for layer {kvp.Key} contains Guid.Empty.", nameof(value));
@@ -196,7 +196,7 @@
                 throw new InvalidOperationException("Node vector cannot be null or empty.");
 
             // Check that all neighbor layers are within valid range
-            foreach (var kvp in _Neighbors)
+            foreach (KeyValuePair<int, List<Guid>> kvp in _Neighbors)
             {
                 if (kvp.Key < 0 || kvp.Key > _Layer)
                     throw new InvalidOperationException(
@@ -230,7 +230,7 @@
             if (layer > 63)
                 throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot exceed 63.");
 
-            return _Neighbors.TryGetValue(layer, out var neighbors)
+            return _Neighbors.TryGetValue(layer, out List<Guid>? neighbors)
                 ? new List<Guid>(neighbors)
                 : new List<Guid>();
         }
@@ -241,7 +241,7 @@
         /// <returns>A new NodeState instance with copied values.</returns>
         public NodeState Clone()
         {
-            var clone = new NodeState
+            NodeState clone = new NodeState
             {
                 _Id = this._Id,
                 Vector = new List<float>(this._Vector),
@@ -249,7 +249,7 @@
                 Neighbors = new Dictionary<int, List<Guid>>()
             };
 
-            foreach (var kvp in this._Neighbors)
+            foreach (KeyValuePair<int, List<Guid>> kvp in this._Neighbors)
             {
                 clone._Neighbors[kvp.Key] = new List<Guid>(kvp.Value);
             }

@@ -126,7 +126,7 @@
             try
             {
                 // Update database
-                var command = _connection.CreateCommand();
+                SqliteCommand command = _connection.CreateCommand();
                 command.CommandText = $@"
                     INSERT OR REPLACE INTO {_tableName} (node_id, layer, updated_at) 
                     VALUES (@nodeId, @layer, CURRENT_TIMESTAMP)";
@@ -160,7 +160,7 @@
             try
             {
                 // Remove from database
-                var command = _connection.CreateCommand();
+                SqliteCommand command = _connection.CreateCommand();
                 command.CommandText = $"DELETE FROM {_tableName} WHERE node_id = @nodeId";
                 command.Parameters.AddWithValue("@nodeId", nodeId.ToString());
                 command.ExecuteNonQuery();
@@ -212,7 +212,7 @@
             try
             {
                 // Clear database
-                var command = _connection.CreateCommand();
+                SqliteCommand command = _connection.CreateCommand();
                 command.CommandText = $"DELETE FROM {_tableName}";
                 command.ExecuteNonQuery();
 
@@ -340,7 +340,7 @@
 
         private void InitializeTable()
         {
-            var command = _connection.CreateCommand();
+            SqliteCommand command = _connection.CreateCommand();
             command.CommandText = $@"
                 CREATE TABLE IF NOT EXISTS {_tableName} (
                     node_id TEXT PRIMARY KEY,
@@ -350,7 +350,7 @@
             command.ExecuteNonQuery();
 
             // Create index for performance
-            var indexCommand = _connection.CreateCommand();
+            SqliteCommand indexCommand = _connection.CreateCommand();
             indexCommand.CommandText = $"CREATE INDEX IF NOT EXISTS idx_{_tableName}_node_id ON {_tableName}(node_id)";
             indexCommand.ExecuteNonQuery();
         }
@@ -378,15 +378,15 @@
 
             _layerCache.Clear();
 
-            var command = _connection.CreateCommand();
+            SqliteCommand command = _connection.CreateCommand();
             command.CommandText = $"SELECT node_id, layer FROM {_tableName}";
 
-            using var reader = command.ExecuteReader();
+            using SqliteDataReader reader = command.ExecuteReader();
             while (reader.Read())
             {
                 if (Guid.TryParse(reader.GetString(0), out Guid nodeId))
                 {
-                    var layer = reader.GetInt32(1);
+                    int layer = reader.GetInt32(1);
                     _layerCache[nodeId] = layer;
                 }
             }

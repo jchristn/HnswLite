@@ -153,13 +153,13 @@
                 cancellationToken.ThrowIfCancellationRequested();
 
                 // Create node (validation happens in RamHnswNode constructor)
-                var node = new RamHnswNode(id, vector);
+                RamHnswNode node = new RamHnswNode(id, vector);
 
                 _storageLock.EnterWriteLock();
                 try
                 {
                     // Dispose of existing node if replacing
-                    if (_nodes.TryGetValue(id, out var existingNode))
+                    if (_nodes.TryGetValue(id, out RamHnswNode? existingNode))
                     {
                         existingNode.Dispose();
                     }
@@ -200,8 +200,8 @@
                 cancellationToken.ThrowIfCancellationRequested();
 
                 // Validate and create all nodes first (outside of lock)
-                var newNodes = new Dictionary<Guid, RamHnswNode>(nodes.Count);
-                foreach (var kvp in nodes)
+                Dictionary<Guid, RamHnswNode> newNodes = new Dictionary<Guid, RamHnswNode>(nodes.Count);
+                foreach (KeyValuePair<Guid, List<float>> kvp in nodes)
                 {
                     if (kvp.Key == Guid.Empty)
                         throw new ArgumentException($"Node ID cannot be Guid.Empty.", nameof(nodes));
@@ -219,10 +219,10 @@
                     bool wasEmpty = _entryPoint == null;
 
                     // Add all nodes
-                    foreach (var kvp in newNodes)
+                    foreach (KeyValuePair<Guid, RamHnswNode> kvp in newNodes)
                     {
                         // Dispose of existing node if replacing
-                        if (_nodes.TryGetValue(kvp.Key, out var existingNode))
+                        if (_nodes.TryGetValue(kvp.Key, out RamHnswNode? existingNode))
                         {
                             existingNode.Dispose();
                         }
@@ -263,7 +263,7 @@
                 _storageLock.EnterWriteLock();
                 try
                 {
-                    if (_nodes.TryGetValue(id, out var node))
+                    if (_nodes.TryGetValue(id, out RamHnswNode? node))
                     {
                         node.Dispose();
                         _nodes.Remove(id);
@@ -310,9 +310,9 @@
                 {
                     bool entryPointRemoved = false;
 
-                    foreach (var id in ids)
+                    foreach (Guid id in ids)
                     {
-                        if (_nodes.TryGetValue(id, out var node))
+                        if (_nodes.TryGetValue(id, out RamHnswNode? node))
                         {
                             node.Dispose();
                             _nodes.Remove(id);
@@ -359,7 +359,7 @@
                 _storageLock.EnterReadLock();
                 try
                 {
-                    if (!_nodes.TryGetValue(id, out var node))
+                    if (!_nodes.TryGetValue(id, out RamHnswNode? node))
                         throw new KeyNotFoundException($"Node with ID {id} not found in storage.");
                     return node;
                 }
@@ -394,10 +394,10 @@
                 _storageLock.EnterReadLock();
                 try
                 {
-                    var result = new Dictionary<Guid, IHnswNode>();
-                    foreach (var id in ids)
+                    Dictionary<Guid, IHnswNode> result = new Dictionary<Guid, IHnswNode>();
+                    foreach (Guid id in ids)
                     {
-                        if (_nodes.TryGetValue(id, out var node))
+                        if (_nodes.TryGetValue(id, out RamHnswNode? node))
                         {
                             result[id] = node;
                         }
@@ -430,7 +430,7 @@
                 _storageLock.EnterReadLock();
                 try
                 {
-                    if (_nodes.TryGetValue(id, out var node))
+                    if (_nodes.TryGetValue(id, out RamHnswNode? node))
                     {
                         return TryGetNodeResult.Found(node);
                     }
@@ -507,7 +507,7 @@
             try
             {
                 // Dispose all nodes
-                foreach (var node in _nodes.Values)
+                foreach (RamHnswNode node in _nodes.Values)
                 {
                     node.Dispose();
                 }
@@ -545,7 +545,7 @@
                     try
                     {
                         // Dispose all nodes
-                        foreach (var node in _nodes.Values)
+                        foreach (RamHnswNode node in _nodes.Values)
                         {
                             node.Dispose();
                         }

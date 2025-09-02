@@ -106,12 +106,12 @@ using Hnsw.RamStorage;
 using Hnsw.SqliteStorage;
 
 // Create an index for 128-dimensional vectors in RAM
-var index = new HnswIndex(128, new RamHnswStorage(), new RamHnswLayerStorage());
+HnswIndex index = new HnswIndex(128, new RamHnswStorage(), new RamHnswLayerStorage());
 
 // Or using SQLite (with proper disposal)
-using var sqliteStorage = new SqliteHnswStorage("my-index.db");
-using var sqliteLayerStorage = new SqliteHnswLayerStorage(sqliteStorage.Connection);
-var sqliteIndex = new HnswIndex(128, sqliteStorage, sqliteLayerStorage);
+using SqliteHnswStorage sqliteStorage = new SqliteHnswStorage("my-index.db");
+using SqliteHnswLayerStorage sqliteLayerStorage = new SqliteHnswLayerStorage(sqliteStorage.Connection);
+HnswIndex sqliteIndex = new HnswIndex(128, sqliteStorage, sqliteLayerStorage);
 
 // Configure parameters (optional)
 index.M = 16;
@@ -119,39 +119,39 @@ index.EfConstruction = 200;
 index.DistanceFunction = new CosineDistance();
 
 // Add vectors to the index
-var vectorId = Guid.NewGuid();
-var vector = new List<float>(128); // Your 128-dimensional embedding
+Guid vectorId = Guid.NewGuid();
+List<float> vector = new List<float>(128); // Your 128-dimensional embedding
 // ... populate vector with data ...
 
 await index.AddAsync(vectorId, vector);
 
 // Add multiple vectors
-var batch = new Dictionary<Guid, List<float>>();
+Dictionary<Guid, List<float>> batch = new Dictionary<Guid, List<float>>();
 for (int i = 0; i < 1000; i++)
 {
-    var id = Guid.NewGuid();
-    var v = GenerateRandomVector(128); // Your vector generation logic
+    Guid id = Guid.NewGuid();
+    List<float> v = GenerateRandomVector(128); // Your vector generation logic
     batch[id] = v;
 }
 await index.AddNodesAsync(batch);
 
 // Search for nearest neighbors
-var queryVector = new List<float>(128); // Your query embedding
+List<float> queryVector = new List<float>(128); // Your query embedding
 // ... populate query vector ...
 
-var neighbors = await index.GetTopKAsync(queryVector, k: 10);
+List<SearchResult> neighbors = await index.GetTopKAsync(queryVector, k: 10);
 
-foreach (var result in neighbors)
+foreach (SearchResult result in neighbors)
 {
     Console.WriteLine($"ID: {result.GUID}, Distance: {result.Distance:F4}");
 }
 
 // Save the index
-var state = await index.ExportStateAsync();
+HnswState state = await index.ExportStateAsync();
 // ... serialize state to disk ...
 
 // Load the index
-var newIndex = new HnswIndex(128, new RamHnswStorage(), new RamHnswLayerStorage());
+HnswIndex newIndex = new HnswIndex(128, new RamHnswStorage(), new RamHnswLayerStorage());
 await newIndex.ImportStateAsync(state);
 ```
 
@@ -165,12 +165,12 @@ await newIndex.ImportStateAsync(state);
 2. **Batch Operations**:
    ```csharp
    // GOOD: Use batch operations for multiple vectors
-   var batch = new Dictionary<Guid, List<float>>();
+   Dictionary<Guid, List<float>> batch = new Dictionary<Guid, List<float>>();
    // ... populate batch ...
    await index.AddNodesAsync(batch);
    
    // AVOID: Individual adds in a loop
-   foreach (var item in items)
+   foreach (Item item in items)
    {
        await index.AddAsync(item.Id, item.Vector); // Slower
    }
@@ -179,8 +179,8 @@ await newIndex.ImportStateAsync(state);
 3. **Search Performance**:
    ```csharp
    // Adjust ef parameter based on your needs
-   var quickResults = await index.GetTopKAsync(query, k: 10, ef: 50);  // Faster, lower quality
-   var bestResults = await index.GetTopKAsync(query, k: 10, ef: 400);  // Slower, higher quality
+   List<SearchResult> quickResults = await index.GetTopKAsync(query, k: 10, ef: 50);  // Faster, lower quality
+   List<SearchResult> bestResults = await index.GetTopKAsync(query, k: 10, ef: 400);  // Slower, higher quality
    ```
 
 ### Custom Storage Example

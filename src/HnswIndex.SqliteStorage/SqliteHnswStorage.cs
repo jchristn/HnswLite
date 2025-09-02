@@ -104,9 +104,9 @@
                 _storageLock.EnterReadLock();
                 try
                 {
-                    var command = _connection.CreateCommand();
+                    SqliteCommand command = _connection.CreateCommand();
                     command.CommandText = $"SELECT COUNT(*) FROM {_nodesTableName}";
-                    var count = Convert.ToInt32(command.ExecuteScalar());
+                    int count = Convert.ToInt32(command.ExecuteScalar());
                     return count == 0;
                 }
                 finally
@@ -152,7 +152,7 @@
             if (!createIfNotExists && !File.Exists(databasePath))
                 throw new FileNotFoundException($"Database file not found: {databasePath}");
 
-            var connectionString = new SqliteConnectionStringBuilder
+            string connectionString = new SqliteConnectionStringBuilder
             {
                 DataSource = databasePath,
                 Mode = SqliteOpenMode.ReadWriteCreate,
@@ -163,21 +163,21 @@
             _connection.Open();
 
             // Enable WAL mode for better crash recovery
-            var walCommand = _connection.CreateCommand();
+            SqliteCommand walCommand = _connection.CreateCommand();
             walCommand.CommandText = "PRAGMA journal_mode=WAL";
             walCommand.ExecuteNonQuery();
 
             // Use FULL synchronous for complete durability
-            var syncCommand = _connection.CreateCommand();
+            SqliteCommand syncCommand = _connection.CreateCommand();
             syncCommand.CommandText = "PRAGMA synchronous=FULL";
             syncCommand.ExecuteNonQuery();
 
             // Optimize cache and memory settings for better performance
-            var cacheCommand = _connection.CreateCommand();
+            SqliteCommand cacheCommand = _connection.CreateCommand();
             cacheCommand.CommandText = "PRAGMA cache_size=10000";
             cacheCommand.ExecuteNonQuery();
 
-            var tempStoreCommand = _connection.CreateCommand();
+            SqliteCommand tempStoreCommand = _connection.CreateCommand();
             tempStoreCommand.CommandText = "PRAGMA temp_store=MEMORY";
             tempStoreCommand.ExecuteNonQuery();
 
@@ -212,7 +212,7 @@
             if (!createIfNotExists && !File.Exists(databasePath))
                 throw new FileNotFoundException($"Database file not found: {databasePath}");
 
-            var connectionString = new SqliteConnectionStringBuilder
+            string connectionString = new SqliteConnectionStringBuilder
             {
                 DataSource = databasePath,
                 Mode = SqliteOpenMode.ReadWriteCreate,
@@ -244,7 +244,7 @@
                 _storageLock.EnterReadLock();
                 try
                 {
-                    var command = _connection.CreateCommand();
+                    SqliteCommand command = _connection.CreateCommand();
                     command.CommandText = $"SELECT COUNT(*) FROM {_nodesTableName}";
                     return Convert.ToInt32(command.ExecuteScalar());
                 }
@@ -286,15 +286,15 @@
                 try
                 {
                     // Remove from cache if exists
-                    if (_nodeCache.TryGetValue(id, out var existingNode))
+                    if (_nodeCache.TryGetValue(id, out SqliteHnswNode? existingNode))
                     {
                         existingNode.Dispose();
                         _nodeCache.Remove(id);
                     }
 
                     // Save vector to database using binary format for better performance
-                    var vectorBlob = SerializeVector(vector);
-                    var command = _connection.CreateCommand();
+                    byte[] vectorBlob = SerializeVector(vector);
+                    SqliteCommand command = _connection.CreateCommand();
                     command.CommandText = $@"
                         INSERT OR REPLACE INTO {_nodesTableName} (id, vector_blob, vector_dimension, updated_at) 
                         VALUES (@id, @vectorBlob, @dimension, CURRENT_TIMESTAMP)";
@@ -304,7 +304,7 @@
                     command.ExecuteNonQuery();
 
                     // Create node and add to cache
-                    var node = new SqliteHnswNode(id, vector, _connection, _neighborsTableName);
+                    SqliteHnswNode node = new SqliteHnswNode(id, vector, _connection, _neighborsTableName);
                     _nodeCache[id] = node;
 
                     // Set as entry point if this is the first node
@@ -350,7 +350,7 @@
                 cancellationToken.ThrowIfCancellationRequested();
 
                 // Validate all nodes first
-                foreach (var kvp in nodes)
+                foreach (KeyValuePair<Guid, List<float>> kvp in nodes)
                 {
                     if (kvp.Key == Guid.Empty)
                         throw new ArgumentException($"Node ID cannot be Guid.Empty.", nameof(nodes));
@@ -364,7 +364,7 @@
                 try
                 {
                     // Use a transaction for batch operation
-                    using var transaction = _connection.BeginTransaction();
+                    using SqliteTransaction transaction = _connection.BeginTransaction();
                     try
                     {
                         bool wasEmpty = false;
@@ -382,7 +382,7 @@
                         }
 
                         // Prepare the insert command
-                        var command = _connection.CreateCommand();
+                        SqliteCommand command = _connection.CreateCommand();
                         command.Transaction = transaction;
                         command.CommandText = $@"
                             INSERT OR REPLACE INTO {_nodesTableName} (id, vector_blob, vector_dimension, updated_at) 
@@ -390,20 +390,20 @@
 
                         // Add all nodes
                         Guid? firstNodeId = null;
-                        foreach (var kvp in nodes)
+                        foreach (KeyValuePair<Guid, List<float>> kvp in nodes)
                         {
                             if (firstNodeId == null)
                                 firstNodeId = kvp.Key;
 
                             // Remove from cache if exists
-                            if (_nodeCache.TryGetValue(kvp.Key, out var existingNode))
+                            if (_nodeCache.TryGetValue(kvp.Key, out SqliteHnswNode? existingNode))
                             {
                                 existingNode.Dispose();
                                 _nodeCache.Remove(kvp.Key);
                             }
 
                             // Save vector to database using binary format for better performance
-                            var vectorBlob = SerializeVector(kvp.Value);
+                            byte[] vectorBlob = SerializeVector(kvp.Value);
                             command.Parameters.Clear();
                             command.Parameters.AddWithValue("@id", kvp.Key.ToByteArray());
                             command.Parameters.AddWithValue("@vectorBlob", vectorBlob);
@@ -411,7 +411,7 @@
                             command.ExecuteNonQuery();
 
                             // Create node and add to cache
-                            var node = new SqliteHnswNode(kvp.Key, kvp.Value, _connection, _neighborsTableName);
+                            SqliteHnswNode node = new SqliteHnswNode(kvp.Key, kvp.Value, _connection, _neighborsTableName);
                             _nodeCache[kvp.Key] = node;
                         }
 
@@ -458,25 +458,25 @@
                 try
                 {
                     // Remove from cache
-                    if (_nodeCache.TryGetValue(id, out var node))
+                    if (_nodeCache.TryGetValue(id, out SqliteHnswNode? node))
                     {
                         node.Dispose();
                         _nodeCache.Remove(id);
                     }
 
                     // Remove from database
-                    var deleteNodeCommand = _connection.CreateCommand();
+                    SqliteCommand deleteNodeCommand = _connection.CreateCommand();
                     deleteNodeCommand.CommandText = $"DELETE FROM {_nodesTableName} WHERE id = @id";
                     deleteNodeCommand.Parameters.AddWithValue("@id", id.ToByteArray());
                     deleteNodeCommand.ExecuteNonQuery();
 
-                    var deleteNeighborsCommand = _connection.CreateCommand();
+                    SqliteCommand deleteNeighborsCommand = _connection.CreateCommand();
                     deleteNeighborsCommand.CommandText = $"DELETE FROM {_neighborsTableName} WHERE node_id = @id";
                     deleteNeighborsCommand.Parameters.AddWithValue("@id", id.ToByteArray());
                     deleteNeighborsCommand.ExecuteNonQuery();
 
                     // Remove layer assignment
-                    var deleteLayerCommand = _connection.CreateCommand();
+                    SqliteCommand deleteLayerCommand = _connection.CreateCommand();
                     deleteLayerCommand.CommandText = $"DELETE FROM {_nodesTableName}_layers WHERE node_id = @id";
                     deleteLayerCommand.Parameters.AddWithValue("@id", id.ToByteArray());
                     deleteLayerCommand.ExecuteNonQuery();
@@ -484,9 +484,9 @@
                     // Update entry point if necessary
                     if (_entryPoint == id)
                     {
-                        var newEntryPointCommand = _connection.CreateCommand();
+                        SqliteCommand newEntryPointCommand = _connection.CreateCommand();
                         newEntryPointCommand.CommandText = $"SELECT id FROM {_nodesTableName} LIMIT 1";
-                        var result = newEntryPointCommand.ExecuteScalar();
+                        object? result = newEntryPointCommand.ExecuteScalar();
 
                         if (result != null && result != DBNull.Value)
                         {
@@ -535,28 +535,28 @@
                 try
                 {
                     // Use a transaction for batch operation
-                    using var transaction = _connection.BeginTransaction();
+                    using SqliteTransaction transaction = _connection.BeginTransaction();
                     try
                     {
                         bool entryPointRemoved = false;
 
                         // Prepare delete commands
-                        var deleteNodeCommand = _connection.CreateCommand();
+                        SqliteCommand deleteNodeCommand = _connection.CreateCommand();
                         deleteNodeCommand.Transaction = transaction;
                         deleteNodeCommand.CommandText = $"DELETE FROM {_nodesTableName} WHERE id = @id";
 
-                        var deleteNeighborsCommand = _connection.CreateCommand();
+                        SqliteCommand deleteNeighborsCommand = _connection.CreateCommand();
                         deleteNeighborsCommand.Transaction = transaction;
                         deleteNeighborsCommand.CommandText = $"DELETE FROM {_neighborsTableName} WHERE node_id = @id";
 
-                        var deleteLayerCommand = _connection.CreateCommand();
+                        SqliteCommand deleteLayerCommand = _connection.CreateCommand();
                         deleteLayerCommand.Transaction = transaction;
                         deleteLayerCommand.CommandText = $"DELETE FROM {_nodesTableName}_layers WHERE node_id = @id";
 
-                        foreach (var id in ids)
+                        foreach (Guid id in ids)
                         {
                             // Remove from cache
-                            if (_nodeCache.TryGetValue(id, out var node))
+                            if (_nodeCache.TryGetValue(id, out SqliteHnswNode? node))
                             {
                                 node.Dispose();
                                 _nodeCache.Remove(id);
@@ -584,10 +584,10 @@
                         // Update entry point if necessary
                         if (entryPointRemoved)
                         {
-                            var newEntryPointCommand = _connection.CreateCommand();
+                            SqliteCommand newEntryPointCommand = _connection.CreateCommand();
                             newEntryPointCommand.Transaction = transaction;
                             newEntryPointCommand.CommandText = $"SELECT id FROM {_nodesTableName} LIMIT 1";
-                            var result = newEntryPointCommand.ExecuteScalar();
+                            object? result = newEntryPointCommand.ExecuteScalar();
 
                             if (result != null && result != DBNull.Value)
                             {
@@ -641,7 +641,7 @@
                 try
                 {
                     // Check cache first
-                    if (_nodeCache.TryGetValue(id, out var cachedNode))
+                    if (_nodeCache.TryGetValue(id, out SqliteHnswNode? cachedNode))
                         return cachedNode;
                 }
                 finally
@@ -654,22 +654,22 @@
                 try
                 {
                     // Double-check cache after acquiring write lock
-                    if (_nodeCache.TryGetValue(id, out var cachedNode))
+                    if (_nodeCache.TryGetValue(id, out SqliteHnswNode? cachedNode))
                         return cachedNode;
 
                     // Load from database
-                    var command = _connection.CreateCommand();
+                    SqliteCommand command = _connection.CreateCommand();
                     command.CommandText = $"SELECT vector_blob FROM {_nodesTableName} WHERE id = @id";
                     command.Parameters.AddWithValue("@id", id.ToByteArray());
 
-                    var result = command.ExecuteScalar();
+                    object? result = command.ExecuteScalar();
                     if (result == null || result == DBNull.Value)
                         throw new KeyNotFoundException($"Node with ID {id} not found in storage.");
 
-                    var vectorBlob = (byte[])result;
-                    var vector = DeserializeVector(vectorBlob);
+                    byte[] vectorBlob = (byte[])result;
+                    List<float> vector = DeserializeVector(vectorBlob);
 
-                    var node = new SqliteHnswNode(id, vector, _connection, _neighborsTableName);
+                    SqliteHnswNode node = new SqliteHnswNode(id, vector, _connection, _neighborsTableName);
                     _nodeCache[id] = node;
                     return node;
                 }
@@ -702,16 +702,16 @@
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var result = new Dictionary<Guid, IHnswNode>();
-                var idsToLoad = new List<Guid>();
+                Dictionary<Guid, IHnswNode> result = new Dictionary<Guid, IHnswNode>();
+                List<Guid> idsToLoad = new List<Guid>();
 
                 // First pass: get cached nodes
                 _storageLock.EnterReadLock();
                 try
                 {
-                    foreach (var id in ids)
+                    foreach (Guid id in ids)
                     {
-                        if (_nodeCache.TryGetValue(id, out var cachedNode))
+                        if (_nodeCache.TryGetValue(id, out SqliteHnswNode? cachedNode))
                         {
                             result[id] = cachedNode;
                         }
@@ -733,8 +733,8 @@
                     try
                     {
                         // Build a query to get all nodes in one go
-                        var placeholders = string.Join(",", idsToLoad.Select((_, i) => $"@id{i}"));
-                        var command = _connection.CreateCommand();
+                        string placeholders = string.Join(",", idsToLoad.Select((_, i) => $"@id{i}"));
+                        SqliteCommand command = _connection.CreateCommand();
                         command.CommandText = $"SELECT id, vector_blob FROM {_nodesTableName} WHERE id IN ({placeholders})";
 
                         for (int i = 0; i < idsToLoad.Count; i++)
@@ -742,15 +742,15 @@
                             command.Parameters.AddWithValue($"@id{i}", idsToLoad[i].ToByteArray());
                         }
 
-                        using var reader = command.ExecuteReader();
+                        using SqliteDataReader reader = command.ExecuteReader();
                         while (reader.Read())
                         {
-                            var idBytes = (byte[])reader[0];
-                            var nodeId = new Guid(idBytes);
-                            var vectorBlob = (byte[])reader[1];
-                            var vector = DeserializeVector(vectorBlob);
+                            byte[] idBytes = (byte[])reader[0];
+                            Guid nodeId = new Guid(idBytes);
+                            byte[] vectorBlob = (byte[])reader[1];
+                            List<float> vector = DeserializeVector(vectorBlob);
 
-                            var node = new SqliteHnswNode(nodeId, vector, _connection, _neighborsTableName);
+                            SqliteHnswNode node = new SqliteHnswNode(nodeId, vector, _connection, _neighborsTableName);
                             _nodeCache[nodeId] = node;
                             result[nodeId] = node;
                         }
@@ -784,7 +784,7 @@
 
                 try
                 {
-                    var node = GetNodeAsync(id, cancellationToken).Result;
+                    IHnswNode node = GetNodeAsync(id, cancellationToken).Result;
                     return TryGetNodeResult.Found(node);
                 }
                 catch (KeyNotFoundException)
@@ -817,15 +817,15 @@
                 _storageLock.EnterReadLock();
                 try
                 {
-                    var nodeIds = new List<Guid>();
-                    var command = _connection.CreateCommand();
+                    List<Guid> nodeIds = new List<Guid>();
+                    SqliteCommand command = _connection.CreateCommand();
                     command.CommandText = $"SELECT id FROM {_nodesTableName}";
 
-                    using var reader = command.ExecuteReader();
+                    using SqliteDataReader reader = command.ExecuteReader();
                     while (reader.Read())
                     {
-                        var idBytes = (byte[])reader[0];
-                        var nodeId = new Guid(idBytes);
+                        byte[] idBytes = (byte[])reader[0];
+                        Guid nodeId = new Guid(idBytes);
                         nodeIds.Add(nodeId);
                     }
 
@@ -879,22 +879,22 @@
             try
             {
                 // Dispose all cached nodes
-                foreach (var node in _nodeCache.Values)
+                foreach (SqliteHnswNode node in _nodeCache.Values)
                 {
                     node.Dispose();
                 }
                 _nodeCache.Clear();
 
                 // Clear database tables
-                var clearNodesCommand = _connection.CreateCommand();
+                SqliteCommand clearNodesCommand = _connection.CreateCommand();
                 clearNodesCommand.CommandText = $"DELETE FROM {_nodesTableName}";
                 clearNodesCommand.ExecuteNonQuery();
 
-                var clearNeighborsCommand = _connection.CreateCommand();
+                SqliteCommand clearNeighborsCommand = _connection.CreateCommand();
                 clearNeighborsCommand.CommandText = $"DELETE FROM {_neighborsTableName}";
                 clearNeighborsCommand.ExecuteNonQuery();
 
-                var clearLayersCommand = _connection.CreateCommand();
+                SqliteCommand clearLayersCommand = _connection.CreateCommand();
                 clearLayersCommand.CommandText = $"DELETE FROM {_nodesTableName}_layers";
                 clearLayersCommand.ExecuteNonQuery();
 
@@ -919,7 +919,7 @@
             _storageLock.EnterReadLock();
             try
             {
-                foreach (var node in _nodeCache.Values)
+                foreach (SqliteHnswNode node in _nodeCache.Values)
                 {
                     node.Flush();
                 }
@@ -954,7 +954,7 @@
                     try
                     {
                         // Flush and dispose all cached nodes
-                        foreach (var node in _nodeCache.Values)
+                        foreach (SqliteHnswNode node in _nodeCache.Values)
                         {
                             try
                             {
@@ -990,7 +990,7 @@
         private void InitializeDatabase()
         {
             // Create nodes table with binary storage for better performance
-            var createNodesTableCommand = _connection.CreateCommand();
+            SqliteCommand createNodesTableCommand = _connection.CreateCommand();
             createNodesTableCommand.CommandText = $@"
                 CREATE TABLE IF NOT EXISTS {_nodesTableName} (
                     id BLOB PRIMARY KEY,
@@ -1002,7 +1002,7 @@
             createNodesTableCommand.ExecuteNonQuery();
 
             // Create neighbors table
-            var createNeighborsTableCommand = _connection.CreateCommand();
+            SqliteCommand createNeighborsTableCommand = _connection.CreateCommand();
             createNeighborsTableCommand.CommandText = $@"
                 CREATE TABLE IF NOT EXISTS {_neighborsTableName} (
                     node_id BLOB PRIMARY KEY,
@@ -1012,7 +1012,7 @@
             createNeighborsTableCommand.ExecuteNonQuery();
 
             // Create metadata table
-            var createMetadataTableCommand = _connection.CreateCommand();
+            SqliteCommand createMetadataTableCommand = _connection.CreateCommand();
             createMetadataTableCommand.CommandText = $@"
                 CREATE TABLE IF NOT EXISTS {_metadataTableName} (
                     key TEXT PRIMARY KEY,
@@ -1022,7 +1022,7 @@
             createMetadataTableCommand.ExecuteNonQuery();
 
             // Create node layers table
-            var createNodeLayersTableCommand = _connection.CreateCommand();
+            SqliteCommand createNodeLayersTableCommand = _connection.CreateCommand();
             createNodeLayersTableCommand.CommandText = $@"
                 CREATE TABLE IF NOT EXISTS {_nodesTableName}_layers (
                     node_id BLOB PRIMARY KEY,
@@ -1033,15 +1033,15 @@
             createNodeLayersTableCommand.ExecuteNonQuery();
 
             // Create indexes for performance
-            var createNodeIndexCommand = _connection.CreateCommand();
+            SqliteCommand createNodeIndexCommand = _connection.CreateCommand();
             createNodeIndexCommand.CommandText = $"CREATE INDEX IF NOT EXISTS idx_{_nodesTableName}_id ON {_nodesTableName}(id)";
             createNodeIndexCommand.ExecuteNonQuery();
 
-            var createNeighborIndexCommand = _connection.CreateCommand();
+            SqliteCommand createNeighborIndexCommand = _connection.CreateCommand();
             createNeighborIndexCommand.CommandText = $"CREATE INDEX IF NOT EXISTS idx_{_neighborsTableName}_node_id ON {_neighborsTableName}(node_id)";
             createNeighborIndexCommand.ExecuteNonQuery();
 
-            var createLayersIndexCommand = _connection.CreateCommand();
+            SqliteCommand createLayersIndexCommand = _connection.CreateCommand();
             createLayersIndexCommand.CommandText = $"CREATE INDEX IF NOT EXISTS idx_{_nodesTableName}_layers_node_id ON {_nodesTableName}_layers(node_id)";
             createLayersIndexCommand.ExecuteNonQuery();
         }
@@ -1060,7 +1060,7 @@
             _storageLock.EnterWriteLock();
             try
             {
-                var command = _connection.CreateCommand();
+                SqliteCommand command = _connection.CreateCommand();
                 command.CommandText = $@"
                     INSERT OR REPLACE INTO {_nodesTableName}_layers (node_id, layer, updated_at) 
                     VALUES (@nodeId, @layer, CURRENT_TIMESTAMP)";
@@ -1088,11 +1088,11 @@
             _storageLock.EnterReadLock();
             try
             {
-                var command = _connection.CreateCommand();
+                SqliteCommand command = _connection.CreateCommand();
                 command.CommandText = $"SELECT layer FROM {_nodesTableName}_layers WHERE node_id = @nodeId";
                 command.Parameters.AddWithValue("@nodeId", nodeId.ToByteArray());
 
-                var result = command.ExecuteScalar();
+                object? result = command.ExecuteScalar();
                 if (result != null && result != DBNull.Value)
                 {
                     return Convert.ToInt32(result);
@@ -1118,15 +1118,15 @@
             _storageLock.EnterReadLock();
             try
             {
-                var layers = new Dictionary<Guid, int>();
-                var command = _connection.CreateCommand();
+                Dictionary<Guid, int> layers = new Dictionary<Guid, int>();
+                SqliteCommand command = _connection.CreateCommand();
                 command.CommandText = $"SELECT node_id, layer FROM {_nodesTableName}_layers";
 
-                using var reader = command.ExecuteReader();
+                using SqliteDataReader reader = command.ExecuteReader();
                 while (reader.Read())
                 {
-                    var idBytes = (byte[])reader[0];
-                    var nodeId = new Guid(idBytes);
+                    byte[] idBytes = (byte[])reader[0];
+                    Guid nodeId = new Guid(idBytes);
                     layers[nodeId] = reader.GetInt32(1);
                 }
 
@@ -1140,18 +1140,18 @@
 
         private bool NodeExistsInDatabase(Guid id)
         {
-            var command = _connection.CreateCommand();
+            SqliteCommand command = _connection.CreateCommand();
             command.CommandText = $"SELECT COUNT(*) FROM {_nodesTableName} WHERE id = @id";
             command.Parameters.AddWithValue("@id", id.ToByteArray());
-            var count = Convert.ToInt32(command.ExecuteScalar());
+            int count = Convert.ToInt32(command.ExecuteScalar());
             return count > 0;
         }
 
         private void LoadEntryPointFromDatabase()
         {
-            var command = _connection.CreateCommand();
+            SqliteCommand command = _connection.CreateCommand();
             command.CommandText = $"SELECT value FROM {_metadataTableName} WHERE key = 'entry_point'";
-            var result = command.ExecuteScalar();
+            object? result = command.ExecuteScalar();
 
             if (result != null && result != DBNull.Value)
             {
@@ -1168,7 +1168,7 @@
 
         private void SaveEntryPointToDatabase()
         {
-            var command = _connection.CreateCommand();
+            SqliteCommand command = _connection.CreateCommand();
             command.CommandText = $@"
                 INSERT OR REPLACE INTO {_metadataTableName} (key, value, updated_at) 
                 VALUES ('entry_point', @value, CURRENT_TIMESTAMP)";
@@ -1179,11 +1179,11 @@
         // Binary serialization methods for better performance
         private byte[] SerializeVector(List<float> vector)
         {
-            using var ms = new MemoryStream();
-            using var writer = new BinaryWriter(ms);
+            using MemoryStream ms = new MemoryStream();
+            using BinaryWriter writer = new BinaryWriter(ms);
             
             writer.Write(vector.Count);
-            foreach (var f in vector)
+            foreach (float f in vector)
             {
                 writer.Write(f);
             }
@@ -1192,11 +1192,11 @@
 
         private List<float> DeserializeVector(byte[] bytes)
         {
-            using var ms = new MemoryStream(bytes);
-            using var reader = new BinaryReader(ms);
+            using MemoryStream ms = new MemoryStream(bytes);
+            using BinaryReader reader = new BinaryReader(ms);
             
             int count = reader.ReadInt32();
-            var vector = new List<float>(count);
+            List<float> vector = new List<float>(count);
             for (int i = 0; i < count; i++)
             {
                 vector.Add(reader.ReadSingle());
@@ -1206,15 +1206,15 @@
 
         private byte[] SerializeNeighbors(Dictionary<int, HashSet<Guid>> neighbors)
         {
-            using var ms = new MemoryStream();
-            using var writer = new BinaryWriter(ms);
+            using MemoryStream ms = new MemoryStream();
+            using BinaryWriter writer = new BinaryWriter(ms);
             
             writer.Write(neighbors.Count);
-            foreach (var kvp in neighbors)
+            foreach (KeyValuePair<int, HashSet<Guid>> kvp in neighbors)
             {
                 writer.Write(kvp.Key); // layer
                 writer.Write(kvp.Value.Count); // neighbor count
-                foreach (var neighborId in kvp.Value)
+                foreach (Guid neighborId in kvp.Value)
                 {
                     writer.Write(neighborId.ToByteArray());
                 }
@@ -1227,21 +1227,21 @@
             if (bytes == null || bytes.Length == 0)
                 return new Dictionary<int, HashSet<Guid>>();
                 
-            using var ms = new MemoryStream(bytes);
-            using var reader = new BinaryReader(ms);
+            using MemoryStream ms = new MemoryStream(bytes);
+            using BinaryReader reader = new BinaryReader(ms);
             
-            var neighbors = new Dictionary<int, HashSet<Guid>>();
+            Dictionary<int, HashSet<Guid>> neighbors = new Dictionary<int, HashSet<Guid>>();
             int layerCount = reader.ReadInt32();
             
             for (int i = 0; i < layerCount; i++)
             {
                 int layer = reader.ReadInt32();
                 int neighborCount = reader.ReadInt32();
-                var layerNeighbors = new HashSet<Guid>();
+                HashSet<Guid> layerNeighbors = new HashSet<Guid>();
                 
                 for (int j = 0; j < neighborCount; j++)
                 {
-                    var guidBytes = reader.ReadBytes(16);
+                    byte[] guidBytes = reader.ReadBytes(16);
                     layerNeighbors.Add(new Guid(guidBytes));
                 }
                 

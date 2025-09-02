@@ -9,6 +9,7 @@ namespace Test.Ram
 
     using Hnsw;
     using Hnsw.RamStorage;
+    using Hsnw;
 
     /// <summary>
     /// Test program for HNSW RAM storage implementation.
@@ -257,7 +258,7 @@ namespace Test.Ram
             index.ExtendCandidates = true;
             Random random = new Random(42);
 
-            var clusters = new[]
+            (float[] center, int count)[] clusters = new[]
             {
                 (center: new[] { 0f, 0f }, count: _LargeDatasetSize / 3),
                 (center: new[] { 10f, 10f }, count: _LargeDatasetSize / 3),
@@ -270,7 +271,7 @@ namespace Test.Ram
 
             for (int clusterIdx = 0; clusterIdx < clusters.Length; clusterIdx++)
             {
-                var cluster = clusters[clusterIdx];
+                (float[] center, int count) cluster = clusters[clusterIdx];
                 for (int i = 0; i < cluster.count; i++)
                 {
                     List<float> vector = new List<float>
@@ -407,7 +408,7 @@ namespace Test.Ram
             }
             await originalIndex.AddNodesAsync(vectors);
 
-            var state = await originalIndex.ExportStateAsync();
+            HnswState state = await originalIndex.ExportStateAsync();
 
             HnswIndex importedIndex = new HnswIndex(2, new RamHnswStorage(), new RamHnswLayerStorage());
             await importedIndex.ImportStateAsync(state);

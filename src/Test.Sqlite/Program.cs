@@ -11,6 +11,7 @@ namespace Test.Sqlite
     using Hnsw;
     using Hnsw.SqliteStorage;
     using HnswIndex.SqliteStorage;
+    using Hsnw;
 
     /// <summary>
     /// Test program for HNSW SQLite storage implementation.
@@ -347,7 +348,7 @@ namespace Test.Sqlite
                 index.ExtendCandidates = true;
                 Random random = new Random(42);
 
-                var clusters = new[]
+                (float[] center, int count)[] clusters = new[]
                 {
                     (center: new[] { 0f, 0f }, count: _LargeDatasetSize / 3),
                     (center: new[] { 10f, 10f }, count: _LargeDatasetSize / 3),
@@ -360,7 +361,7 @@ namespace Test.Sqlite
 
                 for (int clusterIdx = 0; clusterIdx < clusters.Length; clusterIdx++)
                 {
-                    var cluster = clusters[clusterIdx];
+                    (float[] center, int count) cluster = clusters[clusterIdx];
                     for (int i = 0; i < cluster.count; i++)
                     {
                         List<float> vector = new List<float>
@@ -550,7 +551,7 @@ namespace Test.Sqlite
                 }
                 await originalIndex.AddNodesAsync(vectors);
 
-                var state = await originalIndex.ExportStateAsync();
+                HnswState state = await originalIndex.ExportStateAsync();
 
                 using SqliteHnswStorage importedStorage = new SqliteHnswStorage(dbPath2);
                 using SqliteHnswLayerStorage importedLayerStorage = new SqliteHnswLayerStorage(importedStorage.Connection);

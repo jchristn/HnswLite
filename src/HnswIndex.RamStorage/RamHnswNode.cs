@@ -80,8 +80,8 @@
             _nodeLock.EnterReadLock();
             try
             {
-                var result = new Dictionary<int, HashSet<Guid>>();
-                foreach (var kvp in _neighbors)
+                Dictionary<int, HashSet<Guid>> result = new Dictionary<int, HashSet<Guid>>();
+                foreach (KeyValuePair<int, HashSet<Guid>> kvp in _neighbors)
                 {
                     result[kvp.Key] = new HashSet<Guid>(kvp.Value);
                 }
@@ -182,7 +182,7 @@
             _nodeLock.EnterReadLock();
             try
             {
-                return _neighbors.TryGetValue(layer, out var layerNeighbors) ? layerNeighbors.Count : 0;
+                return _neighbors.TryGetValue(layer, out HashSet<Guid>? layerNeighbors) ? layerNeighbors.Count : 0;
             }
             finally
             {
@@ -232,7 +232,7 @@
             _nodeLock.EnterReadLock();
             try
             {
-                return _neighbors.TryGetValue(layer, out var layerNeighbors) && layerNeighbors.Contains(NeighborGUID);
+                return _neighbors.TryGetValue(layer, out HashSet<Guid>? layerNeighbors) && layerNeighbors.Contains(NeighborGUID);
             }
             finally
             {
