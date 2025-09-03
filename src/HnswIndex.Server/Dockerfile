@@ -18,6 +18,7 @@ FROM build AS publish
 RUN dotnet publish HnswIndex.Server.csproj -c Release -o /app/publish /p:UseAppHost=false
 
 FROM base AS final
+RUN apt-get update && apt-get install -y iputils-ping traceroute net-tools curl wget dnsutils iproute2 vim file && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=publish /app/publish .
 
