@@ -5,6 +5,7 @@ import ActionMenu from './ActionMenu';
 import Modal from './Modal';
 import ViewJsonModal from './ViewJsonModal';
 import ConfirmDialog from './ConfirmDialog';
+import JsonViewer from './JsonViewer';
 
 interface SearchResultsTableProps {
   indexName: string;
@@ -37,6 +38,7 @@ export default function SearchResultsTable({ indexName, results, onDeleted }: Se
           <thead>
             <tr>
               <th>GUID</th>
+              <th>Name</th>
               <th>Distance</th>
               <th className="actions-column">Actions</th>
             </tr>
@@ -45,11 +47,12 @@ export default function SearchResultsTable({ indexName, results, onDeleted }: Se
             {results.map((r) => (
               <tr key={r.guid} className="clickable-row" onClick={() => setEditing(r)}>
                 <td className="mono">{r.guid}</td>
+                <td>{r.name ?? <span className="muted">—</span>}</td>
                 <td>{r.distance.toFixed(6)}</td>
                 <td className="actions-column" onClick={(e) => e.stopPropagation()}>
                   <ActionMenu
                     items={[
-                      { key: 'edit', label: 'Edit', onClick: () => setEditing(r) },
+                      { key: 'edit', label: 'View details', onClick: () => setEditing(r) },
                       { key: 'json', label: 'View JSON', onClick: () => setViewingJson(r) },
                       { key: 'delete', label: 'Delete', danger: true, onClick: () => setToDelete(r) },
                     ]}
@@ -61,7 +64,7 @@ export default function SearchResultsTable({ indexName, results, onDeleted }: Se
         </table>
       </div>
 
-      {editing && <EditVectorModal vector={editing} onClose={() => setEditing(null)} />}
+      {editing && <SearchResultDetailModal vector={editing} onClose={() => setEditing(null)} />}
 
       <ViewJsonModal
         open={viewingJson !== null}
@@ -88,40 +91,46 @@ export default function SearchResultsTable({ indexName, results, onDeleted }: Se
   );
 }
 
-function EditVectorModal({ vector, onClose }: { vector: VectorSearchResult; onClose: () => void }) {
+function SearchResultDetailModal({ vector, onClose }: { vector: VectorSearchResult; onClose: () => void }) {
   return (
     <Modal
       open
       onClose={onClose}
-      title={`Edit vector: ${vector.guid}`}
+      title={`Vector: ${vector.name ?? vector.guid}`}
+      size="large"
       footer={
         <button className="btn btn-secondary" onClick={onClose}>
           Close
         </button>
       }
     >
-      <div
-        style={{
-          padding: '10px 12px',
-          marginBottom: 14,
-          borderRadius: 6,
-          background: 'var(--color-warning-bg)',
-          color: 'var(--text-primary)',
-          fontSize: '0.82rem',
-          border: '1px solid var(--border-color)',
-        }}
-      >
-        Vector payloads are immutable after insertion — fields are shown read-only.
-      </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <label className="field">
           <span>GUID</span>
           <input value={vector.guid} readOnly className="mono" />
         </label>
         <label className="field">
+          <span>Name</span>
+          <input value={vector.name ?? ''} readOnly placeholder="(none)" />
+        </label>
+        <label className="field">
           <span>Distance from query</span>
           <input value={vector.distance.toFixed(6)} readOnly />
         </label>
+        <label className="field">
+          <span>Labels</span>
+          <input
+            value={vector.labels && vector.labels.length > 0 ? vector.labels.join(', ') : ''}
+            readOnly
+            placeholder="(none)"
+          />
+        </label>
+        {vector.tags && Object.keys(vector.tags).length > 0 && (
+          <div className="field">
+            <span>Tags</span>
+            <JsonViewer data={vector.tags} maxHeight={200} />
+          </div>
+        )}
         <label className="field">
           <span>Vector ({vector.vector.length} floats)</span>
           <textarea rows={8} value={vector.vector.join(', ')} readOnly />

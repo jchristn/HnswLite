@@ -5,6 +5,7 @@ namespace Hnsw.SqliteStorage
     using System.IO;
     using System.Linq;
     using System.Threading;
+    using System.Text.Json;
     using Microsoft.Data.Sqlite;
     using Hnsw;
 
@@ -38,6 +39,36 @@ namespace Hnsw.SqliteStorage
         /// </summary>
         public bool IsDirty => _IsDirty;
 
+        /// <summary>
+        /// Optional human-readable name for this vector.
+        /// Setting this marks the node as dirty.
+        /// </summary>
+        public string? Name
+        {
+            get { return _Name; }
+            set { _Name = value; SaveMetadataToDatabase(); }
+        }
+
+        /// <summary>
+        /// Optional classification labels.
+        /// Setting this writes immediately to the database.
+        /// </summary>
+        public List<string>? Labels
+        {
+            get { return _Labels; }
+            set { _Labels = value; SaveMetadataToDatabase(); }
+        }
+
+        /// <summary>
+        /// Optional arbitrary key/value tags.
+        /// Setting this writes immediately to the database.
+        /// </summary>
+        public Dictionary<string, object>? Tags
+        {
+            get { return _Tags; }
+            set { _Tags = value; SaveMetadataToDatabase(); }
+        }
+
         #endregion
 
         #region Private-Members
@@ -48,8 +79,12 @@ namespace Hnsw.SqliteStorage
         private readonly ReaderWriterLockSlim _NodeLock = new ReaderWriterLockSlim();
         private readonly SqliteConnection _Connection;
         private readonly string _TableName;
+        private readonly string? _NodesTableName;
         private bool _Disposed = false;
         private bool _IsDirty = false;
+        private string? _Name;
+        private List<string>? _Labels;
+        private Dictionary<string, object>? _Tags;
 
         #endregion
 
@@ -62,9 +97,10 @@ namespace Hnsw.SqliteStorage
         /// <param name="vector">Vector data. Cannot be null or empty. All values must be finite.</param>
         /// <param name="connection">SQLite database connection. Cannot be null.</param>
         /// <param name="tableName">Table name for storing neighbors. Cannot be null or empty.</param>
+        /// <param name="nodesTableName">Table name for the nodes table (for metadata persistence). Null to skip metadata.</param>
         /// <exception cref="ArgumentException">Thrown when id is Guid.Empty or vector contains invalid values.</exception>
         /// <exception cref="ArgumentNullException">Thrown when vector, connection, or tableName is null.</exception>
-        public SqliteHnswNode(Guid id, List<float> vector, SqliteConnection connection, string tableName)
+        public SqliteHnswNode(Guid id, List<float> vector, SqliteConnection connection, string tableName, string? nodesTableName = null)
         {
             if (id == Guid.Empty)
             {
@@ -97,8 +133,10 @@ namespace Hnsw.SqliteStorage
             _Vector = new List<float>(vector); // Create defensive copy
             _Connection = connection;
             _TableName = tableName;
+            _NodesTableName = nodesTableName;
 
             LoadNeighborsFromDatabase();
+            LoadMetadataFromDatabase();
         }
 
         #endregion
@@ -336,6 +374,7 @@ namespace Hnsw.SqliteStorage
                 if (_IsDirty)
                 {
                     SaveNeighborsToDatabase();
+                    SaveMetadataToDatabase();
                     _IsDirty = false;
                 }
             }
@@ -491,6 +530,80 @@ namespace Hnsw.SqliteStorage
             }
             
             return neighbors;
+        }
+
+        private void LoadMetadataFromDatabase()
+        {
+            if (string.IsNullOrEmpty(_NodesTableName)) return;
+            try
+            {
+                using SqliteCommand cmd = _Connection.CreateCommand();
+                cmd.CommandText = $"SELECT metadata_json FROM {_NodesTableName} WHERE id = @id";
+                cmd.Parameters.AddWithValue("@id", _Id.ToByteArray());
+                object? result = cmd.ExecuteScalar();
+                if (result is string json && json.Length > 0)
+                {
+                    JsonDocument doc = JsonDocument.Parse(json);
+                    JsonElement root = doc.RootElement;
+
+                    if (root.TryGetProperty("Name", out JsonElement nameEl) && nameEl.ValueKind == JsonValueKind.String)
+                        _Name = nameEl.GetString();
+
+                    if (root.TryGetProperty("Labels", out JsonElement labelsEl) && labelsEl.ValueKind == JsonValueKind.Array)
+                    {
+                        _Labels = new List<string>();
+                        foreach (JsonElement el in labelsEl.EnumerateArray())
+                            if (el.ValueKind == JsonValueKind.String) _Labels.Add(el.GetString()!);
+                    }
+
+                    if (root.TryGetProperty("Tags", out JsonElement tagsEl) && tagsEl.ValueKind == JsonValueKind.Object)
+                    {
+                        _Tags = new Dictionary<string, object>();
+                        foreach (JsonProperty prop in tagsEl.EnumerateObject())
+                        {
+                            _Tags[prop.Name] = prop.Value.ValueKind switch
+                            {
+                                JsonValueKind.String => prop.Value.GetString()!,
+                                JsonValueKind.Number => prop.Value.TryGetInt64(out long l) ? (object)l : prop.Value.GetDouble(),
+                                JsonValueKind.True => true,
+                                JsonValueKind.False => false,
+                                _ => prop.Value.GetRawText(),
+                            };
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Metadata is optional; swallow read errors gracefully.
+            }
+        }
+
+        private void SaveMetadataToDatabase()
+        {
+            if (string.IsNullOrEmpty(_NodesTableName)) return;
+            if (_Name == null && _Labels == null && _Tags == null)
+            {
+                // All null → persist NULL to clear any prior metadata.
+                using SqliteCommand cmd = _Connection.CreateCommand();
+                cmd.CommandText = $"UPDATE {_NodesTableName} SET metadata_json = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = @id";
+                cmd.Parameters.AddWithValue("@id", _Id.ToByteArray());
+                cmd.ExecuteNonQuery();
+                return;
+            }
+
+            Dictionary<string, object?> obj = new Dictionary<string, object?>();
+            if (_Name != null) obj["Name"] = _Name;
+            if (_Labels != null) obj["Labels"] = _Labels;
+            if (_Tags != null) obj["Tags"] = _Tags;
+
+            string json = JsonSerializer.Serialize(obj);
+
+            using SqliteCommand update = _Connection.CreateCommand();
+            update.CommandText = $"UPDATE {_NodesTableName} SET metadata_json = @json, updated_at = CURRENT_TIMESTAMP WHERE id = @id";
+            update.Parameters.AddWithValue("@json", json);
+            update.Parameters.AddWithValue("@id", _Id.ToByteArray());
+            update.ExecuteNonQuery();
         }
 
         #endregion

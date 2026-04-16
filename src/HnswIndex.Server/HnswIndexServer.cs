@@ -60,19 +60,25 @@ namespace HnswIndex.Server
             _Logging.Info(_Header + $"admin API key: {_Settings.Server.AdminApiKey}");
             _Logging.Info(_Header + "press CTRL+C to exit");
 
-            // Keep the server running
+            // Keep the server running. Handle both SIGINT (Ctrl+C) and SIGTERM
+            // (docker compose down / kill -TERM) so dirty nodes are flushed on exit.
             ManualResetEvent waitHandle = new ManualResetEvent(false);
             Console.CancelKeyPress += (sender, e) =>
             {
                 e.Cancel = true;
                 waitHandle.Set();
             };
+            AppDomain.CurrentDomain.ProcessExit += (sender, e) =>
+            {
+                waitHandle.Set();
+            };
 
             await Task.Run(() => waitHandle.WaitOne()).ConfigureAwait(false);
 
-            _Logging.Info(_Header + "shutdown requested");
+            _Logging.Info(_Header + "shutdown requested — flushing and disposing");
             _Server?.Dispose();
             _IndexManager?.Dispose();
+            _Logging.Info(_Header + "shutdown complete");
 
             return 0;
         }

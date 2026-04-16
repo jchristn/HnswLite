@@ -1,6 +1,37 @@
 # Change Log
 
-## v1.1.0 (current)
+## v1.1.1 (current)
+
+### Vector metadata
+
+- **`IHnswNode`** now exposes `Name` (string), `Labels` (List&lt;string&gt;), and `Tags` (Dictionary&lt;string, object&gt;) as mutable properties. All three are optional and default to null.
+- **`RamHnswNode`** stores metadata in-memory (auto-properties).
+- **`SqliteHnswNode`** persists metadata as a JSON blob in a `metadata_json` column on the nodes table. **Writes are immediate** — every property setter executes an `UPDATE` so metadata is durable even on an unclean crash. Existing databases are migrated via `ALTER TABLE ADD COLUMN` on first open.
+- **Server request/response models** (`AddVectorRequest`, `VectorEntryResponse`, `VectorSearchResult`) carry all three metadata fields. The `EnumerateVectors` endpoint always populates metadata; `Search` results include metadata alongside distance.
+- **Dashboard** — the Vectors table shows Name and Labels columns; the Add-vector modal, the Edit-vector modal, and the Search results detail modal all display and (where applicable) edit Name, Labels, and Tags.
+- **58 test cases** (up from 53) — five new metadata-specific tests cover RAM read-back, SQLite persistence across close/reopen, null defaults, overwrite semantics, and batch-add metadata survival.
+
+### Graceful shutdown under Docker
+
+- The server now handles `AppDomain.CurrentDomain.ProcessExit` (SIGTERM) in addition to `Console.CancelKeyPress` (SIGINT). Previously `docker compose down` sent SIGTERM which the server didn't catch, so dirty in-memory state was never flushed. With immediate-write metadata this is less critical, but the fix ensures the full disposal chain (Watson stop → IndexManager dispose → storage flush) runs on any graceful termination signal.
+
+### NuGet packaging
+
+- `HnswIndex.SqliteStorage` renamed to **`HnswLite.SqliteStorage`** (new `<PackageId>`) for consistency with `HnswLite`, `HnswLite.RamStorage`, and `HnswLite.Sdk`.
+- `HnswLite.Sdk` now packs `README.md` and `LICENSE.md` (previously triggered a "Readme missing" warning on NuGet push).
+- `PackageTags` in all library csprojs switched to semicolon-delimited.
+- New `publish-nuget.bat` at the repo root: takes a NuGet API key, cleans stale packages, packs all four projects in Release, pushes `.nupkg` files (symbols auto-upload alongside).
+
+### Other fixes
+
+- Dockerfile build stage bumped from `sdk:8.0` → `sdk:10.0` (required for multi-target restore). Publish pinned to `-f net8.0`; final stage switched from `sdk:8.0` → `aspnet:8.0` (smaller runtime image).
+- `docker/compose.yaml` server `start_period` reduced from 30 s → 5 s.
+- Dashboard nginx `302 /dashboard/` redirect now uses `$scheme://$http_host` so the port (e.g. `:8081`) is preserved.
+- Server `clean.bat` / `clean.sh` added to the build output for quick local reset (deletes `hnswindex.json`, `data/`, `logs/`; no confirmation prompt).
+
+---
+
+## v1.1.0
 
 ### Platform
 

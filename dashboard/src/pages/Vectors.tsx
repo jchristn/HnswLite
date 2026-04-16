@@ -202,6 +202,8 @@ export default function Vectors() {
             <thead>
               <tr>
                 <th>GUID</th>
+                <th>Name</th>
+                <th>Labels</th>
                 {includeVectors && <th>Vector (first 8 dims)</th>}
                 <th className="actions-column">Actions</th>
               </tr>
@@ -209,7 +211,7 @@ export default function Vectors() {
             <tbody>
               {!selectedName && (
                 <tr>
-                  <td colSpan={includeVectors ? 3 : 2}>
+                  <td colSpan={includeVectors ? 5 : 4}>
                     <div className="empty-state compact-empty-state">
                       <p className="empty-state-description">Select an index above to view its vectors.</p>
                     </div>
@@ -218,7 +220,7 @@ export default function Vectors() {
               )}
               {selectedName && loading && (
                 <tr>
-                  <td colSpan={includeVectors ? 3 : 2}>
+                  <td colSpan={includeVectors ? 5 : 4}>
                     <div className="loading-spinner">
                       <span className="spinner-ring" /> Loading vectors…
                     </div>
@@ -227,7 +229,7 @@ export default function Vectors() {
               )}
               {selectedName && !loading && items.length === 0 && (
                 <tr>
-                  <td colSpan={includeVectors ? 3 : 2}>
+                  <td colSpan={includeVectors ? 5 : 4}>
                     <div className="empty-state compact-empty-state">
                       <p className="empty-state-description">
                         No vectors in this index yet. Click <b>Add vector</b> to insert one.
@@ -244,6 +246,12 @@ export default function Vectors() {
                     onClick={() => setEditing(v)}
                   >
                     <td className="mono">{v.guid}</td>
+                    <td>{v.name ?? <span className="muted">—</span>}</td>
+                    <td>
+                      {v.labels && v.labels.length > 0
+                        ? v.labels.map((l) => <span key={l} className="status-pill muted" style={{ marginRight: 4 }}>{l}</span>)
+                        : <span className="muted">—</span>}
+                    </td>
                     {includeVectors && (
                       <td className="mono" style={{ color: 'var(--text-secondary)' }}>
                         {v.vector ? formatVectorPreview(v.vector) : '—'}
@@ -417,6 +425,11 @@ function EditVectorModal({ indexName, dimension, entry, onClose, onSaved }: Edit
   const [vectorText, setVectorText] = useState<string>(
     entry.vector ? entry.vector.join(', ') : '',
   );
+  const [nameField, setNameField] = useState<string>(entry.name ?? '');
+  const [labelsField, setLabelsField] = useState<string>((entry.labels ?? []).join(', '));
+  const [tagsField, setTagsField] = useState<string>(
+    entry.tags ? JSON.stringify(entry.tags, null, 2) : '{}',
+  );
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -430,6 +443,9 @@ function EditVectorModal({ indexName, dimension, entry, onClose, onSaved }: Edit
         if (cancelled) return;
         setGuid(full.guid);
         setVectorText(full.vector ? full.vector.join(', ') : '');
+        setNameField(full.name ?? '');
+        setLabelsField((full.labels ?? []).join(', '));
+        setTagsField(full.tags ? JSON.stringify(full.tags, null, 2) : '{}');
       } catch (err) {
         if (cancelled) return;
         setLoadError(err instanceof Error ? err.message : String(err));
@@ -473,9 +489,26 @@ function EditVectorModal({ indexName, dimension, entry, onClose, onSaved }: Edit
       // The server has no update endpoint; remove-then-add is the semantic equivalent.
       // We always remove first, then add, so we can preserve the same GUID when unchanged
       // (adding the new record first would otherwise collide with the existing one).
+      const parsedLabels = labelsField.trim().length > 0
+        ? labelsField.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+        : undefined;
+      let parsedTags: Record<string, unknown> | undefined;
+      try {
+        const t = JSON.parse(tagsField);
+        parsedTags = typeof t === 'object' && t !== null && !Array.isArray(t) ? t : undefined;
+      } catch {
+        parsedTags = undefined;
+      }
+
       await removeVector(indexName, originalGuid);
       try {
-        await addVector(indexName, { GUID: newGuid, Vector: newVector });
+        await addVector(indexName, {
+          GUID: newGuid,
+          Vector: newVector,
+          Name: nameField.trim() || undefined,
+          Labels: parsedLabels,
+          Tags: parsedTags,
+        });
       } catch (addErr) {
         setError(
           `Old vector was removed but the new vector could not be inserted: ${
@@ -542,9 +575,21 @@ function EditVectorModal({ indexName, dimension, entry, onClose, onSaved }: Edit
             <input value={guid} onChange={(e) => setGuid(e.target.value)} className="mono" />
           </label>
           <label className="field">
+            <span>Name</span>
+            <input value={nameField} onChange={(e) => setNameField(e.target.value)} placeholder="Optional human-readable name" />
+          </label>
+          <label className="field">
+            <span>Labels (comma-separated)</span>
+            <input value={labelsField} onChange={(e) => setLabelsField(e.target.value)} placeholder="category-a, category-b" />
+          </label>
+          <label className="field">
+            <span>Tags (JSON object)</span>
+            <textarea rows={3} value={tagsField} onChange={(e) => setTagsField(e.target.value)} placeholder='{"source": "openai", "model": "text-embedding-3-small"}' />
+          </label>
+          <label className="field">
             <span>Vector{dimension > 0 ? ` (${dimension} floats)` : ''}</span>
             <textarea
-              rows={10}
+              rows={8}
               value={vectorText}
               onChange={(e) => setVectorText(e.target.value)}
               placeholder="0.12, -0.34, 0.56, ..."
@@ -572,6 +617,9 @@ function SingleForm({
 }) {
   const [vectorText, setVectorText] = useState<string>('');
   const [guid, setGuid] = useState<string>('');
+  const [nameField, setNameField] = useState<string>('');
+  const [labelsField, setLabelsField] = useState<string>('');
+  const [tagsField, setTagsField] = useState<string>('{}');
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [lastAdded, setLastAdded] = useState<string | null>(null);
@@ -581,12 +629,31 @@ function SingleForm({
     setError(null);
     try {
       const vector = parseVectorInput(vectorText, dimension);
+      const parsedLabels = labelsField.trim().length > 0
+        ? labelsField.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+        : undefined;
+      let parsedTags: Record<string, unknown> | undefined;
+      try {
+        const t = JSON.parse(tagsField);
+        parsedTags = typeof t === 'object' && t !== null && !Array.isArray(t) ? t : undefined;
+      } catch {
+        parsedTags = undefined;
+      }
       setSubmitting(true);
-      const payload = { GUID: guid.trim() || undefined, Vector: vector };
+      const payload: AddVectorRequest = {
+        GUID: guid.trim() || undefined,
+        Vector: vector,
+        Name: nameField.trim() || undefined,
+        Labels: parsedLabels,
+        Tags: parsedTags,
+      };
       await addVector(indexName, payload);
       setLastAdded(payload.GUID ?? '(auto-generated)');
       setVectorText('');
       setGuid('');
+      setNameField('');
+      setLabelsField('');
+      setTagsField('{}');
       onAdded();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -622,6 +689,18 @@ function SingleForm({
       <label className="field">
         <span>GUID (optional — auto-generated if blank)</span>
         <input value={guid} onChange={(e) => setGuid(e.target.value)} placeholder="auto-generated" />
+      </label>
+      <label className="field">
+        <span>Name</span>
+        <input value={nameField} onChange={(e) => setNameField(e.target.value)} placeholder="Optional human-readable name" />
+      </label>
+      <label className="field">
+        <span>Labels (comma-separated)</span>
+        <input value={labelsField} onChange={(e) => setLabelsField(e.target.value)} placeholder="category-a, category-b" />
+      </label>
+      <label className="field">
+        <span>Tags (JSON object)</span>
+        <textarea rows={2} value={tagsField} onChange={(e) => setTagsField(e.target.value)} placeholder='{"source": "openai"}' />
       </label>
       <label className="field">
         <span>Vector{dimension > 0 ? ` (${dimension} floats)` : ''}</span>

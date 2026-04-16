@@ -24,6 +24,24 @@ namespace HnswIndex.Server.Classes
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public List<float>? Vector { get; set; } = null;
 
+        /// <summary>
+        /// Optional human-readable name.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Name { get; set; } = null;
+
+        /// <summary>
+        /// Optional classification labels.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<string>? Labels { get; set; } = null;
+
+        /// <summary>
+        /// Optional arbitrary key/value tags.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Dictionary<string, object>? Tags { get; set; } = null;
+
         #endregion
 
         #region Private-Members

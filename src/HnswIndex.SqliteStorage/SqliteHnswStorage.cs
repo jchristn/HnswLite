@@ -291,15 +291,15 @@
                     byte[] vectorBlob = SerializeVector(vector);
                     SqliteCommand command = _connection.CreateCommand();
                     command.CommandText = $@"
-                        INSERT OR REPLACE INTO {_nodesTableName} (id, vector_blob, vector_dimension, updated_at) 
-                        VALUES (@id, @vectorBlob, @dimension, CURRENT_TIMESTAMP)";
+                        INSERT OR REPLACE INTO {_nodesTableName} (id, vector_blob, vector_dimension, metadata_json, updated_at)
+                        VALUES (@id, @vectorBlob, @dimension, NULL, CURRENT_TIMESTAMP)";
                     command.Parameters.AddWithValue("@id", id.ToByteArray());
                     command.Parameters.AddWithValue("@vectorBlob", vectorBlob);
                     command.Parameters.AddWithValue("@dimension", vector.Count);
                     command.ExecuteNonQuery();
 
                     // Create node and add to cache
-                    SqliteHnswNode node = new SqliteHnswNode(id, vector, _connection, _neighborsTableName);
+                    SqliteHnswNode node = new SqliteHnswNode(id, vector, _connection, _neighborsTableName, _nodesTableName);
                     _nodeCache[id] = node;
 
                     // Set as entry point if this is the first node
@@ -380,8 +380,8 @@
                         SqliteCommand command = _connection.CreateCommand();
                         command.Transaction = transaction;
                         command.CommandText = $@"
-                            INSERT OR REPLACE INTO {_nodesTableName} (id, vector_blob, vector_dimension, updated_at) 
-                            VALUES (@id, @vectorBlob, @dimension, CURRENT_TIMESTAMP)";
+                            INSERT OR REPLACE INTO {_nodesTableName} (id, vector_blob, vector_dimension, metadata_json, updated_at)
+                            VALUES (@id, @vectorBlob, @dimension, NULL, CURRENT_TIMESTAMP)";
 
                         // Add all nodes
                         Guid? firstNodeId = null;
@@ -406,7 +406,7 @@
                             command.ExecuteNonQuery();
 
                             // Create node and add to cache
-                            SqliteHnswNode node = new SqliteHnswNode(kvp.Key, kvp.Value, _connection, _neighborsTableName);
+                            SqliteHnswNode node = new SqliteHnswNode(kvp.Key, kvp.Value, _connection, _neighborsTableName, _nodesTableName);
                             _nodeCache[kvp.Key] = node;
                         }
 
@@ -664,7 +664,7 @@
                     byte[] vectorBlob = (byte[])result;
                     List<float> vector = DeserializeVector(vectorBlob);
 
-                    SqliteHnswNode node = new SqliteHnswNode(id, vector, _connection, _neighborsTableName);
+                    SqliteHnswNode node = new SqliteHnswNode(id, vector, _connection, _neighborsTableName, _nodesTableName);
                     _nodeCache[id] = node;
                     return node;
                 }
@@ -745,7 +745,7 @@
                             byte[] vectorBlob = (byte[])reader[1];
                             List<float> vector = DeserializeVector(vectorBlob);
 
-                            SqliteHnswNode node = new SqliteHnswNode(nodeId, vector, _connection, _neighborsTableName);
+                            SqliteHnswNode node = new SqliteHnswNode(nodeId, vector, _connection, _neighborsTableName, _nodesTableName);
                             _nodeCache[nodeId] = node;
                             result[nodeId] = node;
                         }
@@ -991,9 +991,16 @@
                     id BLOB PRIMARY KEY,
                     vector_blob BLOB NOT NULL,
                     vector_dimension INTEGER NOT NULL,
+                    metadata_json TEXT,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )";
+            createNodesTableCommand.ExecuteNonQuery();
+
+            // Ensure metadata_json column exists (migrates databases created before v1.1.x)
+            SqliteCommand addMetaCol = _connection.CreateCommand();
+            addMetaCol.CommandText = $"ALTER TABLE {_nodesTableName} ADD COLUMN metadata_json TEXT";
+            try { addMetaCol.ExecuteNonQuery(); } catch (SqliteException) { /* column already exists */ }
             createNodesTableCommand.ExecuteNonQuery();
 
             // Create neighbors table

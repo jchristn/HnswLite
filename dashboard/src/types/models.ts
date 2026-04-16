@@ -24,6 +24,9 @@ export interface CreateIndexRequest {
 export interface AddVectorRequest {
   GUID?: string;
   Vector: number[];
+  Name?: string;
+  Labels?: string[];
+  Tags?: Record<string, unknown>;
 }
 
 export interface AddVectorsRequest {
@@ -40,11 +43,17 @@ export interface VectorSearchResult {
   guid: string;
   vector: number[];
   distance: number;
+  name?: string;
+  labels?: string[];
+  tags?: Record<string, unknown>;
 }
 
 export interface VectorEntry {
   guid: string;
   vector?: number[];
+  name?: string;
+  labels?: string[];
+  tags?: Record<string, unknown>;
 }
 
 export interface SearchResponse {

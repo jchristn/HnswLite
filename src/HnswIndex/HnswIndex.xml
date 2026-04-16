@@ -397,6 +397,21 @@
             Gets the vector associated with the node.
             </summary>
         </member>
+        <member name="P:Hnsw.IHnswNode.Name">
+            <summary>
+            Optional human-readable name for this vector.
+            </summary>
+        </member>
+        <member name="P:Hnsw.IHnswNode.Labels">
+            <summary>
+            Optional classification labels.
+            </summary>
+        </member>
+        <member name="P:Hnsw.IHnswNode.Tags">
+            <summary>
+            Optional arbitrary key/value tags.
+            </summary>
+        </member>
         <member name="M:Hnsw.IHnswNode.GetNeighbors">
             <summary>
             Gets a copy of the node's neighbors organized by layer.

@@ -45,6 +45,13 @@ See [CHANGELOG.md](CHANGELOG.md) for the full list. Highlights:
 - Multi-target `net8.0` + `net10.0` across the library, server, and tests.
 - Watson web server upgraded to `7.0.11`. OPTIONS pre-flight is handled by Watson's native hook and bypasses authentication; CORS response headers are emitted on every response from a configurable `Cors` block in `hnswindex.json`.
 
+### Vector metadata
+
+- Every vector now carries optional **`Name`** (string), **`Labels`** (list of strings), and **`Tags`** (string → object dictionary) alongside its GUID and float array.
+- Metadata is exposed as mutable properties on `IHnswNode`. SQLite writes are immediate — every setter commits an `UPDATE`, so metadata survives even an unclean process crash.
+- The REST API accepts and returns metadata on every vector endpoint (add, batch-add, enumerate, get-single, search).
+- The dashboard Vectors table shows Name and Labels; the Add / Edit / Search-result-detail modals all expose all three fields.
+
 ### Storage abstraction
 
 - **`IStorageProvider`** — a single interface that combines `IHnswStorage`, `IHnswLayerStorage`, and `IDisposable`. `HnswIndex` accepts it via a new constructor.

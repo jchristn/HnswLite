@@ -22,6 +22,21 @@ namespace HnswIndex.Server.Classes
         /// </summary>
         public float Distance { get; set; } = 0.0f;
 
+        /// <summary>
+        /// Optional human-readable name.
+        /// </summary>
+        public string? Name { get; set; } = null;
+
+        /// <summary>
+        /// Optional classification labels.
+        /// </summary>
+        public List<string>? Labels { get; set; } = null;
+
+        /// <summary>
+        /// Optional arbitrary key/value tags.
+        /// </summary>
+        public Dictionary<string, object>? Tags { get; set; } = null;
+
         #endregion
 
         #region Private-Members

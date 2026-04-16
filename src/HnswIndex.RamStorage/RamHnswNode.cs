@@ -41,6 +41,21 @@
         /// </summary>
         public bool IsDisposed => _disposed;
 
+        /// <summary>
+        /// Optional human-readable name for this vector.
+        /// </summary>
+        public string? Name { get; set; }
+
+        /// <summary>
+        /// Optional classification labels.
+        /// </summary>
+        public List<string>? Labels { get; set; }
+
+        /// <summary>
+        /// Optional arbitrary key/value tags.
+        /// </summary>
+        public Dictionary<string, object>? Tags { get; set; }
+
         // Constructors
         /// <summary>
         /// Initializes a new instance of the RamHnswNode class.

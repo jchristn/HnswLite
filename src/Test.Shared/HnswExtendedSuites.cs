@@ -42,6 +42,7 @@ namespace HnswLite.Test.Shared
                     StateRoundtripSuite(),
                     SqliteAdvancedSuite(),
                     SqliteStateSuite(),
+                    MetadataSuite(),
                 };
             }
         }
@@ -859,6 +860,185 @@ namespace HnswLite.Test.Shared
                                     new List<float> { 1f, 1f }, 1, cancellationToken: ct).ConfigureAwait(false)).ToList();
                                 TestAssert.Equal(1, results.Count, "Top-1 imported into RAM");
                                 TestAssert.Equal(markerId, results[0].GUID, "Imported GUID");
+                            }
+                            finally
+                            {
+                                SqliteConnection.ClearAllPools();
+                                TryDelete(path);
+                            }
+                        }),
+                });
+        }
+
+        /// <summary>
+        /// Metadata (Name, Labels, Tags) round-trip tests on both RAM and SQLite providers.
+        /// </summary>
+        /// <returns>Metadata test suite.</returns>
+        public static TestSuiteDescriptor MetadataSuite()
+        {
+            return new TestSuiteDescriptor(
+                suiteId: "Metadata",
+                displayName: "Metadata - Name / Labels / Tags",
+                cases: new List<TestCaseDescriptor>
+                {
+                    Case("Metadata", "RamSetAndRead",
+                        "RAM: Name/Labels/Tags set on a node are readable back",
+                        async ct =>
+                        {
+                            RamStorageProvider provider = new RamStorageProvider();
+                            HnswIndex index = new HnswIndex(_Dimension2D, provider);
+                            Guid id = Guid.NewGuid();
+                            await index.AddAsync(id, new List<float> { 1f, 2f }, ct).ConfigureAwait(false);
+
+                            IHnswNode node = await provider.GetNodeAsync(id, ct).ConfigureAwait(false);
+                            node.Name = "test-vector";
+                            node.Labels = new List<string> { "alpha", "beta" };
+                            node.Tags = new Dictionary<string, object> { { "source", "unit-test" }, { "score", 42L } };
+
+                            IHnswNode reread = await provider.GetNodeAsync(id, ct).ConfigureAwait(false);
+                            TestAssert.Equal("test-vector", reread.Name, "RAM Name");
+                            TestAssert.Equal(2, reread.Labels!.Count, "RAM Labels count");
+                            TestAssert.True(reread.Labels!.Contains("alpha"), "RAM Labels contains alpha");
+                            TestAssert.True(reread.Labels!.Contains("beta"), "RAM Labels contains beta");
+                            TestAssert.Equal("unit-test", (string)reread.Tags!["source"], "RAM Tags source");
+                            TestAssert.Equal(42L, (long)reread.Tags!["score"], "RAM Tags score");
+                        }),
+
+                    Case("Metadata", "SqlitePersistAcrossReopen",
+                        "SQLite: Name/Labels/Tags survive close and reopen of the database",
+                        async ct =>
+                        {
+                            string path = NewTempDb();
+                            Guid id = Guid.NewGuid();
+                            try
+                            {
+                                // Write metadata.
+                                SqliteStorageProvider w = new SqliteStorageProvider(path);
+                                try
+                                {
+                                    HnswIndex index = new HnswIndex(_Dimension2D, w);
+                                    await index.AddAsync(id, new List<float> { 3f, 4f }, ct).ConfigureAwait(false);
+
+                                    IHnswNode node = await w.GetNodeAsync(id, ct).ConfigureAwait(false);
+                                    node.Name = "persisted";
+                                    node.Labels = new List<string> { "x", "y", "z" };
+                                    node.Tags = new Dictionary<string, object>
+                                    {
+                                        { "model", "text-embedding-3-small" },
+                                        { "dim", 2L },
+                                        { "active", true },
+                                    };
+                                }
+                                finally { w.Dispose(); }
+
+                                SqliteConnection.ClearAllPools();
+
+                                // Reopen and verify.
+                                SqliteStorageProvider r = new SqliteStorageProvider(path, createIfNotExists: false);
+                                try
+                                {
+                                    IHnswNode node = await r.GetNodeAsync(id, ct).ConfigureAwait(false);
+                                    TestAssert.Equal("persisted", node.Name, "SQLite Name after reopen");
+                                    TestAssert.Equal(3, node.Labels!.Count, "SQLite Labels count after reopen");
+                                    TestAssert.True(node.Labels!.Contains("y"), "SQLite Labels contains y");
+                                    TestAssert.Equal("text-embedding-3-small", (string)node.Tags!["model"], "SQLite Tags model");
+                                    TestAssert.Equal(2L, (long)node.Tags!["dim"], "SQLite Tags dim");
+                                    TestAssert.Equal(true, (bool)node.Tags!["active"], "SQLite Tags active");
+                                }
+                                finally { r.Dispose(); }
+                            }
+                            finally
+                            {
+                                SqliteConnection.ClearAllPools();
+                                TryDelete(path);
+                            }
+                        }),
+
+                    Case("Metadata", "NullMetadataIsDefault",
+                        "A newly-added vector has null Name/Labels/Tags by default",
+                        async ct =>
+                        {
+                            RamStorageProvider provider = new RamStorageProvider();
+                            HnswIndex index = new HnswIndex(_Dimension2D, provider);
+                            Guid id = Guid.NewGuid();
+                            await index.AddAsync(id, new List<float> { 0f, 0f }, ct).ConfigureAwait(false);
+
+                            IHnswNode node = await provider.GetNodeAsync(id, ct).ConfigureAwait(false);
+                            TestAssert.True(node.Name == null, "Default Name is null");
+                            TestAssert.True(node.Labels == null, "Default Labels is null");
+                            TestAssert.True(node.Tags == null, "Default Tags is null");
+                        }),
+
+                    Case("Metadata", "OverwriteMetadata",
+                        "Overwriting metadata replaces the previous values",
+                        async ct =>
+                        {
+                            RamStorageProvider provider = new RamStorageProvider();
+                            HnswIndex index = new HnswIndex(_Dimension2D, provider);
+                            Guid id = Guid.NewGuid();
+                            await index.AddAsync(id, new List<float> { 1f, 1f }, ct).ConfigureAwait(false);
+
+                            IHnswNode node = await provider.GetNodeAsync(id, ct).ConfigureAwait(false);
+                            node.Name = "first";
+                            node.Labels = new List<string> { "a" };
+                            node.Tags = new Dictionary<string, object> { { "k", "v1" } };
+
+                            node.Name = "second";
+                            node.Labels = new List<string> { "b", "c" };
+                            node.Tags = new Dictionary<string, object> { { "k", "v2" }, { "extra", 99L } };
+
+                            TestAssert.Equal("second", node.Name, "Overwritten Name");
+                            TestAssert.Equal(2, node.Labels!.Count, "Overwritten Labels count");
+                            TestAssert.Equal("v2", (string)node.Tags!["k"], "Overwritten Tags k");
+                            TestAssert.True(node.Tags!.ContainsKey("extra"), "Overwritten Tags has extra");
+                        }),
+
+                    Case("Metadata", "SqliteMetadataSurvivesBatchAdd",
+                        "SQLite: metadata set after batch-add persists on flush",
+                        async ct =>
+                        {
+                            string path = NewTempDb();
+                            try
+                            {
+                                SqliteStorageProvider provider = new SqliteStorageProvider(path);
+                                try
+                                {
+                                    HnswIndex index = new HnswIndex(_Dimension2D, provider);
+                                    Guid a = Guid.NewGuid();
+                                    Guid b = Guid.NewGuid();
+                                    await index.AddNodesAsync(new Dictionary<Guid, List<float>>
+                                    {
+                                        { a, new List<float> { 1f, 1f } },
+                                        { b, new List<float> { 2f, 2f } },
+                                    }, ct).ConfigureAwait(false);
+
+                                    IHnswNode na = await provider.GetNodeAsync(a, ct).ConfigureAwait(false);
+                                    na.Name = "vec-a";
+                                    na.Labels = new List<string> { "batch" };
+
+                                    IHnswNode nb = await provider.GetNodeAsync(b, ct).ConfigureAwait(false);
+                                    nb.Name = "vec-b";
+                                    nb.Tags = new Dictionary<string, object> { { "order", 2L } };
+                                }
+                                finally { provider.Dispose(); }
+
+                                SqliteConnection.ClearAllPools();
+
+                                SqliteStorageProvider reader = new SqliteStorageProvider(path, createIfNotExists: false);
+                                try
+                                {
+                                    // Both nodes should retain metadata after flush + reopen.
+                                    Dictionary<Guid, IHnswNode> all = await reader.GetNodesAsync(
+                                        await reader.GetAllNodeIdsAsync(ct).ConfigureAwait(false), ct).ConfigureAwait(false);
+
+                                    int withName = 0;
+                                    foreach (IHnswNode n in all.Values)
+                                    {
+                                        if (n.Name != null) withName++;
+                                    }
+                                    TestAssert.Equal(2, withName, "Both nodes have Name after reopen");
+                                }
+                                finally { reader.Dispose(); }
                             }
                             finally
                             {

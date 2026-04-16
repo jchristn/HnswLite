@@ -123,6 +123,21 @@
             Gets whether this node has been disposed.
             </summary>
         </member>
+        <member name="P:Hnsw.RamStorage.RamHnswNode.Name">
+            <summary>
+            Optional human-readable name for this vector.
+            </summary>
+        </member>
+        <member name="P:Hnsw.RamStorage.RamHnswNode.Labels">
+            <summary>
+            Optional classification labels.
+            </summary>
+        </member>
+        <member name="P:Hnsw.RamStorage.RamHnswNode.Tags">
+            <summary>
+            Optional arbitrary key/value tags.
+            </summary>
+        </member>
         <member name="M:Hnsw.RamStorage.RamHnswNode.#ctor(System.Guid,System.Collections.Generic.List{System.Single})">
             <summary>
             Initializes a new instance of the RamHnswNode class.

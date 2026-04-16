@@ -19,6 +19,21 @@
         List<float> Vector { get; }
 
         /// <summary>
+        /// Optional human-readable name for this vector.
+        /// </summary>
+        string? Name { get; set; }
+
+        /// <summary>
+        /// Optional classification labels.
+        /// </summary>
+        List<string>? Labels { get; set; }
+
+        /// <summary>
+        /// Optional arbitrary key/value tags.
+        /// </summary>
+        Dictionary<string, object>? Tags { get; set; }
+
+        /// <summary>
         /// Gets a copy of the node's neighbors organized by layer.
         /// </summary>
         Dictionary<int, HashSet<Guid>> GetNeighbors();

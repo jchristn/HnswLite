@@ -149,7 +149,25 @@
             Gets whether the node has unsaved changes.
             </summary>
         </member>
-        <member name="M:Hnsw.SqliteStorage.SqliteHnswNode.#ctor(System.Guid,System.Collections.Generic.List{System.Single},Microsoft.Data.Sqlite.SqliteConnection,System.String)">
+        <member name="P:Hnsw.SqliteStorage.SqliteHnswNode.Name">
+            <summary>
+            Optional human-readable name for this vector.
+            Setting this marks the node as dirty.
+            </summary>
+        </member>
+        <member name="P:Hnsw.SqliteStorage.SqliteHnswNode.Labels">
+            <summary>
+            Optional classification labels.
+            Setting this writes immediately to the database.
+            </summary>
+        </member>
+        <member name="P:Hnsw.SqliteStorage.SqliteHnswNode.Tags">
+            <summary>
+            Optional arbitrary key/value tags.
+            Setting this writes immediately to the database.
+            </summary>
+        </member>
+        <member name="M:Hnsw.SqliteStorage.SqliteHnswNode.#ctor(System.Guid,System.Collections.Generic.List{System.Single},Microsoft.Data.Sqlite.SqliteConnection,System.String,System.String)">
             <summary>
             Initializes a new instance of the SqliteHnswNode class.
             </summary>
@@ -157,6 +175,7 @@
             <param name="vector">Vector data. Cannot be null or empty. All values must be finite.</param>
             <param name="connection">SQLite database connection. Cannot be null.</param>
             <param name="tableName">Table name for storing neighbors. Cannot be null or empty.</param>
+            <param name="nodesTableName">Table name for the nodes table (for metadata persistence). Null to skip metadata.</param>
             <exception cref="T:System.ArgumentException">Thrown when id is Guid.Empty or vector contains invalid values.</exception>
             <exception cref="T:System.ArgumentNullException">Thrown when vector, connection, or tableName is null.</exception>
         </member>

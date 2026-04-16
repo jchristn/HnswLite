@@ -270,11 +270,7 @@ namespace HnswIndex.Server.Services
             TryGetNodeResult r = await provider.TryGetNodeAsync(vectorGuid, cancellationToken).ConfigureAwait(false);
             if (!r.Success || r.Node == null) return null;
 
-            return new VectorEntryResponse
-            {
-                GUID = vectorGuid,
-                Vector = new List<float>(r.Node.Vector),
-            };
+            return NodeToEntry(r.Node, includeVector: true);
         }
 
         public async Task<EnumerationResult<VectorEntryResponse>> EnumerateVectorsAsync(
@@ -320,22 +316,18 @@ namespace HnswIndex.Server.Services
             List<Guid> page = filtered.GetRange(skip, take);
 
             List<VectorEntryResponse> objects = new List<VectorEntryResponse>(page.Count);
-            if (includeVectors && page.Count > 0)
+            // Always fetch nodes so metadata (Name/Labels/Tags) is populated.
+            // Vector bodies are included only when the caller requests them.
+            Dictionary<Guid, IHnswNode> nodes = page.Count > 0
+                ? await provider.GetNodesAsync(page, cancellationToken).ConfigureAwait(false)
+                : new Dictionary<Guid, IHnswNode>();
+            foreach (Guid id in page)
             {
-                Dictionary<Guid, IHnswNode> nodes = await provider.GetNodesAsync(page, cancellationToken).ConfigureAwait(false);
-                foreach (Guid id in page)
+                if (nodes.TryGetValue(id, out IHnswNode? node) && node != null)
                 {
-                    VectorEntryResponse entry = new VectorEntryResponse { GUID = id };
-                    if (nodes.TryGetValue(id, out IHnswNode? node) && node != null)
-                    {
-                        entry.Vector = new List<float>(node.Vector);
-                    }
-                    objects.Add(entry);
+                    objects.Add(NodeToEntry(node, includeVectors));
                 }
-            }
-            else
-            {
-                foreach (Guid id in page)
+                else
                 {
                     objects.Add(new VectorEntryResponse { GUID = id });
                 }
@@ -378,6 +370,19 @@ namespace HnswIndex.Server.Services
             await metadata.Index.AddAsync(vectorGuid, request.Vector, cancellationToken).ConfigureAwait(false);
             metadata.VectorCount++;
 
+            // Set optional metadata on the node post-creation.
+            if (request.Name != null || request.Labels != null || request.Tags != null)
+            {
+                IStorageProvider? provider = GetProvider(metadata);
+                if (provider != null)
+                {
+                    IHnswNode node = await provider.GetNodeAsync(vectorGuid, cancellationToken).ConfigureAwait(false);
+                    node.Name = request.Name;
+                    node.Labels = request.Labels;
+                    node.Tags = request.Tags;
+                }
+            }
+
             return true;
         }
 
@@ -417,6 +422,22 @@ namespace HnswIndex.Server.Services
 
             await metadata.Index.AddNodesAsync(vectors, cancellationToken).ConfigureAwait(false);
             metadata.VectorCount += vectors.Count;
+
+            // Set metadata on each vector that has any non-null fields.
+            IStorageProvider? batchProvider = GetProvider(metadata);
+            if (batchProvider != null)
+            {
+                foreach (AddVectorRequest vr in request.Vectors)
+                {
+                    if (vr.Name != null || vr.Labels != null || vr.Tags != null)
+                    {
+                        IHnswNode node = await batchProvider.GetNodeAsync(vr.GUID, cancellationToken).ConfigureAwait(false);
+                        node.Name = vr.Name;
+                        node.Labels = vr.Labels;
+                        node.Tags = vr.Tags;
+                    }
+                }
+            }
 
             return true;
         }
@@ -479,14 +500,28 @@ namespace HnswIndex.Server.Services
             stopwatch.Stop();
 
             List<VectorSearchResult> searchResults = new List<VectorSearchResult>();
+            // Batch-fetch nodes to populate metadata alongside the vector results.
+            IStorageProvider? searchProvider = GetProvider(metadata);
+            List<Guid> resultIds = results.Select(r => r.GUID).ToList();
+            Dictionary<Guid, IHnswNode> nodeMap = (searchProvider != null && resultIds.Count > 0)
+                ? await searchProvider.GetNodesAsync(resultIds, cancellationToken).ConfigureAwait(false)
+                : new Dictionary<Guid, IHnswNode>();
+
             foreach (VectorResult result in results)
             {
-                searchResults.Add(new VectorSearchResult
+                VectorSearchResult sr = new VectorSearchResult
                 {
                     GUID = result.GUID,
                     Vector = result.Vectors,
-                    Distance = result.Distance
-                });
+                    Distance = result.Distance,
+                };
+                if (nodeMap.TryGetValue(result.GUID, out IHnswNode? n) && n != null)
+                {
+                    sr.Name = n.Name;
+                    sr.Labels = n.Labels;
+                    sr.Tags = n.Tags;
+                }
+                searchResults.Add(sr);
             }
 
             return new SearchResponse
@@ -686,6 +721,28 @@ namespace HnswIndex.Server.Services
             }
 
             if (loaded > 0) _Logging?.Info(_Header + $"reloaded {loaded} persisted index(es) from disk");
+        }
+
+        private static IStorageProvider? GetProvider(IndexMetadata metadata)
+        {
+            if (metadata.StorageObjects == null) return null;
+            foreach (IDisposable obj in metadata.StorageObjects)
+            {
+                if (obj is IStorageProvider sp) return sp;
+            }
+            return null;
+        }
+
+        private static VectorEntryResponse NodeToEntry(IHnswNode node, bool includeVector)
+        {
+            return new VectorEntryResponse
+            {
+                GUID = node.Id,
+                Vector = includeVector ? new List<float>(node.Vector) : null,
+                Name = node.Name,
+                Labels = node.Labels != null ? new List<string>(node.Labels) : null,
+                Tags = node.Tags != null ? new Dictionary<string, object>(node.Tags) : null,
+            };
         }
 
         private static int CountVectorsBestEffort(SqliteStorageProvider provider)
