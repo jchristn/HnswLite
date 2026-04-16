@@ -1,8 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFramework>net8.0</TargetFramework>
-		<Version>1.0.6</Version>
+		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+		<Version>1.1.1</Version>
 		<ImplicitUsings>disable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<ApplicationIcon>logo.ico</ApplicationIcon>
@@ -18,7 +18,7 @@
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<RepositoryUrl>https://github.com/jchristn/HnswIndex</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
-		<PackageTags>hnsw hierarchical navigable small world index indices vector vectors embedding embeddings</PackageTags>
+		<PackageTags>hnsw;hierarchical;navigable;small;world;index;indices;vector;vectors;embedding;embeddings</PackageTags>
 		<PackageReleaseNotes>Initial release</PackageReleaseNotes>
 		<PackageLicenseFile>LICENSE.md</PackageLicenseFile>
 		<PackageRequireLicenseAcceptance>False</PackageRequireLicenseAcceptance>

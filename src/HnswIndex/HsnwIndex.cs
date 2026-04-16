@@ -218,6 +218,27 @@
         }
 
         /// <summary>
+        /// Initializes a new instance of the HNSWIndex class with a unified storage provider.
+        /// </summary>
+        /// <param name="dimension">The dimensionality of vectors to be indexed. Minimum: 1, Maximum: 4096.</param>
+        /// <param name="provider">Unified storage provider. Cannot be null.</param>
+        public HnswIndex(int dimension, IStorageProvider provider)
+            : this(dimension, (IHnswStorage)provider, (IHnswLayerStorage)provider)
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the HNSWIndex class with a unified storage provider and seed.
+        /// </summary>
+        /// <param name="dimension">The dimensionality of vectors to be indexed. Minimum: 1, Maximum: 4096.</param>
+        /// <param name="provider">Unified storage provider. Cannot be null.</param>
+        /// <param name="seed">Random seed for reproducible results. Use null for random seed.</param>
+        public HnswIndex(int dimension, IStorageProvider provider, int? seed)
+            : this(dimension, (IHnswStorage)provider, (IHnswLayerStorage)provider, seed)
+        {
+        }
+
+        /// <summary>
         /// Initializes a new instance of the HNSWIndex class with custom _Storage and seed.
         /// </summary>
         /// <param name="dimension">The dimensionality of vectors to be indexed. Minimum: 1, Maximum: 4096.</param>
@@ -245,12 +266,12 @@
             if (vector.Count != _VectorDimension)
                 throw new ArgumentException($"Vector dimension {vector.Count} does not match index dimension {_VectorDimension}");
 
-            await _IndexLock.WaitAsync(cancellationToken);
+            await _IndexLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                await _Storage.AddNodeAsync(guid, vector, cancellationToken);
+                await _Storage.AddNodeAsync(guid, vector, cancellationToken).ConfigureAwait(false);
 
-                int count = await _Storage.GetCountAsync(cancellationToken);
+                int count = await _Storage.GetCountAsync(cancellationToken).ConfigureAwait(false);
                 if (count == 1)
                 {
                     SetNodeLayer(guid, 0);
@@ -299,31 +320,27 @@
 
                         // Prune neighbor's connections if needed
                         Dictionary<int, HashSet<Guid>> neighborConnections = neighbor.GetNeighbors();
-                        if (neighborConnections.ContainsKey(layer))
+                        if (neighborConnections.TryGetValue(layer, out HashSet<Guid>? currentConnections) && currentConnections.Count > mValue)
                         {
-                            HashSet<Guid> currentConnections = neighborConnections[layer];
-                            if (currentConnections.Count > mValue)
+                            List<SearchCandidate> pruneCandidates = new List<SearchCandidate>();
+                            foreach (Guid connId in currentConnections)
                             {
-                                // Prune to M connections using heuristic
-                                List<SearchCandidate> pruneCandidates = new List<SearchCandidate>();
-                                foreach (Guid connId in currentConnections)
-                                {
-                                    IHnswNode conn = await _Storage.GetNodeAsync(connId, cancellationToken);
-                                    pruneCandidates.Add(new SearchCandidate(DistanceFunction.Distance(neighbor.Vector, conn.Vector), connId));
-                                }
+                                IHnswNode conn = await _Storage.GetNodeAsync(connId, cancellationToken).ConfigureAwait(false);
+                                pruneCandidates.Add(new SearchCandidate(DistanceFunction.Distance(neighbor.Vector, conn.Vector), connId));
+                            }
 
-                                List<Guid> newConnections = await SelectNeighborsHeuristicAsync(neighbor.Vector, pruneCandidates, mValue, layer, ExtendCandidates, KeepPrunedConnections, cancellationToken);
+                            HashSet<Guid> keepSet = new HashSet<Guid>(await SelectNeighborsHeuristicAsync(neighbor.Vector, pruneCandidates, mValue, layer, ExtendCandidates, KeepPrunedConnections, cancellationToken).ConfigureAwait(false));
 
-                                // Remove connections not in newConnections
-                                foreach (Guid connId in currentConnections.ToList())
-                                {
-                                    if (!newConnections.Contains(connId))
-                                    {
-                                        neighbor.RemoveNeighbor(layer, connId);
-                                        IHnswNode connNode = await _Storage.GetNodeAsync(connId, cancellationToken);
-                                        connNode.RemoveNeighbor(layer, neighborId);
-                                    }
-                                }
+                            List<Guid> toRemove = new List<Guid>();
+                            foreach (Guid connId in currentConnections)
+                            {
+                                if (!keepSet.Contains(connId)) toRemove.Add(connId);
+                            }
+                            foreach (Guid connId in toRemove)
+                            {
+                                neighbor.RemoveNeighbor(layer, connId);
+                                IHnswNode connNode = await _Storage.GetNodeAsync(connId, cancellationToken).ConfigureAwait(false);
+                                connNode.RemoveNeighbor(layer, neighborId);
                             }
                         }
                     }
@@ -435,31 +452,27 @@
 
                             // Prune neighbor's connections if needed
                             Dictionary<int, HashSet<Guid>> neighborConnections = neighbor.GetNeighbors();
-                            if (neighborConnections.ContainsKey(layer))
+                            if (neighborConnections.TryGetValue(layer, out HashSet<Guid>? currentConnections) && currentConnections.Count > mValue)
                             {
-                                HashSet<Guid> currentConnections = neighborConnections[layer];
-                                if (currentConnections.Count > mValue)
+                                List<SearchCandidate> pruneCandidates = new List<SearchCandidate>();
+                                foreach (Guid connId in currentConnections)
                                 {
-                                    // Prune to M connections using heuristic
-                                    List<SearchCandidate> pruneCandidates = new List<SearchCandidate>();
-                                    foreach (Guid connId in currentConnections)
-                                    {
-                                        IHnswNode conn = await context.GetNodeAsync(connId);
-                                        pruneCandidates.Add(new SearchCandidate(DistanceFunction.Distance(neighbor.Vector, conn.Vector), connId));
-                                    }
+                                    IHnswNode conn = await context.GetNodeAsync(connId).ConfigureAwait(false);
+                                    pruneCandidates.Add(new SearchCandidate(DistanceFunction.Distance(neighbor.Vector, conn.Vector), connId));
+                                }
 
-                                    List<Guid> newConnections = await SelectNeighborsHeuristicAsync(neighbor.Vector, pruneCandidates, mValue, layer, ExtendCandidates, KeepPrunedConnections, cancellationToken);
+                                HashSet<Guid> keepSet = new HashSet<Guid>(await SelectNeighborsHeuristicAsync(neighbor.Vector, pruneCandidates, mValue, layer, ExtendCandidates, KeepPrunedConnections, cancellationToken).ConfigureAwait(false));
 
-                                    // Remove connections not in newConnections
-                                    foreach (Guid connId in currentConnections.ToList())
-                                    {
-                                        if (!newConnections.Contains(connId))
-                                        {
-                                            neighbor.RemoveNeighbor(layer, connId);
-                                            IHnswNode connNode = await context.GetNodeAsync(connId);
-                                            connNode.RemoveNeighbor(layer, neighborId);
-                                        }
-                                    }
+                                List<Guid> toRemove = new List<Guid>();
+                                foreach (Guid connId in currentConnections)
+                                {
+                                    if (!keepSet.Contains(connId)) toRemove.Add(connId);
+                                }
+                                foreach (Guid connId in toRemove)
+                                {
+                                    neighbor.RemoveNeighbor(layer, connId);
+                                    IHnswNode connNode = await context.GetNodeAsync(connId).ConfigureAwait(false);
+                                    connNode.RemoveNeighbor(layer, neighborId);
                                 }
                             }
                         }
@@ -958,163 +971,162 @@
 
         private async Task<List<Guid>> SelectNeighborsHeuristicAsync(List<float> baseVector, List<SearchCandidate> candidates, int m, int layer, bool extendCandidates, bool keepPrunedConnections, CancellationToken cancellationToken)
         {
-            return await Task.Run(async () =>
+            cancellationToken.ThrowIfCancellationRequested();
+
+            List<Guid> returnList = new List<Guid>();
+            List<SearchCandidate> discardedList = new List<SearchCandidate>();
+
+            candidates.Sort((a, b) => a.Distance.CompareTo(b.Distance));
+
+            // Pre-fetch every candidate node once. The original code re-fetched the same
+            // candidate node inside the inner returnList loop, and re-fetched returnList
+            // nodes on every candidate iteration.
+            List<Guid> candidateIds = new List<Guid>(candidates.Count);
+            foreach (SearchCandidate c in candidates) candidateIds.Add(c.NodeId);
+            Dictionary<Guid, IHnswNode> nodeMap = await _Storage.GetNodesAsync(candidateIds, cancellationToken).ConfigureAwait(false);
+
+            // Cache the chosen returnList nodes alongside the GUID list to avoid re-fetch.
+            List<IHnswNode> returnNodes = new List<IHnswNode>();
+
+            foreach (SearchCandidate candidate in candidates)
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                if (returnList.Count >= m)
+                    break;
 
-                List<Guid> returnList = new List<Guid>();
-                List<SearchCandidate> discardedList = new List<SearchCandidate>();
+                if (!nodeMap.TryGetValue(candidate.NodeId, out IHnswNode? candidateNode))
+                {
+                    // Defensive: a candidate referenced by id but missing in storage shouldn't
+                    // typically happen, but skip rather than throw to match prior behavior.
+                    continue;
+                }
 
-                // Sort candidates by distance
-                candidates = candidates.OrderBy(c => c.Distance).ToList();
+                bool shouldAdd = true;
+                List<float> candidateVector = candidateNode.Vector;
+                foreach (IHnswNode returnNode in returnNodes)
+                {
+                    float distToReturn = DistanceFunction.Distance(candidateVector, returnNode.Vector);
+                    if (distToReturn < candidate.Distance)
+                    {
+                        shouldAdd = false;
+                        discardedList.Add(candidate);
+                        break;
+                    }
+                }
 
-                // Process each candidate
-                foreach (SearchCandidate candidate in candidates)
+                if (shouldAdd)
+                {
+                    returnList.Add(candidate.NodeId);
+                    returnNodes.Add(candidateNode);
+                }
+            }
+
+            if (extendCandidates && returnList.Count < m && discardedList.Count > 0)
+            {
+                discardedList.Sort((a, b) => a.Distance.CompareTo(b.Distance));
+                foreach (SearchCandidate discarded in discardedList)
                 {
                     if (returnList.Count >= m)
                         break;
-
-                    // Check if candidate is closer to base than to any element in the return list
-                    bool shouldAdd = true;
-                    foreach (Guid returnId in returnList)
-                    {
-                        IHnswNode returnNode = await _Storage.GetNodeAsync(returnId, cancellationToken);
-                        IHnswNode candidateNode = await _Storage.GetNodeAsync(candidate.NodeId, cancellationToken);
-                        float distToReturn = DistanceFunction.Distance(candidateNode.Vector, returnNode.Vector);
-
-                        if (distToReturn < candidate.Distance)
-                        {
-                            // Candidate is closer to an existing neighbor than to the base
-                            shouldAdd = false;
-                            discardedList.Add(candidate);
-                            break;
-                        }
-                    }
-
-                    if (shouldAdd)
-                    {
-                        returnList.Add(candidate.NodeId);
-                    }
+                    returnList.Add(discarded.NodeId);
                 }
+            }
 
-                // If we have space and extendCandidates is true, add some discarded connections
-                if (extendCandidates && returnList.Count < m && discardedList.Count > 0)
-                {
-                    discardedList = discardedList.OrderBy(d => d.Distance).ToList();
-                    foreach (SearchCandidate discarded in discardedList)
-                    {
-                        if (returnList.Count >= m)
-                            break;
-                        returnList.Add(discarded.NodeId);
-                    }
-                }
-
-                return returnList;
-            }, cancellationToken);
+            return returnList;
         }
 
         private async Task<Guid> GreedySearchLayerAsync(List<float> query, Guid entryPointId, int layer, CancellationToken cancellationToken)
         {
-            return await Task.Run(async () =>
+            Guid currentNearest = entryPointId;
+            IHnswNode entryNode = await _Storage.GetNodeAsync(entryPointId, cancellationToken).ConfigureAwait(false);
+            float currentDist = DistanceFunction.Distance(query, entryNode.Vector);
+
+            bool improved = true;
+            while (improved)
             {
-                Guid currentNearest = entryPointId;
-                IHnswNode entryNode = await _Storage.GetNodeAsync(entryPointId, cancellationToken);
-                float currentDist = DistanceFunction.Distance(query, entryNode.Vector);
+                cancellationToken.ThrowIfCancellationRequested();
+                improved = false;
+                IHnswNode currentNode = await _Storage.GetNodeAsync(currentNearest, cancellationToken).ConfigureAwait(false);
+                Dictionary<int, HashSet<Guid>> neighbors = currentNode.GetNeighbors();
 
-                bool improved = true;
-                while (improved)
+                if (neighbors.TryGetValue(layer, out HashSet<Guid>? layerNeighbors))
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    improved = false;
-                    IHnswNode currentNode = await _Storage.GetNodeAsync(currentNearest, cancellationToken);
-                    Dictionary<int, HashSet<Guid>> neighbors = currentNode.GetNeighbors();
-
-                    if (neighbors.ContainsKey(layer))
+                    foreach (Guid neighborId in layerNeighbors)
                     {
-                        foreach (Guid neighborId in neighbors[layer])
+                        IHnswNode neighbor = await _Storage.GetNodeAsync(neighborId, cancellationToken).ConfigureAwait(false);
+                        float dist = DistanceFunction.Distance(query, neighbor.Vector);
+                        if (dist < currentDist)
                         {
-                            IHnswNode neighbor = await _Storage.GetNodeAsync(neighborId, cancellationToken);
-                            float dist = DistanceFunction.Distance(query, neighbor.Vector);
-                            if (dist < currentDist)
-                            {
-                                currentDist = dist;
-                                currentNearest = neighborId;
-                                improved = true;
-                            }
+                            currentDist = dist;
+                            currentNearest = neighborId;
+                            improved = true;
                         }
                     }
                 }
+            }
 
-                return currentNearest;
-            }, cancellationToken);
+            return currentNearest;
         }
 
         private async Task<List<SearchCandidate>> SearchLayerAsync(List<float> query, Guid entryPointId, int ef, int layer, CancellationToken cancellationToken)
         {
-            return await Task.Run(async () =>
+            HashSet<Guid> visited = new HashSet<Guid>();
+            MinHeap<Guid> candidates = new MinHeap<Guid>(Comparer<Guid>.Default);
+            MinHeap<Guid> dynamicNearestNeighbors = new MinHeap<Guid>(Comparer<Guid>.Default);
+            float farthestDistance = float.MaxValue;
+
+            IHnswNode entryPoint = await _Storage.GetNodeAsync(entryPointId, cancellationToken).ConfigureAwait(false);
+            float d = DistanceFunction.Distance(query, entryPoint.Vector);
+            candidates.Push(d, entryPointId);
+            dynamicNearestNeighbors.Push(-d, entryPointId);
+            visited.Add(entryPointId);
+
+            while (candidates.Count > 0)
             {
-                HashSet<Guid> visited = new HashSet<Guid>();
-                MinHeap<Guid> candidates = new MinHeap<Guid>(Comparer<Guid>.Default);
-                MinHeap<Guid> dynamicNearestNeighbors = new MinHeap<Guid>(Comparer<Guid>.Default);
-                float farthestDistance = float.MaxValue;
+                cancellationToken.ThrowIfCancellationRequested();
+                (float priority, Guid item) current = candidates.Pop();
 
-                IHnswNode entryPoint = await _Storage.GetNodeAsync(entryPointId, cancellationToken);
-                float d = DistanceFunction.Distance(query, entryPoint.Vector);
-                candidates.Push(d, entryPointId);
-                dynamicNearestNeighbors.Push(-d, entryPointId); // Use negative distance for max-heap behavior
-                visited.Add(entryPointId);
+                if (current.priority > farthestDistance)
+                    break;
 
-                while (candidates.Count > 0)
+                IHnswNode currentNode = await _Storage.GetNodeAsync(current.item, cancellationToken).ConfigureAwait(false);
+                Dictionary<int, HashSet<Guid>> neighbors = currentNode.GetNeighbors();
+
+                if (neighbors.TryGetValue(layer, out HashSet<Guid>? layerNeighbors))
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    (float priority, Guid item) current = candidates.Pop();
-
-                    // Early termination with search optimization
-                    if (current.priority > farthestDistance)
-                        break;
-
-                    IHnswNode currentNode = await _Storage.GetNodeAsync(current.item, cancellationToken);
-                    Dictionary<int, HashSet<Guid>> neighbors = currentNode.GetNeighbors();
-
-                    if (neighbors.ContainsKey(layer))
+                    foreach (Guid neighborId in layerNeighbors)
                     {
-                        foreach (Guid neighborId in neighbors[layer])
+                        if (!visited.Add(neighborId))
+                            continue;
+
+                        IHnswNode neighbor = await _Storage.GetNodeAsync(neighborId, cancellationToken).ConfigureAwait(false);
+                        d = DistanceFunction.Distance(query, neighbor.Vector);
+
+                        if (d < farthestDistance || dynamicNearestNeighbors.Count < ef)
                         {
-                            if (!visited.Contains(neighborId))
+                            candidates.Push(d, neighborId);
+                            dynamicNearestNeighbors.Push(-d, neighborId);
+
+                            if (dynamicNearestNeighbors.Count > ef)
                             {
-                                visited.Add(neighborId);
-                                IHnswNode neighbor = await _Storage.GetNodeAsync(neighborId, cancellationToken);
-                                d = DistanceFunction.Distance(query, neighbor.Vector);
-
-                                if (d < farthestDistance || dynamicNearestNeighbors.Count < ef)
-                                {
-                                    candidates.Push(d, neighborId);
-                                    dynamicNearestNeighbors.Push(-d, neighborId);
-
-                                    if (dynamicNearestNeighbors.Count > ef)
-                                    {
-                                        dynamicNearestNeighbors.Pop();
-                                        // Update farthest distance
-                                        farthestDistance = -dynamicNearestNeighbors.Peek().priority;
-                                    }
-                                    else if (dynamicNearestNeighbors.Count == ef)
-                                    {
-                                        farthestDistance = -dynamicNearestNeighbors.Peek().priority;
-                                    }
-                                }
+                                dynamicNearestNeighbors.Pop();
+                                farthestDistance = -dynamicNearestNeighbors.Peek().priority;
+                            }
+                            else if (dynamicNearestNeighbors.Count == ef)
+                            {
+                                farthestDistance = -dynamicNearestNeighbors.Peek().priority;
                             }
                         }
                     }
                 }
+            }
 
-                // Convert heap to sorted list
-                List<SearchCandidate> result = dynamicNearestNeighbors.GetAll()
-                    .Select(item => new SearchCandidate(-item.priority, item.item))
-                    .OrderBy(x => x.Distance)
-                    .ToList();
-
-                return result;
-            }, cancellationToken);
+            List<(float priority, Guid item)> heapItems = dynamicNearestNeighbors.GetAll();
+            List<SearchCandidate> result = new List<SearchCandidate>(heapItems.Count);
+            for (int i = heapItems.Count - 1; i >= 0; i--)
+            {
+                result.Add(new SearchCandidate(-heapItems[i].priority, heapItems[i].item));
+            }
+            return result;
         }
 
         private async Task<Guid> GreedySearchLayerWithContextAsync(List<float> query, Guid entryPointId, int layer, SearchContext context, CancellationToken cancellationToken)
@@ -1182,23 +1194,22 @@
                 IHnswNode currentNode = await context.GetNodeAsync(current.item);
                 Dictionary<int, HashSet<Guid>> neighbors = currentNode.GetNeighbors();
 
-                if (neighbors.ContainsKey(layer))
+                if (neighbors.TryGetValue(layer, out HashSet<Guid>? layerNeighbors))
                 {
-                    // Batch-load all unvisited neighbors
-                    List<Guid> unvisitedNeighbors = neighbors[layer]
-                        .Where(n => !visited.Contains(n))
-                        .ToList();
-
-                    if (unvisitedNeighbors.Count > 0)
+                    List<Guid> unvisited = new List<Guid>();
+                    foreach (Guid nid in layerNeighbors)
                     {
-                        // Pre-fetch all neighbors in one batch
-                        await context.PrefetchNodesAsync(unvisitedNeighbors);
+                        if (!visited.Contains(nid)) unvisited.Add(nid);
+                    }
 
-                        // Process neighbors
-                        foreach (Guid neighborId in unvisitedNeighbors)
+                    if (unvisited.Count > 0)
+                    {
+                        await context.PrefetchNodesAsync(unvisited).ConfigureAwait(false);
+
+                        foreach (Guid neighborId in unvisited)
                         {
                             visited.Add(neighborId);
-                            IHnswNode neighbor = await context.GetNodeAsync(neighborId);
+                            IHnswNode neighbor = await context.GetNodeAsync(neighborId).ConfigureAwait(false);
                             d = DistanceFunction.Distance(query, neighbor.Vector);
 
                             if (d < farthestDistance || dynamicNearestNeighbors.Count < ef)
@@ -1209,7 +1220,6 @@
                                 if (dynamicNearestNeighbors.Count > ef)
                                 {
                                     dynamicNearestNeighbors.Pop();
-                                    // Update farthest distance
                                     farthestDistance = -dynamicNearestNeighbors.Peek().priority;
                                 }
                                 else if (dynamicNearestNeighbors.Count == ef)
@@ -1222,12 +1232,12 @@
                 }
             }
 
-            // Convert heap to sorted list
-            List<SearchCandidate> result = dynamicNearestNeighbors.GetAll()
-                .Select(item => new SearchCandidate(-item.priority, item.item))
-                .OrderBy(x => x.Distance)
-                .ToList();
-
+            List<(float priority, Guid item)> heapItems = dynamicNearestNeighbors.GetAll();
+            List<SearchCandidate> result = new List<SearchCandidate>(heapItems.Count);
+            for (int i = heapItems.Count - 1; i >= 0; i--)
+            {
+                result.Add(new SearchCandidate(-heapItems[i].priority, heapItems[i].item));
+            }
             return result;
         }
     }

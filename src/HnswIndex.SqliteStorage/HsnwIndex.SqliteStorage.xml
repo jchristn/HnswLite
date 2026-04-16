@@ -462,5 +462,104 @@
             <returns>Dictionary mapping node IDs to layer numbers.</returns>
             <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
         </member>
+        <member name="T:HnswIndex.SqliteStorage.SqliteStorageProvider">
+            <summary>
+            Unified SQLite storage provider that combines vector node storage and
+            layer assignment storage into a single <see cref="T:Hnsw.IStorageProvider"/>.
+            Thread-safe. Uses a single database file and connection.
+            Disposes both backing stores on disposal.
+            </summary>
+        </member>
+        <member name="P:HnswIndex.SqliteStorage.SqliteStorageProvider.EntryPoint">
+            <summary>
+            Gets or sets the entry point node ID.
+            </summary>
+        </member>
+        <member name="P:HnswIndex.SqliteStorage.SqliteStorageProvider.Count">
+            <summary>
+            Number of nodes with layer assignments.
+            </summary>
+        </member>
+        <member name="P:HnswIndex.SqliteStorage.SqliteStorageProvider.DatabasePath">
+            <summary>
+            Path to the SQLite database file.
+            </summary>
+        </member>
+        <member name="P:HnswIndex.SqliteStorage.SqliteStorageProvider.Connection">
+            <summary>
+            The underlying SQLite connection (shared between node and layer storage).
+            </summary>
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteStorageProvider.#ctor(System.String,System.Boolean)">
+            <summary>
+            Initializes a new SQLite storage provider with default table names.
+            </summary>
+            <param name="databasePath">Path to the SQLite database file.</param>
+            <param name="createIfNotExists">Create the database and tables if they don't exist. Default: true.</param>
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteStorageProvider.#ctor(System.String,System.String,System.String,System.String,System.String,System.Boolean)">
+            <summary>
+            Initializes a new SQLite storage provider with custom table names.
+            </summary>
+            <param name="databasePath">Path to the SQLite database file.</param>
+            <param name="nodesTableName">Table name for vector nodes.</param>
+            <param name="neighborsTableName">Table name for neighbor relationships.</param>
+            <param name="metadataTableName">Table name for metadata.</param>
+            <param name="layersTableName">Table name for layer assignments.</param>
+            <param name="createIfNotExists">Create the database and tables if they don't exist. Default: true.</param>
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteStorageProvider.AddNodeAsync(System.Guid,System.Collections.Generic.List{System.Single},System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteStorageProvider.AddNodesAsync(System.Collections.Generic.Dictionary{System.Guid,System.Collections.Generic.List{System.Single}},System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteStorageProvider.RemoveNodeAsync(System.Guid,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteStorageProvider.RemoveNodesAsync(System.Collections.Generic.IEnumerable{System.Guid},System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteStorageProvider.GetNodeAsync(System.Guid,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteStorageProvider.GetNodesAsync(System.Collections.Generic.IEnumerable{System.Guid},System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteStorageProvider.TryGetNodeAsync(System.Guid,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteStorageProvider.GetAllNodeIdsAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteStorageProvider.GetCountAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteStorageProvider.GetNodeLayer(System.Guid)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteStorageProvider.SetNodeLayer(System.Guid,System.Int32)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteStorageProvider.RemoveNodeLayer(System.Guid)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteStorageProvider.GetAllNodeLayers">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteStorageProvider.Clear">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteStorageProvider.Dispose">
+            <summary>
+            Disposes both the node storage and layer storage.
+            </summary>
+        </member>
+        <member name="M:HnswIndex.SqliteStorage.SqliteStorageProvider.Dispose(System.Boolean)">
+            <summary>
+            Disposes managed resources.
+            </summary>
+            <param name="disposing">True when called from Dispose().</param>
+        </member>
     </members>
 </doc>

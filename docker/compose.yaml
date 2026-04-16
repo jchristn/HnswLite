@@ -1,0 +1,28 @@
+services:
+
+  hnswlite-server:
+    image: jchristn77/hnswlite-server:v1.1.0
+    container_name: hnswlite-server
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./hnswlite/hnswindex.json:/app/hnswindex.json
+      - ./hnswlite/data/:/app/data/
+      - ./hnswlite/logs/:/app/logs/
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/"]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  hnswlite-dashboard:
+    image: jchristn77/hnswlite-dashboard:v1.1.0
+    container_name: hnswlite-dashboard
+    ports:
+      - "8081:80"
+    depends_on:
+      hnswlite-server:
+        condition: service_healthy
+    restart: unless-stopped

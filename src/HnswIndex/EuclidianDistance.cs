@@ -2,10 +2,12 @@ namespace Hnsw
 {
     using System;
     using System.Collections.Generic;
+    using System.Numerics;
+    using System.Runtime.InteropServices;
 
     /// <summary>
     /// Calculates Euclidean distance between vectors.
-    /// Thread-safe implementation.
+    /// Thread-safe implementation. Uses SIMD-accelerated paths when hardware support is available.
     /// </summary>
     public class EuclideanDistance : IDistanceFunction
     {
@@ -32,19 +34,39 @@ namespace Hnsw
         {
             ArgumentNullException.ThrowIfNull(a, nameof(a));
             ArgumentNullException.ThrowIfNull(b, nameof(b));
-            
+
             if (a.Count != b.Count)
             {
                 throw new ArgumentException($"Vectors must have the same dimension. Vector a has {a.Count} dimensions, vector b has {b.Count} dimensions.", nameof(b));
             }
 
-            float sum = 0;
-            for (int i = 0; i < a.Count; i++)
+            ReadOnlySpan<float> spanA = CollectionsMarshal.AsSpan(a);
+            ReadOnlySpan<float> spanB = CollectionsMarshal.AsSpan(b);
+
+            float sum = 0f;
+            int i = 0;
+
+            if (Vector.IsHardwareAccelerated)
             {
-                float diff = a[i] - b[i];
+                int width = Vector<float>.Count;
+                Vector<float> acc = Vector<float>.Zero;
+                int limit = spanA.Length - width;
+                for (; i <= limit; i += width)
+                {
+                    Vector<float> va = new Vector<float>(spanA.Slice(i, width));
+                    Vector<float> vb = new Vector<float>(spanB.Slice(i, width));
+                    Vector<float> diff = va - vb;
+                    acc += diff * diff;
+                }
+                sum = Vector.Dot(acc, Vector<float>.One);
+            }
+
+            for (; i < spanA.Length; i++)
+            {
+                float diff = spanA[i] - spanB[i];
                 sum += diff * diff;
             }
-            
+
             return MathF.Sqrt(sum);
         }
 

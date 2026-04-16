@@ -1,0 +1,8 @@
+node_modules
+dist
+*.log
+
+# Stray tsc artifacts — compiled output belongs in dist/, not src/.
+src/**/*.js
+src/**/*.js.map
+src/**/*.d.ts

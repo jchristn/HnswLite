@@ -7,7 +7,7 @@
         <member name="T:Hnsw.CosineDistance">
             <summary>
             Calculates cosine distance between vectors.
-            Thread-safe implementation.
+            Thread-safe implementation. Uses SIMD-accelerated paths when hardware support is available.
             </summary>
         </member>
         <member name="P:Hnsw.CosineDistance.Name">
@@ -29,7 +29,7 @@
         <member name="T:Hnsw.DotProductDistance">
             <summary>
             Calculates dot product distance between vectors (negated for use as distance metric).
-            Thread-safe implementation.
+            Thread-safe implementation. Uses SIMD-accelerated paths when hardware support is available.
             </summary>
         </member>
         <member name="P:Hnsw.DotProductDistance.Name">
@@ -51,7 +51,7 @@
         <member name="T:Hnsw.EuclideanDistance">
             <summary>
             Calculates Euclidean distance between vectors.
-            Thread-safe implementation.
+            Thread-safe implementation. Uses SIMD-accelerated paths when hardware support is available.
             </summary>
         </member>
         <member name="P:Hnsw.EuclideanDistance.Name">
@@ -223,6 +223,21 @@
             <param name="dimension">The dimensionality of vectors to be indexed. Minimum: 1, Maximum: 4096.</param>
             <param name="_Storage">Storage backend implementation. Cannot be null.</param>
             <param name="_LayerStorage">Layer _Storage backend implementation.  Cannot be null.</param>
+        </member>
+        <member name="M:Hnsw.HnswIndex.#ctor(System.Int32,Hnsw.IStorageProvider)">
+            <summary>
+            Initializes a new instance of the HNSWIndex class with a unified storage provider.
+            </summary>
+            <param name="dimension">The dimensionality of vectors to be indexed. Minimum: 1, Maximum: 4096.</param>
+            <param name="provider">Unified storage provider. Cannot be null.</param>
+        </member>
+        <member name="M:Hnsw.HnswIndex.#ctor(System.Int32,Hnsw.IStorageProvider,System.Nullable{System.Int32})">
+            <summary>
+            Initializes a new instance of the HNSWIndex class with a unified storage provider and seed.
+            </summary>
+            <param name="dimension">The dimensionality of vectors to be indexed. Minimum: 1, Maximum: 4096.</param>
+            <param name="provider">Unified storage provider. Cannot be null.</param>
+            <param name="seed">Random seed for reproducible results. Use null for random seed.</param>
         </member>
         <member name="M:Hnsw.HnswIndex.#ctor(System.Int32,Hnsw.IHnswStorage,Hnsw.IHnswLayerStorage,System.Nullable{System.Int32})">
             <summary>
@@ -462,6 +477,13 @@
         <member name="P:Hnsw.IHnswStorage.EntryPoint">
             <summary>
             Gets or sets the entry point node ID.
+            </summary>
+        </member>
+        <member name="T:Hnsw.IStorageProvider">
+            <summary>
+            Unified storage provider that combines vector node storage, layer assignment
+            storage, and lifecycle management into a single interface.
+            Implementations must be thread-safe.
             </summary>
         </member>
         <member name="T:Hnsw.MinHeap`1">
@@ -734,12 +756,13 @@
             Gets the number of nodes currently cached.
             </summary>
         </member>
-        <member name="M:Hnsw.SearchContext.#ctor(Hnsw.IHnswStorage,System.Threading.CancellationToken)">
+        <member name="M:Hnsw.SearchContext.#ctor(Hnsw.IHnswStorage,System.Threading.CancellationToken,System.Int32)">
             <summary>
             Initializes a new instance of the SearchContext class.
             </summary>
             <param name="storage">The storage backend to read nodes from.</param>
             <param name="cancellationToken">Cancellation token for the search operation.</param>
+            <param name="maxCacheSize">Maximum number of nodes kept in cache before eviction. Default: 50000.</param>
             <exception cref="T:System.ArgumentNullException">Thrown when storage is null.</exception>
         </member>
         <member name="M:Hnsw.SearchContext.GetNodeAsync(System.Guid)">

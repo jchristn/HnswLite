@@ -26,6 +26,7 @@ namespace Hnsw
         private readonly Dictionary<Guid, IHnswNode> _NodeCache = new Dictionary<Guid, IHnswNode>();
         private readonly IHnswStorage _Storage;
         private readonly CancellationToken _CancellationToken;
+        private readonly int _MaxCacheSize;
 
         #endregion
 
@@ -36,12 +37,14 @@ namespace Hnsw
         /// </summary>
         /// <param name="storage">The storage backend to read nodes from.</param>
         /// <param name="cancellationToken">Cancellation token for the search operation.</param>
+        /// <param name="maxCacheSize">Maximum number of nodes kept in cache before eviction. Default: 50000.</param>
         /// <exception cref="ArgumentNullException">Thrown when storage is null.</exception>
-        public SearchContext(IHnswStorage storage, CancellationToken cancellationToken = default)
+        public SearchContext(IHnswStorage storage, CancellationToken cancellationToken = default, int maxCacheSize = 50000)
         {
             ArgumentNullException.ThrowIfNull(storage, nameof(storage));
             _Storage = storage;
             _CancellationToken = cancellationToken;
+            _MaxCacheSize = maxCacheSize > 0 ? maxCacheSize : 50000;
         }
 
         #endregion
@@ -62,6 +65,7 @@ namespace Hnsw
 
             node = await _Storage.GetNodeAsync(id, _CancellationToken).ConfigureAwait(false);
             _NodeCache[id] = node;
+            EvictIfNeeded();
             return node;
         }
 
@@ -96,6 +100,7 @@ namespace Hnsw
                     _NodeCache[kvp.Key] = kvp.Value;
                     result[kvp.Key] = kvp.Value;
                 }
+                EvictIfNeeded();
             }
 
             return result;
@@ -119,6 +124,7 @@ namespace Hnsw
                 {
                     _NodeCache[kvp.Key] = kvp.Value;
                 }
+                EvictIfNeeded();
             }
         }
 
@@ -152,7 +158,15 @@ namespace Hnsw
         #endregion
         
         #region Private-Methods
-        
+
+        private void EvictIfNeeded()
+        {
+            if (_NodeCache.Count > _MaxCacheSize)
+            {
+                _NodeCache.Clear();
+            }
+        }
+
         #endregion
     }
 }

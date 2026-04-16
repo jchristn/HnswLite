@@ -54,8 +54,8 @@ PowerShell script with advanced features and colored output.
 ### Core Functionality
 - ✅ `GET /` - Root endpoint (HTML status page)
 - ✅ `HEAD /` - Root endpoint (headers only)
-- ✅ `OPTIONS /` - CORS preflight handling
-- ✅ `GET /v1.0/indexes` - List all indexes
+- ✅ `OPTIONS /` - CORS preflight (bypasses auth)
+- ✅ `GET /v1.0/indexes` - **Enumerate** indexes (paginated; never returns "all" without paging)
 - ✅ `POST /v1.0/indexes` - Create new index
 - ✅ `GET /v1.0/indexes/{name}` - Get index details
 - ✅ `DELETE /v1.0/indexes/{name}` - Delete index
@@ -82,6 +82,52 @@ PowerShell script with advanced features and colored output.
 6. **Error Scenarios**: Tests proper error handling
 
 ## Sample API Calls
+
+### Enumerate Indexes (paginated)
+
+Every GET that returns a collection is paginated via query-string parameters that
+populate a server-side `EnumerationQuery`. The response is an `EnumerationResult<T>`.
+
+```bash
+GET /v1.0/indexes?maxResults=25&skip=0&ordering=CreatedDescending
+GET /v1.0/indexes?prefix=prod-&ordering=NameAscending
+GET /v1.0/indexes?skip=100&maxResults=50
+```
+
+Supported query parameters (all optional — aliases shown in parentheses):
+
+| Parameter          | Type      | Aliases         | Notes                                                          |
+|--------------------|-----------|-----------------|----------------------------------------------------------------|
+| `maxResults`       | int       | `max`, `limit`  | 1–1000. Default 100. Values outside range are clamped.         |
+| `skip`             | int       | `offset`        | `>= 0`. Default 0.                                             |
+| `continuationToken`| GUID      | `token`         | Cursor of the last record from the previous page. Reserved.    |
+| `ordering`         | enum      | `order`         | `CreatedAscending`, `CreatedDescending`, `NameAscending`, `NameDescending`. Default `CreatedDescending`. |
+| `prefix`           | string    |                 | Case-insensitive `StartsWith` filter on the index name.        |
+| `suffix`           | string    |                 | Case-insensitive `EndsWith` filter on the index name.          |
+| `createdAfterUtc`  | ISO-8601  | `after`         | Keep only indexes created strictly after this timestamp.       |
+| `createdBeforeUtc` | ISO-8601  | `before`        | Keep only indexes created strictly before this timestamp.      |
+
+Example response:
+
+```json
+{
+  "Success": true,
+  "MaxResults": 2,
+  "Skip": 0,
+  "EndOfResults": false,
+  "TotalRecords": 3,
+  "RecordsRemaining": 1,
+  "TimestampUtc": "2026-04-16T00:44:46.248497Z",
+  "Objects": [
+    { "GUID": "...", "Name": "alpha", "Dimension": 4, ... },
+    { "GUID": "...", "Name": "beta",  "Dimension": 4, ... }
+  ]
+}
+```
+
+Validation errors (`400 Bad Request`) are returned for unparseable values, for
+`skip < 0`, for an unknown `ordering` value, for `createdAfterUtc >= createdBeforeUtc`,
+and for specifying both `skip > 0` and a `continuationToken`.
 
 ### Create Index
 ```json

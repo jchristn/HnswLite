@@ -366,5 +366,80 @@
             </summary>
             <param name="disposing">true if disposing managed resources; otherwise, false.</param>
         </member>
+        <member name="T:Hnsw.RamStorage.RamStorageProvider">
+            <summary>
+            Unified in-memory storage provider that combines vector node storage and
+            layer assignment storage into a single <see cref="T:Hnsw.IStorageProvider"/>.
+            Thread-safe. Disposes both backing stores on disposal.
+            </summary>
+        </member>
+        <member name="P:Hnsw.RamStorage.RamStorageProvider.EntryPoint">
+            <summary>
+            Gets or sets the entry point node ID.
+            </summary>
+        </member>
+        <member name="P:Hnsw.RamStorage.RamStorageProvider.Count">
+            <summary>
+            Number of nodes with layer assignments.
+            </summary>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.#ctor">
+            <summary>
+            Initializes a new RAM storage provider.
+            </summary>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.AddNodeAsync(System.Guid,System.Collections.Generic.List{System.Single},System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.AddNodesAsync(System.Collections.Generic.Dictionary{System.Guid,System.Collections.Generic.List{System.Single}},System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.RemoveNodeAsync(System.Guid,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.RemoveNodesAsync(System.Collections.Generic.IEnumerable{System.Guid},System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.GetNodeAsync(System.Guid,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.GetNodesAsync(System.Collections.Generic.IEnumerable{System.Guid},System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.TryGetNodeAsync(System.Guid,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.GetAllNodeIdsAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.GetCountAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.GetNodeLayer(System.Guid)">
+            <inheritdoc />
+        </member>
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.SetNodeLayer(System.Guid,System.Int32)">
+            <inheritdoc />
+        </member>
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.RemoveNodeLayer(System.Guid)">
+            <inheritdoc />
+        </member>
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.GetAllNodeLayers">
+            <inheritdoc />
+        </member>
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.Clear">
+            <inheritdoc />
+        </member>
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.Dispose">
+            <summary>
+            Disposes both the node storage and layer storage.
+            </summary>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.Dispose(System.Boolean)">
+            <summary>
+            Disposes managed resources.
+            </summary>
+            <param name="disposing">True when called from Dispose().</param>
+        </member>
     </members>
 </doc>

@@ -1,7 +1,10 @@
 namespace HnswIndex.Server.Services
 {
+    using System;
     using System.Collections.Concurrent;
+    using System.Collections.Generic;
     using System.Diagnostics;
+    using System.Linq;
     using Hnsw;
     using Hnsw.RamStorage;
     using Hnsw.SqliteStorage;
@@ -47,6 +50,8 @@ namespace HnswIndex.Server.Services
             }
 
             _Logging?.Info(_Header + $"initialized with SQLite directory: {_SqliteDirectory}");
+
+            ReloadPersistedIndexes();
         }
 
         #endregion
@@ -140,31 +145,63 @@ namespace HnswIndex.Server.Services
         }
 
         /// <summary>
-        /// List all indexes.
+        /// Enumerate indexes using the supplied query for filtering, sorting, and pagination.
         /// </summary>
-        /// <returns>List of index responses.</returns>
-        public List<IndexResponse> ListIndexes()
+        /// <param name="query">Enumeration parameters. Must not be null.</param>
+        /// <returns>Paginated enumeration result.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="query"/> is null.</exception>
+        public EnumerationResult<IndexResponse> EnumerateIndexes(EnumerationQuery query)
         {
-            List<IndexResponse> results = new List<IndexResponse>();
+            ArgumentNullException.ThrowIfNull(query);
 
-            foreach (IndexMetadata metadata in _Indexes.Values)
+            IEnumerable<IndexMetadata> filtered = _Indexes.Values;
+
+            if (!string.IsNullOrEmpty(query.Prefix))
             {
-                results.Add(new IndexResponse
-                {
-                    GUID = metadata.GUID,
-                    Name = metadata.Name,
-                    Dimension = metadata.Dimension,
-                    StorageType = metadata.StorageType,
-                    DistanceFunction = metadata.DistanceFunction,
-                    M = metadata.M,
-                    MaxM = metadata.MaxM,
-                    EfConstruction = metadata.EfConstruction,
-                    VectorCount = metadata.VectorCount,
-                    CreatedUtc = metadata.CreatedUtc
-                });
+                string prefix = query.Prefix;
+                filtered = filtered.Where(m => m.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+            }
+            if (!string.IsNullOrEmpty(query.Suffix))
+            {
+                string suffix = query.Suffix;
+                filtered = filtered.Where(m => m.Name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
+            }
+            if (query.CreatedAfterUtc.HasValue)
+            {
+                DateTime after = query.CreatedAfterUtc.Value;
+                filtered = filtered.Where(m => m.CreatedUtc > after);
+            }
+            if (query.CreatedBeforeUtc.HasValue)
+            {
+                DateTime before = query.CreatedBeforeUtc.Value;
+                filtered = filtered.Where(m => m.CreatedUtc < before);
             }
 
-            return results;
+            filtered = query.Ordering switch
+            {
+                EnumerationOrderEnum.CreatedAscending => filtered.OrderBy(m => m.CreatedUtc),
+                EnumerationOrderEnum.NameAscending => filtered.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase),
+                EnumerationOrderEnum.NameDescending => filtered.OrderByDescending(m => m.Name, StringComparer.OrdinalIgnoreCase),
+                _ => filtered.OrderByDescending(m => m.CreatedUtc),
+            };
+
+            List<IndexResponse> all = filtered
+                .Select(m => new IndexResponse
+                {
+                    GUID = m.GUID,
+                    Name = m.Name,
+                    Dimension = m.Dimension,
+                    StorageType = m.StorageType,
+                    DistanceFunction = m.DistanceFunction,
+                    M = m.M,
+                    MaxM = m.MaxM,
+                    EfConstruction = m.EfConstruction,
+                    VectorCount = m.VectorCount,
+                    CreatedUtc = m.CreatedUtc,
+                })
+                .ToList();
+
+            return EnumerationResult<IndexResponse>.FromQuery(query, all);
         }
 
         /// <summary>
@@ -197,6 +234,128 @@ namespace HnswIndex.Server.Services
         /// <returns>True if successful.</returns>
         /// <exception cref="ArgumentNullException">Thrown when parameters are null.</exception>
         /// <exception cref="InvalidOperationException">Thrown when index not found or dimension mismatch.</exception>
+        /// <summary>
+        /// Retrieve a single vector (including its values) from an index.
+        /// Returns null when the vector is absent.
+        /// </summary>
+        /// <param name="indexName">Index name.</param>
+        /// <param name="vectorGuid">Vector identifier.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <returns>The vector entry, or null when not present.</returns>
+        public async Task<VectorEntryResponse?> GetVectorAsync(
+            string indexName,
+            Guid vectorGuid,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(indexName);
+
+            if (!_Indexes.TryGetValue(indexName, out IndexMetadata? metadata) || metadata == null)
+            {
+                throw new InvalidOperationException($"Index '{indexName}' not found.");
+            }
+
+            IStorageProvider? provider = null;
+            if (metadata.StorageObjects != null)
+            {
+                foreach (IDisposable obj in metadata.StorageObjects)
+                {
+                    if (obj is IStorageProvider sp) { provider = sp; break; }
+                }
+            }
+            if (provider == null)
+            {
+                throw new InvalidOperationException($"Index '{indexName}' has no accessible storage provider.");
+            }
+
+            TryGetNodeResult r = await provider.TryGetNodeAsync(vectorGuid, cancellationToken).ConfigureAwait(false);
+            if (!r.Success || r.Node == null) return null;
+
+            return new VectorEntryResponse
+            {
+                GUID = vectorGuid,
+                Vector = new List<float>(r.Node.Vector),
+            };
+        }
+
+        public async Task<EnumerationResult<VectorEntryResponse>> EnumerateVectorsAsync(
+            string indexName,
+            EnumerationQuery query,
+            bool includeVectors,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(indexName);
+            ArgumentNullException.ThrowIfNull(query);
+
+            if (!_Indexes.TryGetValue(indexName, out IndexMetadata? metadata) || metadata == null)
+            {
+                throw new InvalidOperationException($"Index '{indexName}' not found.");
+            }
+
+            IStorageProvider? provider = null;
+            if (metadata.StorageObjects != null)
+            {
+                foreach (IDisposable obj in metadata.StorageObjects)
+                {
+                    if (obj is IStorageProvider sp) { provider = sp; break; }
+                }
+            }
+            if (provider == null)
+            {
+                throw new InvalidOperationException($"Index '{indexName}' has no accessible storage provider.");
+            }
+
+            IEnumerable<Guid> allIds = await provider.GetAllNodeIdsAsync(cancellationToken).ConfigureAwait(false);
+            List<Guid> sorted = allIds.ToList();
+            sorted.Sort();
+
+            List<Guid> filtered = sorted;
+            if (!string.IsNullOrEmpty(query.Prefix))
+            {
+                string prefix = query.Prefix;
+                filtered = sorted.Where(g => g.ToString().StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList();
+            }
+
+            int skip = Math.Min(query.Skip, filtered.Count);
+            int take = Math.Min(query.MaxResults, Math.Max(0, filtered.Count - skip));
+            List<Guid> page = filtered.GetRange(skip, take);
+
+            List<VectorEntryResponse> objects = new List<VectorEntryResponse>(page.Count);
+            if (includeVectors && page.Count > 0)
+            {
+                Dictionary<Guid, IHnswNode> nodes = await provider.GetNodesAsync(page, cancellationToken).ConfigureAwait(false);
+                foreach (Guid id in page)
+                {
+                    VectorEntryResponse entry = new VectorEntryResponse { GUID = id };
+                    if (nodes.TryGetValue(id, out IHnswNode? node) && node != null)
+                    {
+                        entry.Vector = new List<float>(node.Vector);
+                    }
+                    objects.Add(entry);
+                }
+            }
+            else
+            {
+                foreach (Guid id in page)
+                {
+                    objects.Add(new VectorEntryResponse { GUID = id });
+                }
+            }
+
+            long remaining = Math.Max(0, (long)filtered.Count - skip - take);
+            return new EnumerationResult<VectorEntryResponse>
+            {
+                Success = true,
+                MaxResults = query.MaxResults,
+                Skip = skip,
+                TotalRecords = filtered.Count,
+                RecordsRemaining = remaining,
+                EndOfResults = remaining == 0,
+                ContinuationToken = null,
+                TimestampUtc = DateTime.UtcNow,
+                Objects = objects,
+            };
+        }
+
         public async Task<bool> AddVectorAsync(string indexName, AddVectorRequest request, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(indexName);
@@ -358,17 +517,21 @@ namespace HnswIndex.Server.Services
 
             if (string.Equals(metadata.StorageType, "RAM", StringComparison.OrdinalIgnoreCase))
             {
-                RamHnswStorage storage = new RamHnswStorage();
-                RamHnswLayerStorage layerStorage = new RamHnswLayerStorage();
-                index = new HnswIndex(metadata.Dimension, storage, layerStorage);
+                RamStorageProvider provider = new RamStorageProvider();
+                index = new HnswIndex(metadata.Dimension, provider);
+                metadata.StorageObjects = new List<IDisposable> { provider };
             }
             else if (string.Equals(metadata.StorageType, "SQLite", StringComparison.OrdinalIgnoreCase))
             {
                 string dbPath = Path.Combine(_SqliteDirectory, $"{metadata.Name}.db");
-                SqliteHnswStorage storage = new SqliteHnswStorage(dbPath);
-                SqliteHnswLayerStorage layerStorage = new SqliteHnswLayerStorage(storage.Connection);
-                index = new HnswIndex(metadata.Dimension, storage, layerStorage);
-                metadata.StorageObjects = new List<IDisposable> { storage, layerStorage };
+                SqliteStorageProvider provider = new SqliteStorageProvider(dbPath);
+                index = new HnswIndex(metadata.Dimension, provider);
+                metadata.StorageObjects = new List<IDisposable> { provider };
+
+                // Persist server-level metadata into the index's SQLite file so the index
+                // self-describes across restarts. The library uses hnsw_metadata as a
+                // key/value table; the server writes its own namespaced keys alongside.
+                WriteServerMetadata(provider.Connection, metadata);
             }
             else
             {
@@ -396,6 +559,145 @@ namespace HnswIndex.Server.Services
             }
 
             return await Task.FromResult(index).ConfigureAwait(false);
+        }
+
+        private const string _MetaKeyGuid = "server.guid";
+        private const string _MetaKeyDimension = "server.dimension";
+        private const string _MetaKeyStorageType = "server.storage_type";
+        private const string _MetaKeyDistanceFn = "server.distance_function";
+        private const string _MetaKeyM = "server.m";
+        private const string _MetaKeyMaxM = "server.max_m";
+        private const string _MetaKeyEfC = "server.ef_construction";
+        private const string _MetaKeyCreatedUtc = "server.created_utc";
+
+        private static void WriteServerMetadata(Microsoft.Data.Sqlite.SqliteConnection conn, IndexMetadata m)
+        {
+            Dictionary<string, string> kv = new Dictionary<string, string>
+            {
+                [_MetaKeyGuid] = m.GUID.ToString(),
+                [_MetaKeyDimension] = m.Dimension.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                [_MetaKeyStorageType] = m.StorageType,
+                [_MetaKeyDistanceFn] = m.DistanceFunction,
+                [_MetaKeyM] = m.M.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                [_MetaKeyMaxM] = m.MaxM.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                [_MetaKeyEfC] = m.EfConstruction.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                [_MetaKeyCreatedUtc] = m.CreatedUtc.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+            };
+
+            foreach (KeyValuePair<string, string> pair in kv)
+            {
+                using Microsoft.Data.Sqlite.SqliteCommand cmd = conn.CreateCommand();
+                cmd.CommandText = "INSERT OR REPLACE INTO hnsw_metadata (key, value, updated_at) VALUES ($k, $v, CURRENT_TIMESTAMP)";
+                cmd.Parameters.AddWithValue("$k", pair.Key);
+                cmd.Parameters.AddWithValue("$v", pair.Value);
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        private static Dictionary<string, string>? ReadServerMetadata(Microsoft.Data.Sqlite.SqliteConnection conn)
+        {
+            Dictionary<string, string> result = new Dictionary<string, string>();
+            using Microsoft.Data.Sqlite.SqliteCommand cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT key, value FROM hnsw_metadata WHERE key LIKE 'server.%'";
+            using Microsoft.Data.Sqlite.SqliteDataReader reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                result[reader.GetString(0)] = reader.GetString(1);
+            }
+            return result.Count == 0 ? null : result;
+        }
+
+        private void ReloadPersistedIndexes()
+        {
+            string[] dbFiles;
+            try
+            {
+                dbFiles = Directory.GetFiles(_SqliteDirectory, "*.db");
+            }
+            catch (Exception ex)
+            {
+                _Logging?.Warn(_Header + $"cannot enumerate SQLite directory: {ex.Message}");
+                return;
+            }
+
+            int loaded = 0;
+            foreach (string dbPath in dbFiles)
+            {
+                string name = Path.GetFileNameWithoutExtension(dbPath);
+                if (string.IsNullOrWhiteSpace(name)) continue;
+
+                try
+                {
+                    SqliteStorageProvider provider = new SqliteStorageProvider(dbPath, createIfNotExists: false);
+
+                    Dictionary<string, string>? meta = ReadServerMetadata(provider.Connection);
+                    if (meta == null)
+                    {
+                        // No server-written metadata (e.g., a db created before this fix). Skip
+                        // rather than guess — the index can be rebuilt explicitly by the user.
+                        _Logging?.Warn(_Header + $"skipping '{name}': no server metadata in {Path.GetFileName(dbPath)}");
+                        provider.Dispose();
+                        continue;
+                    }
+
+                    IndexMetadata im = new IndexMetadata
+                    {
+                        Name = name,
+                        GUID = meta.TryGetValue(_MetaKeyGuid, out string? g) && Guid.TryParse(g, out Guid gp) ? gp : Guid.NewGuid(),
+                        Dimension = meta.TryGetValue(_MetaKeyDimension, out string? d) && int.TryParse(d, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int dp) ? dp : 0,
+                        StorageType = meta.TryGetValue(_MetaKeyStorageType, out string? st) ? st : "SQLite",
+                        DistanceFunction = meta.TryGetValue(_MetaKeyDistanceFn, out string? df) ? df : "Euclidean",
+                        M = meta.TryGetValue(_MetaKeyM, out string? ms) && int.TryParse(ms, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int mp) ? mp : 16,
+                        MaxM = meta.TryGetValue(_MetaKeyMaxM, out string? mxs) && int.TryParse(mxs, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int mxp) ? mxp : 32,
+                        EfConstruction = meta.TryGetValue(_MetaKeyEfC, out string? efs) && int.TryParse(efs, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int efp) ? efp : 200,
+                        CreatedUtc = meta.TryGetValue(_MetaKeyCreatedUtc, out string? cu) && DateTime.TryParse(cu, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime cp) ? cp : DateTime.UtcNow,
+                    };
+
+                    if (im.Dimension < 1)
+                    {
+                        _Logging?.Warn(_Header + $"skipping '{name}': invalid persisted dimension");
+                        provider.Dispose();
+                        continue;
+                    }
+
+                    HnswIndex index = new HnswIndex(im.Dimension, provider);
+                    index.M = im.M;
+                    index.MaxM = im.MaxM;
+                    index.EfConstruction = im.EfConstruction;
+                    index.DistanceFunction = im.DistanceFunction.ToLowerInvariant() switch
+                    {
+                        "cosine" => new CosineDistance(),
+                        "dotproduct" => new DotProductDistance(),
+                        _ => new EuclideanDistance(),
+                    };
+
+                    im.Index = index;
+                    im.StorageObjects = new List<IDisposable> { provider };
+                    im.VectorCount = CountVectorsBestEffort(provider);
+
+                    _Indexes.TryAdd(name, im);
+                    loaded++;
+                    _Logging?.Info(_Header + $"reloaded index '{name}' ({im.Dimension}-d, {im.VectorCount} vectors)");
+                }
+                catch (Exception ex)
+                {
+                    _Logging?.Warn(_Header + $"failed to reload index from {Path.GetFileName(dbPath)}: {ex.Message}");
+                }
+            }
+
+            if (loaded > 0) _Logging?.Info(_Header + $"reloaded {loaded} persisted index(es) from disk");
+        }
+
+        private static int CountVectorsBestEffort(SqliteStorageProvider provider)
+        {
+            try
+            {
+                return provider.GetAllNodeLayers().Count;
+            }
+            catch
+            {
+                return 0;
+            }
         }
 
         protected virtual void Dispose(bool disposing)

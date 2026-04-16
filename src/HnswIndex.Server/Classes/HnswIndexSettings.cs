@@ -52,6 +52,15 @@ namespace HnswIndex.Server.Classes
             set { _Storage = value ?? throw new ArgumentNullException(nameof(value)); }
         }
 
+        /// <summary>
+        /// CORS (Cross-Origin Resource Sharing) settings.
+        /// </summary>
+        public CorsSettings Cors
+        {
+            get { return _Cors; }
+            set { _Cors = value ?? throw new ArgumentNullException(nameof(value)); }
+        }
+
         #endregion
 
         #region Private-Members
@@ -61,6 +70,7 @@ namespace HnswIndex.Server.Classes
         private LoggingSettings _Logging = new LoggingSettings();
         private AuthenticationSettings _Authentication = new AuthenticationSettings();
         private StorageSettings _Storage = new StorageSettings();
+        private CorsSettings _Cors = new CorsSettings();
 
         #endregion
 

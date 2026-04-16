@@ -203,30 +203,55 @@ namespace HnswIndex.Server
                 settings.Debug.Requests = _Settings.Debug.HttpRequests;
                 settings.Debug.Responses = _Settings.Debug.HttpRequests;
 
+                // Apply CORS settings to Watson's built-in default response headers.
+                // These are emitted on every response (including the pre-flight OPTIONS handler).
+                if (_Settings.Cors.Enable)
+                {
+                    settings.Headers.DefaultHeaders["Access-Control-Allow-Origin"] = _Settings.Cors.AllowOrigin;
+                    settings.Headers.DefaultHeaders["Access-Control-Allow-Methods"] = _Settings.Cors.AllowMethods;
+                    settings.Headers.DefaultHeaders["Access-Control-Allow-Headers"] = _Settings.Cors.AllowHeaders;
+                    settings.Headers.DefaultHeaders["Access-Control-Expose-Headers"] = _Settings.Cors.ExposeHeaders;
+                    settings.Headers.DefaultHeaders["Access-Control-Max-Age"] = _Settings.Cors.MaxAgeSeconds.ToString();
+                    if (_Settings.Cors.AllowCredentials)
+                        settings.Headers.DefaultHeaders["Access-Control-Allow-Credentials"] = "true";
+                }
+
                 _Server = new Webserver(settings, DefaultRoute);
                 _Server.Routes.PostRouting = PostRoutingHandler;
 
-                // Add API routes
+                // OPTIONS pre-flight. Preflight is invoked BEFORE authentication, so CORS
+                // pre-flight always succeeds for browsers regardless of auth configuration.
+                _Server.Routes.Preflight = PreflightHandler;
+
+                // Authentication runs between PreAuthentication and PostAuthentication routes.
+                _Server.Routes.AuthenticateRequest = AuthenticateRequestHandler;
+
+                // Health / root is unauthenticated (registered before auth hook).
                 _Server.Routes.PreAuthentication.Static.Add(HttpMethod.GET, "/", RestServiceHandler.RootHandler);
                 _Server.Routes.PreAuthentication.Static.Add(HttpMethod.HEAD, "/", RestServiceHandler.RootHandler);
-                _Server.Routes.PreAuthentication.Static.Add(HttpMethod.OPTIONS, "/", RestServiceHandler.OptionsHandler);
-                _Server.Routes.PreAuthentication.Static.Add(HttpMethod.GET, "/v1.0/indexes",
+
+                // All v1.0 API routes go through authentication (registered as PostAuthentication).
+                _Server.Routes.PostAuthentication.Static.Add(HttpMethod.GET, "/v1.0/indexes",
                     RestServiceHandler.RouteHandler);
-                _Server.Routes.PreAuthentication.Static.Add(HttpMethod.POST, "/v1.0/indexes",
+                _Server.Routes.PostAuthentication.Static.Add(HttpMethod.POST, "/v1.0/indexes",
                     RestServiceHandler.RouteHandler);
 
-                _Server.Routes.PreAuthentication.Parameter.Add(HttpMethod.GET, "/v1.0/indexes/{name}",
+                _Server.Routes.PostAuthentication.Parameter.Add(HttpMethod.GET, "/v1.0/indexes/{name}",
                     RestServiceHandler.RouteHandler);
-                _Server.Routes.PreAuthentication.Parameter.Add(HttpMethod.DELETE, "/v1.0/indexes/{name}",
+                _Server.Routes.PostAuthentication.Parameter.Add(HttpMethod.DELETE, "/v1.0/indexes/{name}",
                     RestServiceHandler.RouteHandler);
 
-                _Server.Routes.PreAuthentication.Parameter.Add(HttpMethod.POST, "/v1.0/indexes/{name}/search",
+                _Server.Routes.PostAuthentication.Parameter.Add(HttpMethod.POST, "/v1.0/indexes/{name}/search",
                     RestServiceHandler.RouteHandler);
-                _Server.Routes.PreAuthentication.Parameter.Add(HttpMethod.POST, "/v1.0/indexes/{name}/vectors",
+                _Server.Routes.PostAuthentication.Parameter.Add(HttpMethod.GET, "/v1.0/indexes/{name}/vectors",
                     RestServiceHandler.RouteHandler);
-                _Server.Routes.PreAuthentication.Parameter.Add(HttpMethod.POST, "/v1.0/indexes/{name}/vectors/batch",
+                _Server.Routes.PostAuthentication.Parameter.Add(HttpMethod.POST, "/v1.0/indexes/{name}/vectors",
                     RestServiceHandler.RouteHandler);
-                _Server.Routes.PreAuthentication.Parameter.Add(HttpMethod.DELETE, "/v1.0/indexes/{name}/vectors/{guid}",
+                _Server.Routes.PostAuthentication.Parameter.Add(HttpMethod.POST, "/v1.0/indexes/{name}/vectors/batch",
+                    RestServiceHandler.RouteHandler);
+                _Server.Routes.PostAuthentication.Parameter.Add(HttpMethod.GET, "/v1.0/indexes/{name}/vectors/{guid}",
+                    RestServiceHandler.RouteHandler);
+                _Server.Routes.PostAuthentication.Parameter.Add(HttpMethod.DELETE, "/v1.0/indexes/{name}/vectors/{guid}",
                     RestServiceHandler.RouteHandler);
 
                 _Server.Start();
@@ -241,10 +266,41 @@ namespace HnswIndex.Server
             }
         }
 
+        private static async Task PreflightHandler(HttpContextBase ctx)
+        {
+            ArgumentNullException.ThrowIfNull(ctx);
+            ctx.Response.StatusCode = 204;
+            await ctx.Response.Send(ctx.Token).ConfigureAwait(false);
+        }
+
+        private static async Task AuthenticateRequestHandler(HttpContextBase ctx)
+        {
+            ArgumentNullException.ThrowIfNull(ctx);
+
+            if (!_Settings.Server.RequireAuthentication) return;
+
+            string? apiKey = ctx.Request.RetrieveHeaderValue(_Settings.Server.AdminApiKeyHeader);
+            if (!string.IsNullOrEmpty(apiKey)
+                && string.Equals(apiKey, _Settings.Server.AdminApiKey, StringComparison.Ordinal))
+            {
+                // Authenticated admin request.
+                return;
+            }
+
+            _Logging?.Warn(_Header
+                + $"unauthorized access attempt from {ctx.Request.Source.IpAddress}:{ctx.Request.Source.Port}");
+
+            HnswIndex.Server.Classes.ApiErrorResponse errorResponse = new HnswIndex.Server.Classes.ApiErrorResponse(ApiErrorEnum.Unauthorized, "Authentication required");
+            string json = _Serializer.SerializeJson(errorResponse, true);
+            ctx.Response.StatusCode = 401;
+            ctx.Response.ContentType = "application/json";
+            await ctx.Response.Send(json, ctx.Token).ConfigureAwait(false);
+        }
+
         private static async Task PostRoutingHandler(HttpContextBase ctx)
         {
             ctx.Timestamp.End = DateTime.UtcNow;
-                
+
             _Logging?.Info(
                 _Header
                 + ctx.Request.Source.IpAddress + " " + ctx.Request.Method.ToString() + " " +
@@ -264,17 +320,12 @@ namespace HnswIndex.Server
                 _Logging?.Debug(_Header + $"{msg}");
             }
 
-            // Add CORS headers
-            ctx.Response.Headers.Add("Access-Control-Allow-Origin", "*");
-            ctx.Response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-            ctx.Response.Headers.Add("Access-Control-Allow-Headers", "Content-Type, Authorization, x-api-key");
-
-            ApiErrorResponse errorResponse = new ApiErrorResponse(ApiErrorEnum.NotFound, "Endpoint not found");
+            HnswIndex.Server.Classes.ApiErrorResponse errorResponse = new HnswIndex.Server.Classes.ApiErrorResponse(ApiErrorEnum.NotFound, "Endpoint not found");
             string json = _Serializer.SerializeJson(errorResponse, true);
 
             ctx.Response.StatusCode = 404;
             ctx.Response.ContentType = "application/json";
-            await ctx.Response.Send(json).ConfigureAwait(false);
+            await ctx.Response.Send(json, ctx.Token).ConfigureAwait(false);
         }
 
         #endregion

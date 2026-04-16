@@ -20,7 +20,7 @@ namespace HnswIndex.Server.Classes
         /// <summary>
         /// Storage type (RAM or SQLite).
         /// </summary>
-        public string StorageType { get; set; } = "RAM";
+        public string StorageType { get; set; } = "SQLite";
 
         /// <summary>
         /// Distance function type.

@@ -2,14 +2,15 @@
 {
     using System;
     using System.Collections.Generic;
+    using System.IO;
     using System.Linq;
+    using System.Runtime.InteropServices;
+    using System.Text.Json;
     using System.Threading;
     using System.Threading.Tasks;
-    using Microsoft.Data.Sqlite;
-    using System.Text.Json;
-    using System.IO;
-    using Hnsw.SqliteStorage;
     using Hnsw;
+    using Hnsw.SqliteStorage;
+    using Microsoft.Data.Sqlite;
 
     /// <summary>
     /// SQLite-based implementation of HNSW storage with thread-safe operations.
@@ -152,35 +153,7 @@
             if (!createIfNotExists && !File.Exists(databasePath))
                 throw new FileNotFoundException($"Database file not found: {databasePath}");
 
-            string connectionString = new SqliteConnectionStringBuilder
-            {
-                DataSource = databasePath,
-                Mode = SqliteOpenMode.ReadWriteCreate,
-                Cache = SqliteCacheMode.Shared
-            }.ToString();
-
-            _connection = new SqliteConnection(connectionString);
-            _connection.Open();
-
-            // Enable WAL mode for better crash recovery
-            SqliteCommand walCommand = _connection.CreateCommand();
-            walCommand.CommandText = "PRAGMA journal_mode=WAL";
-            walCommand.ExecuteNonQuery();
-
-            // Use FULL synchronous for complete durability
-            SqliteCommand syncCommand = _connection.CreateCommand();
-            syncCommand.CommandText = "PRAGMA synchronous=FULL";
-            syncCommand.ExecuteNonQuery();
-
-            // Optimize cache and memory settings for better performance
-            SqliteCommand cacheCommand = _connection.CreateCommand();
-            cacheCommand.CommandText = "PRAGMA cache_size=10000";
-            cacheCommand.ExecuteNonQuery();
-
-            SqliteCommand tempStoreCommand = _connection.CreateCommand();
-            tempStoreCommand.CommandText = "PRAGMA temp_store=MEMORY";
-            tempStoreCommand.ExecuteNonQuery();
-
+            _connection = OpenAndConfigureConnection(databasePath);
             InitializeDatabase();
         }
 
@@ -212,17 +185,39 @@
             if (!createIfNotExists && !File.Exists(databasePath))
                 throw new FileNotFoundException($"Database file not found: {databasePath}");
 
+            _connection = OpenAndConfigureConnection(databasePath);
+            InitializeDatabase();
+        }
+
+        private static SqliteConnection OpenAndConfigureConnection(string databasePath)
+        {
             string connectionString = new SqliteConnectionStringBuilder
             {
                 DataSource = databasePath,
                 Mode = SqliteOpenMode.ReadWriteCreate,
-                Cache = SqliteCacheMode.Shared
+                Cache = SqliteCacheMode.Shared,
+                Pooling = true,
             }.ToString();
 
-            _connection = new SqliteConnection(connectionString);
-            _connection.Open();
+            SqliteConnection conn = new SqliteConnection(connectionString);
+            conn.Open();
 
-            InitializeDatabase();
+            // PRAGMAs applied to every connection — keep both constructors aligned.
+            ApplyPragma(conn, "PRAGMA journal_mode=WAL");                  // crash recovery + concurrent readers
+            ApplyPragma(conn, "PRAGMA synchronous=FULL");                  // full ACID durability
+            ApplyPragma(conn, "PRAGMA cache_size=10000");                  // 10k-page page cache
+            ApplyPragma(conn, "PRAGMA temp_store=MEMORY");                 // keep temp tables/indexes in RAM
+            ApplyPragma(conn, "PRAGMA mmap_size=268435456");               // 256 MB memory-mapped reads
+            ApplyPragma(conn, "PRAGMA wal_autocheckpoint=1000");           // bound WAL growth (~4 MB)
+
+            return conn;
+        }
+
+        private static void ApplyPragma(SqliteConnection conn, string sql)
+        {
+            using SqliteCommand cmd = conn.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.ExecuteNonQuery();
         }
 
         // Public methods
@@ -1176,30 +1171,23 @@
             command.ExecuteNonQuery();
         }
 
-        // Binary serialization methods for better performance
         private byte[] SerializeVector(List<float> vector)
         {
-            using MemoryStream ms = new MemoryStream();
-            using BinaryWriter writer = new BinaryWriter(ms);
-            
-            writer.Write(vector.Count);
-            foreach (float f in vector)
-            {
-                writer.Write(f);
-            }
-            return ms.ToArray();
+            byte[] result = new byte[4 + vector.Count * 4];
+            BitConverter.TryWriteBytes(result.AsSpan(0, 4), vector.Count);
+            ReadOnlySpan<float> src = CollectionsMarshal.AsSpan(vector);
+            MemoryMarshal.AsBytes(src).CopyTo(result.AsSpan(4));
+            return result;
         }
 
         private List<float> DeserializeVector(byte[] bytes)
         {
-            using MemoryStream ms = new MemoryStream(bytes);
-            using BinaryReader reader = new BinaryReader(ms);
-            
-            int count = reader.ReadInt32();
+            int count = BitConverter.ToInt32(bytes, 0);
+            ReadOnlySpan<float> floats = MemoryMarshal.Cast<byte, float>(bytes.AsSpan(4, count * 4));
             List<float> vector = new List<float>(count);
             for (int i = 0; i < count; i++)
             {
-                vector.Add(reader.ReadSingle());
+                vector.Add(floats[i]);
             }
             return vector;
         }

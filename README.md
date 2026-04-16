@@ -2,203 +2,208 @@
 
 # HnswLite
 
-A pure C# implementation of Hierarchical Navigable Small World (HNSW) graphs for approximate nearest neighbor search. This library provides a thread-safe, embeddable solution for vector similarity search in .NET applications.
+A pure C# implementation of Hierarchical Navigable Small World (HNSW) graphs for approximate nearest neighbor search. HnswLite ships as an embeddable library, a REST server, a React dashboard, and SDKs in three languages.
 
 > **Note**: This library is in its early stages of development. We welcome your patience, constructive feedback, and contributions! Please be kind and considerate when reporting issues or suggesting improvements. I am not an expert on this topic and relied heavily on available AI tools to build this library. Pull requests are greatly appreciated!
 
-[![NuGet Version](https://img.shields.io/nuget/v/HnswLite.svg?style=flat)](https://www.nuget.org/packages/HnswLite/) [![NuGet](https://img.shields.io/nuget/dt/HnswLite.svg)](https://www.nuget.org/packages/HnswLite) 
+[![NuGet Version](https://img.shields.io/nuget/v/HnswLite.svg?style=flat)](https://www.nuget.org/packages/HnswLite/) [![NuGet](https://img.shields.io/nuget/dt/HnswLite.svg)](https://www.nuget.org/packages/HnswLite)
 
 ## Overview
 
-HnswLite implements the Hierarchical Navigable Small World algorithm, which provides fast approximate nearest neighbor search with excellent recall rates. The library is designed to be embeddable, extensible, and easy to use in any .NET application.
+HnswLite implements the Hierarchical Navigable Small World algorithm, which provides fast approximate nearest-neighbor search with excellent recall rates. The library is designed to be embeddable, extensible, and easy to use from any .NET application — or from Python / JavaScript / any HTTP client via the REST server.
 
-### Key Features
+### Repository layout
 
-- **Pure C# implementation** - No native dependencies
-- **Thread-safe** - Safe for concurrent operations
-- **Async/await support** - Modern async APIs with cancellation tokens
-- **Pluggable storage** - Extensible storage backend interface
-- **Multiple distance metrics** - Euclidean, Cosine, and Dot Product
-- **Flexible deployment** - Support for RAM or Sqlite, or build-your-own backend
-- **Batch operations** - Efficient bulk insert and remove
-- **Comprehensive validation** - Input validation and error handling
+| Path | Purpose |
+|---|---|
+| `src/HnswIndex/` | Core library (`HnswLite` on NuGet) |
+| `src/HnswIndex.RamStorage/` | In-memory storage provider |
+| `src/HnswIndex.SqliteStorage/` | SQLite storage provider |
+| `src/HnswIndex.Server/` | Standalone REST server (Watson 7) |
+| `src/Test.Shared/` + `src/Test.{Automated,XUnit,NUnit,MSTest}/` | Touchstone-driven test suites |
+| `dashboard/` | React 19 + Vite dashboard |
+| `sdk/csharp/`, `sdk/python/`, `sdk/js/` | Client SDKs with 100% endpoint coverage |
+| `docker/` | `compose.yaml` for server + dashboard, plus factory-reset scripts |
 
-## New in v1.0.x
+### Key features
 
-- SQLite backend with optimized binary serialization (4x faster than JSON)
-- Deferred flush for batch operations (100x improvement for large insertions)
-- SearchContext caching reduces database queries by 90%+
-- WAL mode and optimized PRAGMA settings for SQLite
-- Standalone REST server (`HnswIndex.Server`) with Docker image and Postman collection
-- Core HNSW algorithm implementation
-- In-memory storage backend
-- SQLite storage backend  
-- Async APIs with cancellation support
-- Three distance functions (Euclidean, Cosine, Dot Product)
-- Batch add/remove operations
-- State export/import functionality
-- Thread-safety
+- **Pure C# implementation** — no native dependencies.
+- **Thread-safe**, async/await with cancellation tokens throughout.
+- **Unified `IStorageProvider` interface** — build-your-own backend by implementing one interface.
+- **Multiple distance metrics** — Euclidean, Cosine, Dot Product, with SIMD acceleration via `System.Numerics.Vector<float>`.
+- **Batch operations** — efficient bulk insert and remove.
+- **Persistence by default** — the SQLite storage provider writes a self-describing `.db` file; the REST server reloads every index on startup.
+- **Paginated enumeration contract** across every GET collection endpoint (`EnumerationQuery` / `EnumerationResult<T>`).
+- **OPTIONS preflight + CORS** out of the box in the REST server.
 
-For version history, see [CHANGELOG.md](CHANGELOG.md).
+## New in v1.1.0
 
-## Use Cases
+See [CHANGELOG.md](CHANGELOG.md) for the full list. Highlights:
 
-HnswLite is ideal for:
+- Multi-target `net8.0` + `net10.0`.
+- Unified `IStorageProvider` with `RamStorageProvider` and `SqliteStorageProvider`.
+- Watson web server upgraded to `7.0.11` with CORS + OPTIONS preflight.
+- Every GET-collection endpoint now paginated via `EnumerationQuery` / `EnumerationResult<T>`.
+- Default server `StorageType` is **SQLite** — indexes persist across restarts, metadata lives inside the `.db` file (no separate manifest).
+- New `GET /v1.0/indexes/{name}/vectors` (paginated) and `GET /v1.0/indexes/{name}/vectors/{guid}` endpoints.
+- SIMD distance functions + a dozen internal performance fixes — see [PERFORMANCE_IMPROVEMENTS.md](PERFORMANCE_IMPROVEMENTS.md).
+- New dashboard, new SDKs (C#, Python, JS), new Touchstone test suite (53 cases × 4 runners).
 
-- **Semantic Search** - Find similar documents, sentences, or paragraphs based on embeddings
-- **Recommendation Systems** - Discover similar items, users, or content
-- **Image Similarity** - Search for visually similar images using feature vectors
-- **Anomaly Detection** - Identify outliers by finding distant neighbors
-- **Clustering** - Group similar items together based on vector proximity
-- **RAG Applications** - Retrieval-Augmented Generation for LLM applications
-- **Duplicate Detection** - Find near-duplicate content in large datasets
+## Use cases
 
-## Performance and Scalability Recommendations
+- **Semantic search** — find similar documents / sentences from embeddings.
+- **Recommendation systems** — discover similar items / users / content.
+- **Image similarity** — search on feature vectors.
+- **Anomaly detection** — identify outliers by neighbour distance.
+- **Clustering** — group similar items.
+- **RAG** — retrieval-augmented generation for LLM applications.
+- **Duplicate detection** — find near-duplicate content at scale.
 
-### Recommended Limits
+## Performance & scalability
 
-- **Vector dimensions**: 50-1000 (optimal: 128-768)
-- **Dataset size**: Up to 1-10M vectors (depending on dimensions and available RAM)
-- **Memory usage**: Approximately `(vector_count * dimension * 4 bytes) + (vector_count * M * 32 bytes)`
+### Recommended limits
 
-> Note: the above are *estimations*.  This library has not been tested (yet) at any level of scale.
+- **Vector dimensions**: 50–1000 (optimal: 128–768).
+- **Dataset size**: up to 1–10M vectors depending on dimension and RAM.
+- **Memory usage**: approximately `(vector_count × dimension × 4 bytes) + (vector_count × M × 32 bytes)`.
 
-### Performance Characteristics
+> These are estimates. The library has not been exhaustively load-tested.
 
-- **Index build time**: O(N log N) expected
-- **Search time**: O(log N) expected
-- **Memory complexity**: O(N * M) where M is the connectivity parameter
+### Parameters
 
-### Optimization Tips
+- `M` — connections per vector (default 16). More connections → better recall, more memory. 16–32 works well for most cases.
+- `EfConstruction` — construction search depth (default 200). Higher → better graph quality, slower builds. Drop to 50–100 for fast batch insertion.
+- `Ef` — search depth (default 50–200). Higher → better recall, slower search.
+- `Seed` — fix for reproducible builds.
 
-1. **Parameter Tuning**:
-- `M`: Number of connections per vector (default: 16). Think of this as how many "friends" each vector has in the network. More connections mean better search quality but use more memory. For most cases, 16-32 works well.
-- `EfConstruction`: Size of the candidate list when building the index (default: 200). This controls how thoroughly the algorithm searches for connections when adding new vectors. Higher values create better quality indices but take longer to build. For faster batch insertion, consider reducing to 50-100.
-- `Ef` (search parameter): Size of the candidate list during search (default: 50-200). This controls how many paths the algorithm explores when searching. Higher values find better results but take more time. Set this based on your speed/quality needs.
-- `Seed`: Set a consistent seed value for reproducible index builds (useful for testing).
+### Tips
 
-2. **For Large Datasets**:
-- Use SQLite backend for persistence and lower memory usage
-- Always use `AddNodesAsync` for batch operations instead of individual `AddAsync` calls
-- SQLite backend automatically handles flushing - no manual flush needed
-- Consider reducing `EfConstruction` for faster insertion (trade-off with search quality)
+- Use `AddNodesAsync(...)` / `RemoveNodesAsync(...)` for batches — they acquire the write lock once.
+- Prefer `SqliteStorageProvider` for persistence; `RamStorageProvider` for ephemeral in-memory indexes.
+- For high-dimensional embeddings use `CosineDistance`.
 
-3. **For High-Dimensional Data**:
-- Keep dimensions under 384 for optimal performance
-- Consider dimensionality reduction before indexing (PCA, UMAP, etc.)
-- Use cosine distance for normalized embeddings (common with text embeddings)
-- Monitor memory usage: ~4 bytes per dimension per vector plus graph overhead
-
-## Bugs, Feedback, or Enhancement Requests
-
-We value your input! If you encounter any issues or have suggestions:
-
-- **Bug Reports**: Please [file an issue](https://github.com/jchristn/HnswLite/issues) with reproduction steps
-- **Feature Requests**: Start a [discussion](https://github.com/jchristn/HnswLite/discussions) or create an issue
-- **Questions**: Use the discussions forum for general questions
-- **Contributions**: Pull requests are welcome! Please read our contributing guidelines first
-
-## Simple Example
+## Simple example (embedded)
 
 ```csharp
 using Hnsw;
 using Hnsw.RamStorage;
-using Hnsw.SqliteStorage;
+using HnswIndex.SqliteStorage;
 
-// Create an index for 128-dimensional vectors in RAM
-HnswIndex index = new HnswIndex(128, new RamHnswStorage(), new RamHnswLayerStorage());
+// RAM
+using RamStorageProvider ram = new RamStorageProvider();
+HnswIndex index = new HnswIndex(128, ram);
 
-// Or using SQLite (with proper disposal)
-using SqliteHnswStorage sqliteStorage = new SqliteHnswStorage("my-index.db");
-using SqliteHnswLayerStorage sqliteLayerStorage = new SqliteHnswLayerStorage(sqliteStorage.Connection);
-HnswIndex sqliteIndex = new HnswIndex(128, sqliteStorage, sqliteLayerStorage);
+// Or SQLite (persistent)
+using SqliteStorageProvider sqlite = new SqliteStorageProvider("my-index.db");
+HnswIndex persistentIndex = new HnswIndex(128, sqlite);
 
-// Configure parameters (optional)
+// Configure
 index.M = 16;
 index.EfConstruction = 200;
 index.DistanceFunction = new CosineDistance();
 
-// Add vectors to the index
-Guid vectorId = Guid.NewGuid();
-List<float> vector = new List<float>(128); // Your 128-dimensional embedding
-// ... populate vector with data ...
+// Add a single vector
+Guid id = Guid.NewGuid();
+List<float> vector = new List<float>(128); // your 128-d embedding
+await index.AddAsync(id, vector);
 
-await index.AddAsync(vectorId, vector);
-
-// Add multiple vectors
+// Add a batch
 Dictionary<Guid, List<float>> batch = new Dictionary<Guid, List<float>>();
-for (int i = 0; i < 1000; i++)
-{
-    Guid id = Guid.NewGuid();
-    List<float> v = GenerateRandomVector(128); // Your vector generation logic
-    batch[id] = v;
-}
+for (int i = 0; i < 1000; i++) batch[Guid.NewGuid()] = GenerateRandomVector(128);
 await index.AddNodesAsync(batch);
 
-// Search for nearest neighbors
-List<float> queryVector = new List<float>(128); // Your query embedding
-// ... populate query vector ...
+// Search
+List<float> query = new List<float>(128);
+IEnumerable<VectorResult> neighbors = await index.GetTopKAsync(query, count: 10);
+foreach (VectorResult r in neighbors)
+    Console.WriteLine($"id={r.GUID} distance={r.Distance:F4}");
 
-List<SearchResult> neighbors = await index.GetTopKAsync(queryVector, k: 10);
-
-foreach (SearchResult result in neighbors)
-{
-    Console.WriteLine($"ID: {result.GUID}, Distance: {result.Distance:F4}");
-}
-
-// Save the index
+// Export / import state
 HnswState state = await index.ExportStateAsync();
-// ... serialize state to disk ...
-
-// Load the index
-HnswIndex newIndex = new HnswIndex(128, new RamHnswStorage(), new RamHnswLayerStorage());
-await newIndex.ImportStateAsync(state);
+HnswIndex restored = new HnswIndex(128, new RamStorageProvider());
+await restored.ImportStateAsync(state);
 ```
 
-### Best Practices
+### Best practices
 
-1. **Resource Management**:
-   - Always use `using` statements with SQLite storage to ensure proper cleanup
-   - The SQLite backend automatically flushes pending changes on disposal
-   - No manual flush is needed - the library handles this internally
-
-2. **Batch Operations**:
+1. **Resource management.** `IStorageProvider` is `IDisposable` — use `using` to guarantee flush on scope exit (important for SQLite).
+2. **Prefer batches.** Calling `AddNodesAsync` is substantially faster than a loop of `AddAsync` because it acquires the write lock once.
+3. **Tune `Ef` at search time.**
    ```csharp
-   // GOOD: Use batch operations for multiple vectors
-   Dictionary<Guid, List<float>> batch = new Dictionary<Guid, List<float>>();
-   // ... populate batch ...
-   await index.AddNodesAsync(batch);
-   
-   // AVOID: Individual adds in a loop
-   foreach (Item item in items)
-   {
-       await index.AddAsync(item.Id, item.Vector); // Slower
-   }
+   IEnumerable<VectorResult> quick  = await index.GetTopKAsync(query, 10, ef: 50);   // fast, lower recall
+   IEnumerable<VectorResult> better = await index.GetTopKAsync(query, 10, ef: 400);  // slower, higher recall
    ```
 
-3. **Search Performance**:
-   ```csharp
-   // Adjust ef parameter based on your needs
-   List<SearchResult> quickResults = await index.GetTopKAsync(query, k: 10, ef: 50);  // Faster, lower quality
-   List<SearchResult> bestResults = await index.GetTopKAsync(query, k: 10, ef: 400);  // Slower, higher quality
-   ```
+### Custom storage backend
 
-### Custom Storage Example
+Implement `IStorageProvider` (which aggregates `IHnswStorage`, `IHnswLayerStorage`, and `IDisposable`). See `RamStorageProvider` and `SqliteStorageProvider` as reference implementations. The server and dashboard are completely provider-agnostic.
 
-Refer to `Hnsw.RamStorage` and `Hnsw.SqliteStorage` for actual implementations. To implement your own backend, you need to implement:
+## REST server
 
-- `IHnswLayerStorage` - Manages layer assignments for nodes
-- `IHnswNode` - Represents a single node with its vector and neighbors
-- `IHnswStorage` - Handles node persistence and retrieval
+```bash
+cd src/HnswIndex.Server
+dotnet run -- --setup      # writes hnswindex.json with a generated admin API key
+dotnet run
+```
 
-## Running in Docker
+The server listens on `http://localhost:8080` by default. Authentication uses the `x-api-key` header (configurable via `Server.AdminApiKeyHeader`). OPTIONS pre-flight is unauthenticated and served by Watson's preflight hook; CORS headers are emitted on every response and configured under the `Cors` block in `hnswindex.json`.
 
-Refer to the `src/Docker` directory for assets related to running in Docker.  The Docker image can be found on [Docker Hub](https://hub.docker.com/repository/docker/jchristn/hnswindex-server/general) and a Postman collection is contained within this repository's root directory.
+Full endpoint reference: [REST_API.md](REST_API.md). Interactive reference: [HNSW Index.postman_collection.json](HNSW%20Index.postman_collection.json).
+
+## Dashboard
+
+React 19 + Vite 6 + TypeScript dashboard at `dashboard/`. Pages include **Indices**, **Vectors** (browse / edit / add / delete), **Search**, **Request History** with an activity chart, **API Explorer**, **Server Info**, **Settings**, plus a login flow.
+
+```bash
+# Local development
+cd dashboard
+npm install
+HNSWLITE_SERVER_URL=http://localhost:8080 npm run dev
+
+# Production build (static assets in dashboard/dist)
+npm run build
+```
+
+## SDKs
+
+| Language | Directory | Package | Runtime |
+|---|---|---|---|
+| C# | `sdk/csharp/` | `HnswLite.Sdk` | .NET 8 or .NET 10 |
+| Python | `sdk/python/` | `hnswlite-sdk` | Python 3.9+ |
+| JavaScript / TypeScript | `sdk/js/` | `hnswlite-sdk` | Node 18+ (native `fetch`) |
+
+Each SDK has 100% endpoint coverage and a test harness. See [sdk/README.md](sdk/README.md) for the method matrix and per-language READMEs.
+
+## Docker
+
+```bash
+cd docker
+docker compose up -d
+```
+
+- Server:    `http://localhost:8080/`
+- Dashboard: `http://localhost:8081/dashboard/`
+
+Factory reset (with `RESET` confirmation):
+
+```bash
+cd docker/factory
+./reset.sh      # or reset.bat on Windows
+```
+
+See [docker/README.md](docker/README.md) for image tags and environment overrides.
+
+## Bugs, feedback, or enhancement requests
+
+- **Bug reports**: please [file an issue](https://github.com/jchristn/HnswLite/issues) with reproduction steps.
+- **Feature requests**: open a [discussion](https://github.com/jchristn/HnswLite/discussions) or create an issue.
+- **Questions**: use the discussions forum.
+- **Contributions**: pull requests welcome.
 
 ## License
 
-This library is available under the MIT license.
+MIT. See [LICENSE.md](LICENSE.md).
 
 ## Acknowledgments
 
-This implementation is based on the paper: [Efficient and robust approximate nearest neighbor search using Hierarchical Navigable Small World graphs](https://arxiv.org/abs/1603.09320) by Yu. A. Malkov and D. A. Yashunin.
+Based on [*Efficient and robust approximate nearest neighbor search using Hierarchical Navigable Small World graphs*](https://arxiv.org/abs/1603.09320) by Yu. A. Malkov and D. A. Yashunin.

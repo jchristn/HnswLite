@@ -1,0 +1,9 @@
+node_modules
+dist
+*.log
+.vite
+
+# Stray tsc artifacts — the real build is vite + tsc-in-build-script, dist/ only.
+src/**/*.js
+src/**/*.js.map
+src/**/*.d.ts

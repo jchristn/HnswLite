@@ -57,41 +57,21 @@ namespace HnswIndex.Server.API.REST
         {
             ArgumentNullException.ThrowIfNull(ctx);
 
-            ctx.Response.Headers.Add("Access-Control-Allow-Origin", "*");
-            ctx.Response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-            ctx.Response.Headers.Add("Access-Control-Allow-Headers", "Content-Type, Authorization, x-api-key");
-
             if (ctx.Request.Method == HttpMethod.HEAD)
             {
                 ctx.Response.StatusCode = 200;
-                await ctx.Response.Send();
+                await ctx.Response.Send(ctx.Token).ConfigureAwait(false);
                 return;
             }
 
             ctx.Response.StatusCode = 200;
             ctx.Response.ContentType = Constants.HtmlContentType;
-            await ctx.Response.Send(Constants.DefaultHomepage);
+            await ctx.Response.Send(Constants.DefaultHomepage, ctx.Token).ConfigureAwait(false);
         }
 
         /// <summary>
-        /// OPTIONS handler for CORS support.
-        /// </summary>
-        /// <param name="ctx">HTTP context.</param>
-        /// <returns>Task.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when ctx is null.</exception>
-        public static async Task OptionsHandler(HttpContextBase ctx)
-        {
-            ArgumentNullException.ThrowIfNull(ctx);
-
-            ctx.Response.Headers.Add("Access-Control-Allow-Origin", "*");
-            ctx.Response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-            ctx.Response.Headers.Add("Access-Control-Allow-Headers", "Content-Type, Authorization, x-api-key");
-
-            await ctx.Response.Send();
-        }
-
-        /// <summary>
-        /// Route handler for API requests.
+        /// Route handler for API requests. Authentication has already been enforced by the
+        /// server's AuthenticateRequest hook; this handler only performs routing/dispatch.
         /// </summary>
         /// <param name="ctx">HTTP context.</param>
         /// <returns>Task.</returns>
@@ -105,17 +85,6 @@ namespace HnswIndex.Server.API.REST
                 if (_Settings.Debug.Api)
                 {
                     _Logging?.Debug(_Header + $"[API] {ctx.Request.Method} {ctx.Request.Url.RawWithoutQuery}");
-                }
-
-                // Authentication check
-                if (_Settings.Server.RequireAuthentication)
-                {
-                    if (!IsAuthenticated(ctx))
-                    {
-                        _Logging?.Warn(_Header + $"unauthorized access attempt from {ctx.Request.Source.IpAddress}:{ctx.Request.Source.Port}");
-                        await SendErrorResponseAsync(ctx, ApiErrorEnum.Unauthorized, "Authentication required").ConfigureAwait(false);
-                        return;
-                    }
                 }
 
                 string[] segments = ctx.Request.Url.Elements;
@@ -159,19 +128,6 @@ namespace HnswIndex.Server.API.REST
 
         #region Private-Methods
 
-        private static bool IsAuthenticated(HttpContextBase ctx)
-        {
-            ArgumentNullException.ThrowIfNull(ctx);
-
-            string? apiKey = ctx.Request.RetrieveHeaderValue(_Settings.Server.AdminApiKeyHeader);
-            if (string.IsNullOrEmpty(apiKey))
-            {
-                return false;
-            }
-
-            return string.Equals(apiKey, _Settings.Server.AdminApiKey, StringComparison.Ordinal);
-        }
-
         private static async Task HandleIndexesAsync(HttpContextBase ctx, string[] segments)
         {
             ArgumentNullException.ThrowIfNull(ctx);
@@ -214,6 +170,20 @@ namespace HnswIndex.Server.API.REST
                 return;
             }
 
+            // GET /v1.0/indexes/{name}/vectors - Enumerate vectors (paginated)
+            if (method == "GET" && segments.Length == 4 && string.Equals(segments[3], "vectors", StringComparison.OrdinalIgnoreCase))
+            {
+                await EnumerateVectorsAsync(ctx, segments[2]).ConfigureAwait(false);
+                return;
+            }
+
+            // GET /v1.0/indexes/{name}/vectors/{guid} - Get a single vector (always includes vector)
+            if (method == "GET" && segments.Length == 5 && string.Equals(segments[3], "vectors", StringComparison.OrdinalIgnoreCase))
+            {
+                await GetVectorAsync(ctx, segments[2], segments[4]).ConfigureAwait(false);
+                return;
+            }
+
             // POST /v1.0/indexes/{name}/vectors - Add vector
             if (method == "POST" && segments.Length == 4 && string.Equals(segments[3], "vectors", StringComparison.OrdinalIgnoreCase))
             {
@@ -242,12 +212,29 @@ namespace HnswIndex.Server.API.REST
         {
             try
             {
-                List<IndexResponse> indexes = _IndexManager.ListIndexes();
-                string json = _Serializer.SerializeJson(indexes, true);
+                EnumerationQuery query;
+                try
+                {
+                    query = EnumerationQuery.FromQueryString(ctx.Request.Query?.Elements);
+                }
+                catch (ArgumentException ex)
+                {
+                    await SendErrorResponseAsync(ctx, ApiErrorEnum.BadRequest, ex.Message).ConfigureAwait(false);
+                    return;
+                }
+
+                if (!query.Validate(out string? validationError))
+                {
+                    await SendErrorResponseAsync(ctx, ApiErrorEnum.BadRequest, validationError ?? "Invalid query").ConfigureAwait(false);
+                    return;
+                }
+
+                EnumerationResult<IndexResponse> result = _IndexManager.EnumerateIndexes(query);
+                string json = _Serializer.SerializeJson(result, true);
 
                 ctx.Response.StatusCode = 200;
                 ctx.Response.ContentType = "application/json";
-                await ctx.Response.Send(json).ConfigureAwait(false);
+                await ctx.Response.Send(json, ctx.Token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -259,9 +246,8 @@ namespace HnswIndex.Server.API.REST
         {
             try
             {
-                using StreamReader reader = new StreamReader(ctx.Request.Data);
-                string requestBody = await reader.ReadToEndAsync().ConfigureAwait(false);
-                
+                string requestBody = ctx.Request.DataAsString;
+
                 CreateIndexRequest? request;
                 try
                 {
@@ -284,7 +270,7 @@ namespace HnswIndex.Server.API.REST
 
                 ctx.Response.StatusCode = 201;
                 ctx.Response.ContentType = "application/json";
-                await ctx.Response.Send(json).ConfigureAwait(false);
+                await ctx.Response.Send(json, ctx.Token).ConfigureAwait(false);
             }
             catch (InvalidOperationException ex)
             {
@@ -316,7 +302,7 @@ namespace HnswIndex.Server.API.REST
 
                 ctx.Response.StatusCode = 200;
                 ctx.Response.ContentType = "application/json";
-                await ctx.Response.Send(json).ConfigureAwait(false);
+                await ctx.Response.Send(json, ctx.Token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -337,7 +323,7 @@ namespace HnswIndex.Server.API.REST
                 }
 
                 ctx.Response.StatusCode = 204;
-                await ctx.Response.Send().ConfigureAwait(false);
+                await ctx.Response.Send(ctx.Token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -349,9 +335,8 @@ namespace HnswIndex.Server.API.REST
         {
             try
             {
-                using StreamReader reader = new StreamReader(ctx.Request.Data);
-                string requestBody = await reader.ReadToEndAsync().ConfigureAwait(false);
-                
+                string requestBody = ctx.Request.DataAsString;
+
                 SearchRequest? request;
                 try
                 {
@@ -374,7 +359,7 @@ namespace HnswIndex.Server.API.REST
 
                 ctx.Response.StatusCode = 200;
                 ctx.Response.ContentType = "application/json";
-                await ctx.Response.Send(json).ConfigureAwait(false);
+                await ctx.Response.Send(json, ctx.Token).ConfigureAwait(false);
             }
             catch (InvalidOperationException ex)
             {
@@ -390,13 +375,96 @@ namespace HnswIndex.Server.API.REST
             }
         }
 
+        private static async Task GetVectorAsync(HttpContextBase ctx, string indexName, string vectorGuid)
+        {
+            try
+            {
+                if (!Guid.TryParse(vectorGuid, out Guid guid))
+                {
+                    await SendErrorResponseAsync(ctx, ApiErrorEnum.BadRequest, "vector id must be a GUID.").ConfigureAwait(false);
+                    return;
+                }
+
+                VectorEntryResponse? entry = await _IndexManager.GetVectorAsync(indexName, guid).ConfigureAwait(false);
+                if (entry == null)
+                {
+                    await SendErrorResponseAsync(ctx, ApiErrorEnum.VectorNotFound, $"Vector '{vectorGuid}' not found in '{indexName}'.").ConfigureAwait(false);
+                    return;
+                }
+
+                string json = _Serializer.SerializeJson(entry, true);
+                ctx.Response.StatusCode = 200;
+                ctx.Response.ContentType = "application/json";
+                await ctx.Response.Send(json, ctx.Token).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException ex)
+            {
+                await SendErrorResponseAsync(ctx, ApiErrorEnum.IndexNotFound, ex.Message).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                await SendErrorResponseAsync(ctx, ApiErrorEnum.InternalServerError, ex.Message).ConfigureAwait(false);
+            }
+        }
+
+        private static async Task EnumerateVectorsAsync(HttpContextBase ctx, string indexName)
+        {
+            try
+            {
+                EnumerationQuery query;
+                try
+                {
+                    query = EnumerationQuery.FromQueryString(ctx.Request.Query?.Elements);
+                }
+                catch (ArgumentException ex)
+                {
+                    await SendErrorResponseAsync(ctx, ApiErrorEnum.BadRequest, ex.Message).ConfigureAwait(false);
+                    return;
+                }
+
+                if (!query.Validate(out string? validationError))
+                {
+                    await SendErrorResponseAsync(ctx, ApiErrorEnum.BadRequest, validationError ?? "Invalid query").ConfigureAwait(false);
+                    return;
+                }
+
+                bool includeVectors = false;
+                string? incRaw = ctx.Request.Query?.Elements?["includeVectors"]
+                                 ?? ctx.Request.Query?.Elements?["IncludeVectors"]
+                                 ?? ctx.Request.Query?.Elements?["include"];
+                if (!string.IsNullOrEmpty(incRaw))
+                {
+                    if (!bool.TryParse(incRaw, out includeVectors))
+                    {
+                        await SendErrorResponseAsync(ctx, ApiErrorEnum.BadRequest, "includeVectors must be true or false.").ConfigureAwait(false);
+                        return;
+                    }
+                }
+
+                EnumerationResult<VectorEntryResponse> result =
+                    await _IndexManager.EnumerateVectorsAsync(indexName, query, includeVectors).ConfigureAwait(false);
+                string json = _Serializer.SerializeJson(result, true);
+
+                ctx.Response.StatusCode = 200;
+                ctx.Response.ContentType = "application/json";
+                await ctx.Response.Send(json, ctx.Token).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException ex)
+            {
+                await SendErrorResponseAsync(ctx, ApiErrorEnum.IndexNotFound, ex.Message).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                await SendErrorResponseAsync(ctx, ApiErrorEnum.InternalServerError, ex.Message).ConfigureAwait(false);
+            }
+        }
+
         private static async Task AddVectorAsync(HttpContextBase ctx, string indexName)
         {
             try
             {
-                using StreamReader reader = new StreamReader(ctx.Request.Data);
-                string requestBody = await reader.ReadToEndAsync().ConfigureAwait(false);
-                
+                string requestBody = ctx.Request.DataAsString;
+
                 AddVectorRequest? request;
                 try
                 {
@@ -421,12 +489,12 @@ namespace HnswIndex.Server.API.REST
                     ctx.Response.StatusCode = 201;
                     ctx.Response.ContentType = "application/json";
                     string json = _Serializer.SerializeJson(request, true);
-                    await ctx.Response.Send(json).ConfigureAwait(false);
+                    await ctx.Response.Send(json, ctx.Token).ConfigureAwait(false);
                 }
                 else
                 {
                     ctx.Response.StatusCode = 500;
-                    await ctx.Response.Send().ConfigureAwait(false);
+                    await ctx.Response.Send(ctx.Token).ConfigureAwait(false);
                 }
             }
             catch (InvalidOperationException ex)
@@ -447,9 +515,8 @@ namespace HnswIndex.Server.API.REST
         {
             try
             {
-                using StreamReader reader = new StreamReader(ctx.Request.Data);
-                string requestBody = await reader.ReadToEndAsync().ConfigureAwait(false);
-                
+                string requestBody = ctx.Request.DataAsString;
+
                 AddVectorsRequest? request;
                 try
                 {
@@ -474,12 +541,12 @@ namespace HnswIndex.Server.API.REST
                     ctx.Response.StatusCode = 201;
                     ctx.Response.ContentType = "application/json";
                     string json = _Serializer.SerializeJson(request, true);
-                    await ctx.Response.Send(json).ConfigureAwait(false);
+                    await ctx.Response.Send(json, ctx.Token).ConfigureAwait(false);
                 }
                 else
                 {
                     ctx.Response.StatusCode = 500;
-                    await ctx.Response.Send().ConfigureAwait(false);
+                    await ctx.Response.Send(ctx.Token).ConfigureAwait(false);
                 }
             }
             catch (InvalidOperationException ex)
@@ -504,7 +571,7 @@ namespace HnswIndex.Server.API.REST
                 bool success = await _IndexManager.RemoveVectorAsync(indexName, guid).ConfigureAwait(false);
 
                 ctx.Response.StatusCode = success ? 204 : 404;
-                await ctx.Response.Send().ConfigureAwait(false);
+                await ctx.Response.Send(ctx.Token).ConfigureAwait(false);
             }
             catch (InvalidOperationException ex)
             {
@@ -522,7 +589,7 @@ namespace HnswIndex.Server.API.REST
 
         private static async Task SendErrorResponseAsync(HttpContextBase ctx, ApiErrorEnum error, string message)
         {
-            ApiErrorResponse errorResponse = new ApiErrorResponse(error, message);
+            HnswIndex.Server.Classes.ApiErrorResponse errorResponse = new HnswIndex.Server.Classes.ApiErrorResponse(error, message);
             string json = _Serializer.SerializeJson(errorResponse, true);
 
             int statusCode = error switch
@@ -539,7 +606,7 @@ namespace HnswIndex.Server.API.REST
 
             ctx.Response.StatusCode = statusCode;
             ctx.Response.ContentType = "application/json";
-            await ctx.Response.Send(json).ConfigureAwait(false);
+            await ctx.Response.Send(json, ctx.Token).ConfigureAwait(false);
         }
 
         #endregion

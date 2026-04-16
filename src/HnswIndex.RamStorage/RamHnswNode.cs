@@ -13,7 +13,12 @@
         // Private members
         private readonly Guid _id;
         private readonly List<float> _vector;
-        private readonly Dictionary<int, HashSet<Guid>> _neighbors = new Dictionary<int, HashSet<Guid>>();
+        // Sparse neighbor map: index = layer (0-63), value = neighbor set or null when empty.
+        // Saves the per-Dictionary-entry overhead (~56 bytes/entry) for nodes that exist on
+        // many layers; for typical HNSW topologies most nodes only have entries for layer 0.
+        private const int _MaxLayers = 64;
+        private readonly HashSet<Guid>?[] _neighbors = new HashSet<Guid>?[_MaxLayers];
+        private int _LayerCount;
         private readonly ReaderWriterLockSlim _nodeLock = new ReaderWriterLockSlim();
         private bool _disposed = false;
 
@@ -80,10 +85,14 @@
             _nodeLock.EnterReadLock();
             try
             {
-                Dictionary<int, HashSet<Guid>> result = new Dictionary<int, HashSet<Guid>>();
-                foreach (KeyValuePair<int, HashSet<Guid>> kvp in _neighbors)
+                Dictionary<int, HashSet<Guid>> result = new Dictionary<int, HashSet<Guid>>(_LayerCount);
+                for (int layer = 0; layer < _MaxLayers; layer++)
                 {
-                    result[kvp.Key] = new HashSet<Guid>(kvp.Value);
+                    HashSet<Guid>? set = _neighbors[layer];
+                    if (set != null && set.Count > 0)
+                    {
+                        result[layer] = new HashSet<Guid>(set);
+                    }
                 }
                 return result;
             }
@@ -118,9 +127,14 @@
             _nodeLock.EnterWriteLock();
             try
             {
-                if (!_neighbors.ContainsKey(layer))
-                    _neighbors[layer] = new HashSet<Guid>();
-                _neighbors[layer].Add(NeighborGUID);
+                HashSet<Guid>? set = _neighbors[layer];
+                if (set == null)
+                {
+                    set = new HashSet<Guid>();
+                    _neighbors[layer] = set;
+                    _LayerCount++;
+                }
+                set.Add(NeighborGUID);
             }
             finally
             {
@@ -149,11 +163,15 @@
             _nodeLock.EnterWriteLock();
             try
             {
-                if (_neighbors.ContainsKey(layer))
+                HashSet<Guid>? set = _neighbors[layer];
+                if (set != null)
                 {
-                    _neighbors[layer].Remove(NeighborGUID);
-                    if (_neighbors[layer].Count == 0)
-                        _neighbors.Remove(layer);
+                    set.Remove(NeighborGUID);
+                    if (set.Count == 0)
+                    {
+                        _neighbors[layer] = null;
+                        _LayerCount--;
+                    }
                 }
             }
             finally
@@ -182,7 +200,8 @@
             _nodeLock.EnterReadLock();
             try
             {
-                return _neighbors.TryGetValue(layer, out HashSet<Guid>? layerNeighbors) ? layerNeighbors.Count : 0;
+                HashSet<Guid>? set = _neighbors[layer];
+                return set?.Count ?? 0;
             }
             finally
             {
@@ -203,7 +222,13 @@
             _nodeLock.EnterReadLock();
             try
             {
-                return _neighbors.Values.Sum(set => set.Count);
+                int total = 0;
+                for (int layer = 0; layer < _MaxLayers; layer++)
+                {
+                    HashSet<Guid>? set = _neighbors[layer];
+                    if (set != null) total += set.Count;
+                }
+                return total;
             }
             finally
             {
@@ -232,7 +257,8 @@
             _nodeLock.EnterReadLock();
             try
             {
-                return _neighbors.TryGetValue(layer, out HashSet<Guid>? layerNeighbors) && layerNeighbors.Contains(NeighborGUID);
+                HashSet<Guid>? set = _neighbors[layer];
+                return set != null && set.Contains(NeighborGUID);
             }
             finally
             {

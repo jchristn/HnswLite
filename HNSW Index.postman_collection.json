@@ -23,12 +23,12 @@
 			"response": []
 		},
 		{
-			"name": "Retrieve indices",
+			"name": "Enumerate indexes (paginated)",
 			"request": {
 				"method": "GET",
 				"header": [],
 				"url": {
-					"raw": "{{protocol}}://{{hostname}}:{{port}}/v1.0/indexes",
+					"raw": "{{protocol}}://{{hostname}}:{{port}}/v1.0/indexes?maxResults=25&skip=0&ordering=CreatedDescending",
 					"protocol": "{{protocol}}",
 					"host": [
 						"{{hostname}}"
@@ -37,6 +37,15 @@
 					"path": [
 						"v1.0",
 						"indexes"
+					],
+					"query": [
+						{ "key": "maxResults", "value": "25", "description": "1-1000. Default 100." },
+						{ "key": "skip", "value": "0", "description": "Offset pagination." },
+						{ "key": "ordering", "value": "CreatedDescending", "description": "CreatedAscending | CreatedDescending | NameAscending | NameDescending." },
+						{ "key": "prefix", "value": "", "description": "Filter: name starts-with (case-insensitive).", "disabled": true },
+						{ "key": "suffix", "value": "", "description": "Filter: name ends-with (case-insensitive).", "disabled": true },
+						{ "key": "createdAfterUtc", "value": "", "description": "ISO-8601 lower bound (exclusive).", "disabled": true },
+						{ "key": "createdBeforeUtc", "value": "", "description": "ISO-8601 upper bound (exclusive).", "disabled": true }
 					]
 				}
 			},
@@ -111,6 +120,58 @@
 						"v1.0",
 						"indexes",
 						"my-index"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Enumerate vectors (paginated)",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{protocol}}://{{hostname}}:{{port}}/v1.0/indexes/my-index/vectors?maxResults=25&skip=0&includeVectors=false",
+					"protocol": "{{protocol}}",
+					"host": [
+						"{{hostname}}"
+					],
+					"port": "{{port}}",
+					"path": [
+						"v1.0",
+						"indexes",
+						"my-index",
+						"vectors"
+					],
+					"query": [
+						{ "key": "maxResults", "value": "25", "description": "1-1000. Default 100." },
+						{ "key": "skip", "value": "0", "description": "Offset pagination." },
+						{ "key": "ordering", "value": "NameAscending", "description": "CreatedAscending | CreatedDescending | NameAscending | NameDescending.", "disabled": true },
+						{ "key": "prefix", "value": "", "description": "Filter: GUID starts-with (case-insensitive).", "disabled": true },
+						{ "key": "includeVectors", "value": "false", "description": "Include the Vector array in each Object (default false)." }
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get vector (by GUID)",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{protocol}}://{{hostname}}:{{port}}/v1.0/indexes/my-index/vectors/00000000-0000-0000-0000-000000000000",
+					"protocol": "{{protocol}}",
+					"host": [
+						"{{hostname}}"
+					],
+					"port": "{{port}}",
+					"path": [
+						"v1.0",
+						"indexes",
+						"my-index",
+						"vectors",
+						"00000000-0000-0000-0000-000000000000"
 					]
 				}
 			},

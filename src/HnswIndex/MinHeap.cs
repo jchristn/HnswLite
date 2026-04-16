@@ -163,10 +163,26 @@
         /// <returns>A new list containing all items sorted by priority.</returns>
         public List<(float priority, T item)> GetAll()
         {
-            return _Items
-                .OrderBy(x => x.priority)
-                .ThenBy(x => x.item, _ItemComparer)
-                .ToList();
+            List<(float priority, T item)> copy = new List<(float, T)>(_Items);
+            List<(float priority, T item)> result = new List<(float priority, T item)>(copy.Count);
+
+            while (copy.Count > 0)
+            {
+                result.Add(copy[0]);
+                int last = copy.Count - 1;
+                if (last == 0)
+                {
+                    copy.Clear();
+                }
+                else
+                {
+                    copy[0] = copy[last];
+                    copy.RemoveAt(last);
+                    SiftDown(copy, 0);
+                }
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -191,6 +207,32 @@
         #endregion
 
         #region Private-Methods
+
+        private void SiftDown(List<(float priority, T item)> heap, int index)
+        {
+            while (true)
+            {
+                int smallest = index;
+                int left = 2 * index + 1;
+                int right = 2 * index + 2;
+
+                if (left < heap.Count && CompareTuples(heap[left], heap[smallest]) < 0)
+                    smallest = left;
+                if (right < heap.Count && CompareTuples(heap[right], heap[smallest]) < 0)
+                    smallest = right;
+                if (smallest == index) break;
+
+                (heap[index], heap[smallest]) = (heap[smallest], heap[index]);
+                index = smallest;
+            }
+        }
+
+        private int CompareTuples((float priority, T item) a, (float priority, T item) b)
+        {
+            int cmp = a.priority.CompareTo(b.priority);
+            if (cmp != 0) return cmp;
+            return _ItemComparer.Compare(a.item, b.item);
+        }
 
         private void BubbleUp(int childIndex)
         {
