@@ -1,4 +1,4 @@
-<img src="https://github.com/jchristn/HnswLite/blob/main/assets/logo.png" width="256" height="256">
+<img src="https://raw.githubusercontent.com/jchristn/HnswLite/main/assets/logo.png" width="256" height="256">
 
 # HnswLite
 
@@ -36,18 +36,70 @@ HnswLite implements the Hierarchical Navigable Small World algorithm, which prov
 - **Paginated enumeration contract** across every GET collection endpoint (`EnumerationQuery` / `EnumerationResult<T>`).
 - **OPTIONS preflight + CORS** out of the box in the REST server.
 
-## New in v1.1.0
+## New in v1.1.x
 
 See [CHANGELOG.md](CHANGELOG.md) for the full list. Highlights:
 
-- Multi-target `net8.0` + `net10.0`.
-- Unified `IStorageProvider` with `RamStorageProvider` and `SqliteStorageProvider`.
-- Watson web server upgraded to `7.0.11` with CORS + OPTIONS preflight.
-- Every GET-collection endpoint now paginated via `EnumerationQuery` / `EnumerationResult<T>`.
-- Default server `StorageType` is **SQLite** — indexes persist across restarts, metadata lives inside the `.db` file (no separate manifest).
-- New `GET /v1.0/indexes/{name}/vectors` (paginated) and `GET /v1.0/indexes/{name}/vectors/{guid}` endpoints.
-- SIMD distance functions + a dozen internal performance fixes — see [PERFORMANCE_IMPROVEMENTS.md](PERFORMANCE_IMPROVEMENTS.md).
-- New dashboard, new SDKs (C#, Python, JS), new Touchstone test suite (53 cases × 4 runners).
+### Platform
+
+- Multi-target `net8.0` + `net10.0` across the library, server, and tests.
+- Watson web server upgraded to `7.0.11`. OPTIONS pre-flight is handled by Watson's native hook and bypasses authentication; CORS response headers are emitted on every response from a configurable `Cors` block in `hnswindex.json`.
+
+### Storage abstraction
+
+- **`IStorageProvider`** — a single interface that combines `IHnswStorage`, `IHnswLayerStorage`, and `IDisposable`. `HnswIndex` accepts it via a new constructor.
+- **`RamStorageProvider`** and **`SqliteStorageProvider`** consolidate the previous pair-of-objects setup into one lifecycle-managed instance.
+
+### Server persistence
+
+- **Default `StorageType` is now `SQLite`**. The old default silently created RAM-only indexes that vanished on restart.
+- Server-owned metadata (GUID / dimension / distance function / M / MaxM / EfConstruction / created timestamp) is persisted **inside each SQLite `.db` file** via the library's `hnsw_metadata` key/value table under a `server.*` key prefix. No manifest file — the database IS the manifest.
+- `IndexManager` scans the SQLite directory on startup, opens every `.db`, and re-registers the index. Indexes survive restarts.
+
+### Paginated enumeration across every GET
+
+- `GET /v1.0/indexes` is paginated. Query-string parameters populate an `EnumerationQuery`; response is an `EnumerationResult<T>`. No more "get all" endpoints.
+- New **`GET /v1.0/indexes/{name}/vectors`** — paginated vector enumeration with an `includeVectors=true|false` switch for whether vector bodies are inlined.
+- New **`GET /v1.0/indexes/{name}/vectors/{guid}`** — fetch a single vector (always includes the `Vector` array).
+
+### Performance
+
+- SIMD-accelerated distance functions (`Euclidean`, `Cosine`, `DotProduct`) via `System.Numerics.Vector<float>` + `CollectionsMarshal.AsSpan`, with a scalar fallback.
+- `Task.Run` wrappers removed from `SelectNeighborsHeuristicAsync`, `GreedySearchLayerAsync`, and `SearchLayerAsync` — async state-machine allocation eliminated on the search hot path.
+- Pre-fetch + cached node references in neighbor selection — O(N²) storage round-trips collapsed to O(N).
+- In-place sort in neighbor selection (no `.OrderBy().ToList()` allocations).
+- `ContainsKey` + indexer → `TryGetValue` across hot paths.
+- `ConfigureAwait(false)` on every library-internal await.
+- Bounded `SearchContext` cache (default 50k nodes) to prevent unbounded memory growth on large searches.
+- Span-based SQLite vector serialization (`MemoryMarshal.AsBytes` / `MemoryMarshal.Cast<byte, float>`).
+- Sparse neighbor map in `RamHnswNode` — `HashSet<Guid>?[]` indexed by layer (max 64) replaces `Dictionary<int, HashSet<Guid>>`.
+- `MinHeap.GetAll()` switched from LINQ `.OrderBy().ThenBy()` to in-place heap extraction.
+- SQLite connection consolidation — both constructors now share a single helper that applies WAL + synchronous + cache + `mmap_size=256MB` + `wal_autocheckpoint=1000` PRAGMAs (previously only the default-table-name constructor was configured).
+
+See [PERFORMANCE_IMPROVEMENTS.md](PERFORMANCE_IMPROVEMENTS.md) for details and remaining future work.
+
+### Testing
+
+- Unified Touchstone test suite: tests are defined once in `Test.Shared` and executed by **four** runners (`Test.Automated` console, `Test.XUnit`, `Test.NUnit`, `Test.MSTest`). Coverage grew from 23 to **53 cases** across 11 suites including concurrency, cross-storage parity, and cluster-recall scenarios.
+
+### Dashboard
+
+- React 19 + Vite 6 + TypeScript dashboard at `dashboard/` with pages for **Indices**, **Vectors** (browse / edit / add / delete with an index dropdown and Add-vector modal), **Search**, **Request History** (30-day browser-local capture with hour / day / week / month ranges), **API Explorer**, **Server Info**, **Settings**, plus a login flow.
+- Docker image `jchristn77/hnswlite-dashboard` with nginx serving the SPA and proxying `/v1.0/` to the server container.
+
+### SDKs
+
+Three new SDKs with 100% endpoint coverage + integration test harnesses:
+
+- **C#** (`HnswLite.Sdk`) — `net8.0` / `net10.0`.
+- **Python** (`hnswlite-sdk`) — Python 3.9+, `requests`.
+- **JS / TS** (`hnswlite-sdk`) — Node 18+, zero runtime deps, native `fetch`.
+
+### Docker
+
+- `docker/compose.yaml` runs the server and dashboard together.
+- `docker/factory/reset.bat` + `reset.sh` — factory-reset scripts.
+- `clean.bat` + `clean.sh` in the server output directory — delete `hnswindex.json` / `data/` / `logs/` for a fresh start.
 
 ## Use cases
 
