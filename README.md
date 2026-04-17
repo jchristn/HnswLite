@@ -83,7 +83,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full list. Highlights:
 - `MinHeap.GetAll()` switched from LINQ `.OrderBy().ThenBy()` to in-place heap extraction.
 - SQLite connection consolidation — both constructors now share a single helper that applies WAL + synchronous + cache + `mmap_size=256MB` + `wal_autocheckpoint=1000` PRAGMAs (previously only the default-table-name constructor was configured).
 
-See [PERFORMANCE_IMPROVEMENTS.md](PERFORMANCE_IMPROVEMENTS.md) for details and remaining future work.
+See [archive/PERFORMANCE_IMPROVEMENTS.md](archive/PERFORMANCE_IMPROVEMENTS.md) for details and remaining future work.
 
 ### Testing
 

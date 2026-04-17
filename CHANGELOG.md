@@ -1,6 +1,15 @@
 # Change Log
 
-## v1.1.1 (current)
+## v1.1.2 (current)
+
+### Performance — `ConfigureAwait(false)` audit
+
+- Completed the `ConfigureAwait(false)` sweep claimed for v1.1.0. All 66 library-internal awaits in `HsnwIndex.cs` now include `.ConfigureAwait(false)`; previously only 18 did, leaving most of `AddAsync`, `AddNodesAsync`, `RemoveAsync`, `RemoveNodesAsync`, `GetTopKAsync`, `ExportStateAsync`, `ImportStateAsync`, and the context-aware search paths still marshalling back to a captured `SynchronizationContext`.
+- Effect: eliminates the hidden post-`await` context hop for consumers hosting the library inside WinForms, WPF, or ASP.NET Classic sync contexts. Zero cost on the thread-pool default context.
+
+---
+
+## v1.1.1
 
 ### Vector metadata
 
@@ -84,7 +93,7 @@ Applied in this release:
 - **Sparse neighbor map** in `RamHnswNode` — `HashSet<Guid>?[]` indexed by layer (max 64) replaces `Dictionary<int, HashSet<Guid>>`. ~20–30% memory reduction per node + O(1) array-indexed lookups.
 - **SQLite connection consolidation** — both constructors now share a single `OpenAndConfigureConnection` helper. Fixed a bug where the custom-table-name constructor did not apply WAL / synchronous / cache PRAGMAs. Added `mmap_size=256MB` for memory-mapped reads and `wal_autocheckpoint=1000` to bound WAL growth.
 
-See [`PERFORMANCE_IMPROVEMENTS.md`](PERFORMANCE_IMPROVEMENTS.md) for details and remaining future work (multi-connection SQLite reader pool, cross-insert parallel index build).
+See [`archive/PERFORMANCE_IMPROVEMENTS.md`](archive/PERFORMANCE_IMPROVEMENTS.md) for details and remaining future work (multi-connection SQLite reader pool, cross-insert parallel index build).
 
 ### Testing
 

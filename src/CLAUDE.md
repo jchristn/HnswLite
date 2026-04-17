@@ -47,7 +47,7 @@ The system uses a pluggable storage architecture with three main interfaces:
 
 ### Performance Architecture
 
-The library implements significant performance optimizations detailed in `PERFORMANCE_IMPROVEMENTS.md`:
+The library implements significant performance optimizations detailed in `archive/PERFORMANCE_IMPROVEMENTS.md`:
 
 - **Binary serialization** instead of JSON for 4x performance improvement
 - **SearchContext caching** reduces database queries by 90%+

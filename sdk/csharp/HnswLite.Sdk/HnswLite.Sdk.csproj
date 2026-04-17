@@ -9,7 +9,7 @@
 
     <!-- NuGet package metadata -->
     <PackageId>HnswLite.Sdk</PackageId>
-    <Version>1.1.1</Version>
+    <Version>1.1.2</Version>
     <Authors>Joel Christner</Authors>
     <Company>Joel Christner</Company>
     <Description>C# SDK for the HnswLite REST API — approximate nearest neighbor search powered by HNSW graphs.</Description>

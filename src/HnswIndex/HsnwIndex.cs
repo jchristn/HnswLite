@@ -294,20 +294,20 @@
                 int entryPointLayer = GetNodeLayer(entryPointId);
                 for (int layer = entryPointLayer; layer > nodeLevel; layer--)
                 {
-                    currentNearest = await GreedySearchLayerAsync(vector, currentNearest, layer, cancellationToken);
+                    currentNearest = await GreedySearchLayerAsync(vector, currentNearest, layer, cancellationToken).ConfigureAwait(false);
                 }
 
                 // Insert at all layers from nodeLevel to 0
                 for (int layer = nodeLevel; layer >= 0; layer--)
                 {
-                    List<SearchCandidate> candidates = await SearchLayerAsync(vector, currentNearest, EfConstruction, layer, cancellationToken);
+                    List<SearchCandidate> candidates = await SearchLayerAsync(vector, currentNearest, EfConstruction, layer, cancellationToken).ConfigureAwait(false);
 
                     int mValue = layer == 0 ? MaxM : M;
 
                     // Select M neighbors using a heuristic
-                    List<Guid> neighbors = await SelectNeighborsHeuristicAsync(vector, candidates, mValue, layer, ExtendCandidates, KeepPrunedConnections, cancellationToken);
+                    List<Guid> neighbors = await SelectNeighborsHeuristicAsync(vector, candidates, mValue, layer, ExtendCandidates, KeepPrunedConnections, cancellationToken).ConfigureAwait(false);
 
-                    IHnswNode newNode = await _Storage.GetNodeAsync(guid, cancellationToken);
+                    IHnswNode newNode = await _Storage.GetNodeAsync(guid, cancellationToken).ConfigureAwait(false);
                     foreach (Guid neighborId in neighbors)
                     {
                         if (neighborId == guid)
@@ -315,7 +315,7 @@
 
                         // Add bidirectional connections
                         newNode.AddNeighbor(layer, neighborId);
-                        IHnswNode neighbor = await _Storage.GetNodeAsync(neighborId, cancellationToken);
+                        IHnswNode neighbor = await _Storage.GetNodeAsync(neighborId, cancellationToken).ConfigureAwait(false);
                         neighbor.AddNeighbor(layer, guid);
 
                         // Prune neighbor's connections if needed
@@ -384,16 +384,16 @@
             }
 
             // Acquire write lock for entire operation
-            await _IndexLock.WaitAsync(cancellationToken);
+            await _IndexLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 // Step 1: Add all nodes to _Storage in batch
-                await _Storage.AddNodesAsync(nodes, cancellationToken);
+                await _Storage.AddNodesAsync(nodes, cancellationToken).ConfigureAwait(false);
 
                 // Step 2: Build graph structure for each node while holding lock
                 // Use SearchContext to cache nodes during graph construction for better performance
                 SearchContext context = new SearchContext(_Storage, cancellationToken);
-                bool isFirstNode = await _Storage.GetCountAsync(cancellationToken) == nodes.Count;
+                bool isFirstNode = await _Storage.GetCountAsync(cancellationToken).ConfigureAwait(false) == nodes.Count;
 
                 int processedCount = 0;
                 int totalCount = nodes.Count;
@@ -427,19 +427,19 @@
                     int entryPointLayer = GetNodeLayer(entryPointId);
                     for (int layer = entryPointLayer; layer > nodeLevel; layer--)
                     {
-                        currentNearest = await GreedySearchLayerWithContextAsync(vector, currentNearest, layer, context, cancellationToken);
+                        currentNearest = await GreedySearchLayerWithContextAsync(vector, currentNearest, layer, context, cancellationToken).ConfigureAwait(false);
                     }
 
                     // Insert at all layers from nodeLevel to 0
                     for (int layer = nodeLevel; layer >= 0; layer--)
                     {
-                        List<SearchCandidate> candidates = await SearchLayerWithContextAsync(vector, currentNearest, EfConstruction, layer, context, cancellationToken);
+                        List<SearchCandidate> candidates = await SearchLayerWithContextAsync(vector, currentNearest, EfConstruction, layer, context, cancellationToken).ConfigureAwait(false);
                         int mValue = layer == 0 ? MaxM : M;
 
                         // Select M neighbors using a heuristic
-                        List<Guid> neighbors = await SelectNeighborsHeuristicAsync(vector, candidates, mValue, layer, ExtendCandidates, KeepPrunedConnections, cancellationToken);
+                        List<Guid> neighbors = await SelectNeighborsHeuristicAsync(vector, candidates, mValue, layer, ExtendCandidates, KeepPrunedConnections, cancellationToken).ConfigureAwait(false);
 
-                        IHnswNode newNode = await context.GetNodeAsync(nodeId);
+                        IHnswNode newNode = await context.GetNodeAsync(nodeId).ConfigureAwait(false);
                         foreach (Guid neighborId in neighbors)
                         {
                             if (neighborId == nodeId)
@@ -447,7 +447,7 @@
 
                             // Add bidirectional connections
                             newNode.AddNeighbor(layer, neighborId);
-                            IHnswNode neighbor = await context.GetNodeAsync(neighborId);
+                            IHnswNode neighbor = await context.GetNodeAsync(neighborId).ConfigureAwait(false);
                             neighbor.AddNeighbor(layer, nodeId);
 
                             // Prune neighbor's connections if needed
@@ -504,10 +504,10 @@
         /// <param name="cancellationToken">Cancellation token.</param>
         public async Task RemoveAsync(Guid guid, CancellationToken cancellationToken = default)
         {
-            await _IndexLock.WaitAsync(cancellationToken);
+            await _IndexLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                TryGetNodeResult tryGetResult = await _Storage.TryGetNodeAsync(guid, cancellationToken);
+                TryGetNodeResult tryGetResult = await _Storage.TryGetNodeAsync(guid, cancellationToken).ConfigureAwait(false);
                 if (!tryGetResult.Success || tryGetResult.Node == null)
                     return;
                 IHnswNode nodeToRemove = tryGetResult.Node;
@@ -516,16 +516,16 @@
                 Dictionary<int, HashSet<Guid>> neighbors = nodeToRemove.GetNeighbors();
 
                 // Remove the node from _Storage
-                await _Storage.RemoveNodeAsync(guid, cancellationToken);
+                await _Storage.RemoveNodeAsync(guid, cancellationToken).ConfigureAwait(false);
 
                 // Remove from layer _Storage
                 _LayerStorage.RemoveNodeLayer(guid);
 
                 // Remove all connections to this node from other nodes
-                IEnumerable<Guid> allNodeIds = await _Storage.GetAllNodeIdsAsync(cancellationToken);
+                IEnumerable<Guid> allNodeIds = await _Storage.GetAllNodeIdsAsync(cancellationToken).ConfigureAwait(false);
                 foreach (Guid nodeId in allNodeIds)
                 {
-                    IHnswNode node = await _Storage.GetNodeAsync(nodeId, cancellationToken);
+                    IHnswNode node = await _Storage.GetNodeAsync(nodeId, cancellationToken).ConfigureAwait(false);
                     foreach (int layer in neighbors.Keys)
                     {
                         node.RemoveNeighbor(layer, guid);
@@ -536,7 +536,7 @@
                 if (_Storage.EntryPoint == guid)
                 {
                     // Find a new entry point - pick the node with the highest layer
-                    IEnumerable<Guid> remainingNodeIds = await _Storage.GetAllNodeIdsAsync(cancellationToken);
+                    IEnumerable<Guid> remainingNodeIds = await _Storage.GetAllNodeIdsAsync(cancellationToken).ConfigureAwait(false);
                     if (remainingNodeIds.Any())
                     {
                         Guid? newEntryPoint = null;
@@ -584,7 +584,7 @@
             HashSet<Guid> uniqueNodeIds = new HashSet<Guid>(nodeIds);
 
             // Acquire write lock for entire operation
-            await _IndexLock.WaitAsync(cancellationToken);
+            await _IndexLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 // Collect all nodes that need to be processed before removal
@@ -594,7 +594,7 @@
                 // First pass: Identify nodes to remove and their neighbors
                 foreach (Guid nodeId in uniqueNodeIds)
                 {
-                    TryGetNodeResult tryGetResult = await _Storage.TryGetNodeAsync(nodeId, cancellationToken);
+                    TryGetNodeResult tryGetResult = await _Storage.TryGetNodeAsync(nodeId, cancellationToken).ConfigureAwait(false);
                     if (tryGetResult.Success && tryGetResult.Node != null)
                     {
                         nodesToRemove[nodeId] = tryGetResult.Node;
@@ -617,7 +617,7 @@
                 // Second pass: Remove all connections to nodes being deleted
                 foreach (Guid neighborId in nodesToUpdate)
                 {
-                    IHnswNode neighbor = await _Storage.GetNodeAsync(neighborId, cancellationToken);
+                    IHnswNode neighbor = await _Storage.GetNodeAsync(neighborId, cancellationToken).ConfigureAwait(false);
                     Dictionary<int, HashSet<Guid>> neighborConnections = neighbor.GetNeighbors();
 
                     foreach (int layer in neighborConnections.Keys.ToList())
@@ -630,7 +630,7 @@
                 }
 
                 // Third pass: Remove nodes from _Storage and layer _Storage
-                await _Storage.RemoveNodesAsync(uniqueNodeIds, cancellationToken);
+                await _Storage.RemoveNodesAsync(uniqueNodeIds, cancellationToken).ConfigureAwait(false);
 
                 foreach (Guid nodeId in uniqueNodeIds)
                 {
@@ -641,7 +641,7 @@
                 if (_Storage.EntryPoint.HasValue && uniqueNodeIds.Contains(_Storage.EntryPoint.Value))
                 {
                     // Find a new entry point - pick the node with the highest layer
-                    IEnumerable<Guid> remainingNodeIds = await _Storage.GetAllNodeIdsAsync(cancellationToken);
+                    IEnumerable<Guid> remainingNodeIds = await _Storage.GetAllNodeIdsAsync(cancellationToken).ConfigureAwait(false);
                     if (remainingNodeIds.Any())
                     {
                         Guid? newEntryPoint = null;
@@ -669,7 +669,7 @@
                 // For each updated neighbor, ensure they still have enough connections
                 foreach (Guid neighborId in nodesToUpdate)
                 {
-                    IHnswNode neighbor = await _Storage.GetNodeAsync(neighborId, cancellationToken);
+                    IHnswNode neighbor = await _Storage.GetNodeAsync(neighborId, cancellationToken).ConfigureAwait(false);
                     int neighborLayer = _LayerStorage.GetNodeLayer(neighborId);
                     Dictionary<int, HashSet<Guid>> connections = neighbor.GetNeighbors();
 
@@ -685,7 +685,7 @@
                             Guid? entryPoint = _Storage.EntryPoint;
                             if (entryPoint.HasValue)
                             {
-                                List<SearchCandidate> candidates = await SearchLayerAsync(neighbor.Vector, entryPoint.Value, targetCount * 2, layer, cancellationToken);
+                                List<SearchCandidate> candidates = await SearchLayerAsync(neighbor.Vector, entryPoint.Value, targetCount * 2, layer, cancellationToken).ConfigureAwait(false);
 
                                 // Filter out existing connections and nodes being removed
                                 HashSet<Guid> existingConnections = connections.ContainsKey(layer) ? connections[layer] : new HashSet<Guid>();
@@ -700,7 +700,7 @@
                                 foreach (SearchCandidate validCandidate in validCandidates)
                                 {
                                     neighbor.AddNeighbor(layer, validCandidate.NodeId);
-                                    IHnswNode candidate = await _Storage.GetNodeAsync(validCandidate.NodeId, cancellationToken);
+                                    IHnswNode candidate = await _Storage.GetNodeAsync(validCandidate.NodeId, cancellationToken).ConfigureAwait(false);
                                     candidate.AddNeighbor(layer, neighborId);
 
                                     // Check if candidate needs pruning
@@ -712,20 +712,20 @@
                                         List<SearchCandidate> pruneCandidates = new List<SearchCandidate>();
                                         foreach (Guid connId in candidateConnections[layer])
                                         {
-                                            IHnswNode conn = await _Storage.GetNodeAsync(connId, cancellationToken);
+                                            IHnswNode conn = await _Storage.GetNodeAsync(connId, cancellationToken).ConfigureAwait(false);
                                             pruneCandidates.Add(new SearchCandidate(DistanceFunction.Distance(candidate.Vector, conn.Vector), connId));
                                         }
 
                                         List<Guid> newConnections = await SelectNeighborsHeuristicAsync(
                                             candidate.Vector, pruneCandidates, targetCount, layer,
-                                            ExtendCandidates, KeepPrunedConnections, cancellationToken);
+                                            ExtendCandidates, KeepPrunedConnections, cancellationToken).ConfigureAwait(false);
 
                                         foreach (Guid connId in candidateConnections[layer].ToList())
                                         {
                                             if (!newConnections.Contains(connId))
                                             {
                                                 candidate.RemoveNeighbor(layer, connId);
-                                                IHnswNode connNode = await _Storage.GetNodeAsync(connId, cancellationToken);
+                                                IHnswNode connNode = await _Storage.GetNodeAsync(connId, cancellationToken).ConfigureAwait(false);
                                                 connNode.RemoveNeighbor(layer, validCandidate.NodeId);
                                             }
                                         }
@@ -781,7 +781,7 @@
             Guid currentNearest = entryPointId.Value;
 
             // Pre-fetch entry point and its neighbors for better performance
-            IHnswNode entryNode = await context.GetNodeAsync(entryPointId.Value);
+            IHnswNode entryNode = await context.GetNodeAsync(entryPointId.Value).ConfigureAwait(false);
             if (entryNode == null) return Enumerable.Empty<VectorResult>();
             Dictionary<int, HashSet<Guid>> entryNeighbors = entryNode.GetNeighbors();
 
@@ -790,23 +790,23 @@
             foreach (HashSet<Guid> layerNeighbors in entryNeighbors.Values)
                 neighborsToPrefetch.UnionWith(layerNeighbors);
             if (neighborsToPrefetch.Count > 0)
-                await context.PrefetchNodesAsync(neighborsToPrefetch);
+                await context.PrefetchNodesAsync(neighborsToPrefetch).ConfigureAwait(false);
 
             // Search from top layer to layer 0
             int entryPointLayer = _LayerStorage.GetNodeLayer(entryPointId.Value);
             for (int layer = entryPointLayer; layer > 0; layer--)
             {
-                currentNearest = await GreedySearchLayerWithContextAsync(vector, currentNearest, layer, context, cancellationToken);
+                currentNearest = await GreedySearchLayerWithContextAsync(vector, currentNearest, layer, context, cancellationToken).ConfigureAwait(false);
             }
 
             // Search at layer 0 with ef
-            List<SearchCandidate> candidates = await SearchLayerWithContextAsync(vector, currentNearest, searchEf, 0, context, cancellationToken);
+            List<SearchCandidate> candidates = await SearchLayerWithContextAsync(vector, currentNearest, searchEf, 0, context, cancellationToken).ConfigureAwait(false);
 
             // Build results - nodes are already cached
             List<VectorResult> results = new List<VectorResult>();
             foreach (SearchCandidate candidate in candidates.Take(count))
             {
-                IHnswNode node = await context.GetNodeAsync(candidate.NodeId);
+                IHnswNode node = await context.GetNodeAsync(candidate.NodeId).ConfigureAwait(false);
                 results.Add(new VectorResult
                 {
                     GUID = candidate.NodeId,
@@ -842,10 +842,10 @@
                 Nodes = new List<NodeState>()
             };
 
-            IEnumerable<Guid> nodeIds = await _Storage.GetAllNodeIdsAsync(cancellationToken);
+            IEnumerable<Guid> nodeIds = await _Storage.GetAllNodeIdsAsync(cancellationToken).ConfigureAwait(false);
             foreach (Guid nodeId in nodeIds)
             {
-                IHnswNode node = await _Storage.GetNodeAsync(nodeId, cancellationToken);
+                IHnswNode node = await _Storage.GetNodeAsync(nodeId, cancellationToken).ConfigureAwait(false);
                 NodeState nodeState = new NodeState
                 {
                     Id = nodeId,
@@ -878,14 +878,14 @@
             if (state.VectorDimension != _VectorDimension)
                 throw new ArgumentException($"State dimension {state.VectorDimension} does not match index dimension {_VectorDimension}");
 
-            await _IndexLock.WaitAsync(cancellationToken);
+            await _IndexLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 // Clear existing data from _Storage
-                IEnumerable<Guid> existingIds = await _Storage.GetAllNodeIdsAsync(cancellationToken);
+                IEnumerable<Guid> existingIds = await _Storage.GetAllNodeIdsAsync(cancellationToken).ConfigureAwait(false);
                 foreach (Guid nodeId in existingIds.ToList())
                 {
-                    await _Storage.RemoveNodeAsync(nodeId, cancellationToken);
+                    await _Storage.RemoveNodeAsync(nodeId, cancellationToken).ConfigureAwait(false);
                 }
 
                 // Clear existing layer data
@@ -921,14 +921,14 @@
                 // First pass: add all nodes and their layer assignments
                 foreach (NodeState nodeState in state.Nodes)
                 {
-                    await _Storage.AddNodeAsync(nodeState.Id, nodeState.Vector, cancellationToken);
+                    await _Storage.AddNodeAsync(nodeState.Id, nodeState.Vector, cancellationToken).ConfigureAwait(false);
                     _LayerStorage.SetNodeLayer(nodeState.Id, nodeState.Layer);
                 }
 
                 // Second pass: reconstruct connections
                 foreach (NodeState nodeState in state.Nodes)
                 {
-                    IHnswNode node = await _Storage.GetNodeAsync(nodeState.Id, cancellationToken);
+                    IHnswNode node = await _Storage.GetNodeAsync(nodeState.Id, cancellationToken).ConfigureAwait(false);
                     foreach (KeyValuePair<int, List<Guid>> kvp in nodeState.Neighbors)
                     {
                         foreach (Guid neighborId in kvp.Value)
@@ -1132,7 +1132,7 @@
         private async Task<Guid> GreedySearchLayerWithContextAsync(List<float> query, Guid entryPointId, int layer, SearchContext context, CancellationToken cancellationToken)
         {
             Guid currentNearest = entryPointId;
-            IHnswNode entryNode = await context.GetNodeAsync(entryPointId);
+            IHnswNode entryNode = await context.GetNodeAsync(entryPointId).ConfigureAwait(false);
             float currentDist = DistanceFunction.Distance(query, entryNode.Vector);
 
             bool improved = true;
@@ -1140,7 +1140,7 @@
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 improved = false;
-                IHnswNode currentNode = await context.GetNodeAsync(currentNearest);
+                IHnswNode currentNode = await context.GetNodeAsync(currentNearest).ConfigureAwait(false);
                 Dictionary<int, HashSet<Guid>> neighbors = currentNode.GetNeighbors();
 
                 if (neighbors.ContainsKey(layer))
@@ -1149,11 +1149,11 @@
                     List<Guid> layerNeighbors = neighbors[layer].ToList();
                     if (layerNeighbors.Count > 0)
                     {
-                        await context.PrefetchNodesAsync(layerNeighbors);
+                        await context.PrefetchNodesAsync(layerNeighbors).ConfigureAwait(false);
 
                         foreach (Guid neighborId in layerNeighbors)
                         {
-                            IHnswNode neighbor = await context.GetNodeAsync(neighborId);
+                            IHnswNode neighbor = await context.GetNodeAsync(neighborId).ConfigureAwait(false);
                             float dist = DistanceFunction.Distance(query, neighbor.Vector);
                             if (dist < currentDist)
                             {
@@ -1176,7 +1176,7 @@
             MinHeap<Guid> dynamicNearestNeighbors = new MinHeap<Guid>(Comparer<Guid>.Default);
             float farthestDistance = float.MaxValue;
 
-            IHnswNode entryPoint = await context.GetNodeAsync(entryPointId);
+            IHnswNode entryPoint = await context.GetNodeAsync(entryPointId).ConfigureAwait(false);
             float d = DistanceFunction.Distance(query, entryPoint.Vector);
             candidates.Push(d, entryPointId);
             dynamicNearestNeighbors.Push(-d, entryPointId); // Use negative distance for max-heap behavior
@@ -1191,7 +1191,7 @@
                 if (current.priority > farthestDistance)
                     break;
 
-                IHnswNode currentNode = await context.GetNodeAsync(current.item);
+                IHnswNode currentNode = await context.GetNodeAsync(current.item).ConfigureAwait(false);
                 Dictionary<int, HashSet<Guid>> neighbors = currentNode.GetNeighbors();
 
                 if (neighbors.TryGetValue(layer, out HashSet<Guid>? layerNeighbors))
