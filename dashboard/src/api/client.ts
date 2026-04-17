@@ -303,6 +303,25 @@ function buildEnumQueryString(query?: EnumerationQuery): string {
   if (query.suffix) parts.push(`suffix=${encodeURIComponent(query.suffix)}`);
   if (query.createdAfterUtc) parts.push(`createdAfterUtc=${encodeURIComponent(query.createdAfterUtc)}`);
   if (query.createdBeforeUtc) parts.push(`createdBeforeUtc=${encodeURIComponent(query.createdBeforeUtc)}`);
+  if (query.labels && query.labels.length > 0) {
+    // Server expects `labels=a,b`; individual labels must not contain ','.
+    const filtered = query.labels.filter((s) => s && s.length > 0);
+    if (filtered.length > 0) {
+      parts.push(`labels=${encodeURIComponent(filtered.join(','))}`);
+    }
+  }
+  if (query.tags) {
+    // Server expects `tags=k:v,k:v`; keys must not contain ':' or ','; values must not contain ','.
+    const pairs: string[] = [];
+    for (const [k, v] of Object.entries(query.tags)) {
+      if (!k) continue;
+      pairs.push(`${k}:${v ?? ''}`);
+    }
+    if (pairs.length > 0) {
+      parts.push(`tags=${encodeURIComponent(pairs.join(','))}`);
+    }
+  }
+  if (query.caseInsensitive) parts.push('caseInsensitive=true');
   return parts.length > 0 ? `?${parts.join('&')}` : '';
 }
 

@@ -37,6 +37,12 @@ export interface SearchRequest {
   Vector: number[];
   K: number;
   Ef?: number | null;
+  /** AND-semantics label filter. A result is kept only if every label is present. */
+  Labels?: string[];
+  /** AND-semantics tag filter. Every key must exist on the vector's Tags with an equal stringified value. */
+  Tags?: Record<string, string>;
+  /** When true, label/tag comparisons are case-insensitive. Default false. */
+  CaseInsensitive?: boolean;
 }
 
 export interface VectorSearchResult {
@@ -59,6 +65,11 @@ export interface VectorEntry {
 export interface SearchResponse {
   results: VectorSearchResult[];
   searchTimeMs: number;
+  /**
+   * Number of HNSW candidates dropped by the server-side Labels/Tags filter.
+   * Zero when no filter was supplied.
+   */
+  filteredCount: number;
 }
 
 export interface ApiErrorResponse {
@@ -82,6 +93,12 @@ export interface EnumerationQuery {
   suffix?: string;
   createdAfterUtc?: string;
   createdBeforeUtc?: string;
+  /** AND-semantics label filter. A record is kept only if every label is present. */
+  labels?: string[];
+  /** AND-semantics tag filter. Every key must exist on the record's Tags with an equal stringified value. */
+  tags?: Record<string, string>;
+  /** When true, label/tag comparisons are case-insensitive. Default false. */
+  caseInsensitive?: boolean;
 }
 
 export interface EnumerationResult<T> {
@@ -94,6 +111,8 @@ export interface EnumerationResult<T> {
   recordsRemaining: number;
   timestampUtc: string;
   objects: T[];
+  /** Number of records dropped by the server-side Labels/Tags filter. Zero when no metadata filter was supplied. */
+  filteredCount: number;
 }
 
 export interface RequestHistoryEntry {

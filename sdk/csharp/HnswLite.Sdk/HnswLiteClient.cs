@@ -453,6 +453,35 @@ namespace HnswLite.Sdk
                     queryParams.Add("createdAfterUtc=" + query.CreatedAfterUtc.Value.ToString("o"));
                 if (query.CreatedBeforeUtc.HasValue)
                     queryParams.Add("createdBeforeUtc=" + query.CreatedBeforeUtc.Value.ToString("o"));
+
+                if (query.Labels != null && query.Labels.Count > 0)
+                {
+                    List<string> encoded = new List<string>(query.Labels.Count);
+                    foreach (string label in query.Labels)
+                    {
+                        if (!string.IsNullOrEmpty(label))
+                            encoded.Add(Uri.EscapeDataString(label));
+                    }
+                    if (encoded.Count > 0)
+                        queryParams.Add("labels=" + string.Join(",", encoded));
+                }
+
+                if (query.Tags != null && query.Tags.Count > 0)
+                {
+                    List<string> encoded = new List<string>(query.Tags.Count);
+                    foreach (KeyValuePair<string, string> kv in query.Tags)
+                    {
+                        if (string.IsNullOrEmpty(kv.Key)) continue;
+                        string key = Uri.EscapeDataString(kv.Key);
+                        string value = Uri.EscapeDataString(kv.Value ?? string.Empty);
+                        encoded.Add(key + ":" + value);
+                    }
+                    if (encoded.Count > 0)
+                        queryParams.Add("tags=" + string.Join(",", encoded));
+                }
+
+                if (query.CaseInsensitive)
+                    queryParams.Add("caseInsensitive=true");
             }
 
             return queryParams;

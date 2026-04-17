@@ -196,6 +196,101 @@ async function main(): Promise<void> {
     );
   });
 
+  // 13a. Add vectors with Labels/Tags (for filter tests)
+  let filterGuidA = "";
+  let filterGuidB = "";
+  let filterGuidC = "";
+  await run("addVector with labels/tags (metadata)", async () => {
+    const a = (await client.addVector(TEST_INDEX, {
+      vector: [0.5, 0.5, 0.0, 0.0],
+      name: "filter-a",
+      labels: ["red", "small"],
+      tags: { env: "prod", owner: "alice" },
+    })) as AddVectorRequest;
+    const b = (await client.addVector(TEST_INDEX, {
+      vector: [0.4, 0.4, 0.1, 0.0],
+      name: "filter-b",
+      labels: ["red", "big"],
+      tags: { env: "prod", owner: "bob" },
+    })) as AddVectorRequest;
+    const c = (await client.addVector(TEST_INDEX, {
+      vector: [0.3, 0.3, 0.2, 0.0],
+      name: "filter-c",
+      labels: ["blue", "small"],
+      tags: { env: "dev", owner: "alice" },
+    })) as AddVectorRequest;
+
+    assert(typeof a.guid === "string" && a.guid!.length > 0, "expected GUID A");
+    assert(typeof b.guid === "string" && b.guid!.length > 0, "expected GUID B");
+    assert(typeof c.guid === "string" && c.guid!.length > 0, "expected GUID C");
+    filterGuidA = a.guid!;
+    filterGuidB = b.guid!;
+    filterGuidC = c.guid!;
+  });
+
+  // 13b. Search with Labels filter (AND)
+  await run("search (Labels filter, AND)", async () => {
+    const resp = await client.search(TEST_INDEX, {
+      vector: [0.5, 0.5, 0.0, 0.0],
+      k: 10,
+      labels: ["red", "small"],
+    });
+    // Only vector A has BOTH 'red' AND 'small'.
+    const guids = resp.results.map((r) => r.guid);
+    assert(guids.includes(filterGuidA), `expected A in ${JSON.stringify(guids)}`);
+    assert(!guids.includes(filterGuidB), "B has 'red' but not 'small'");
+    assert(!guids.includes(filterGuidC), "C has 'small' but not 'red'");
+    assert(resp.filteredCount > 0, `expected filteredCount > 0, got ${resp.filteredCount}`);
+    // Metadata should come back on results now.
+    const a = resp.results.find((r) => r.guid === filterGuidA);
+    assert(!!a && Array.isArray(a.labels) && a.labels!.length === 2, "expected labels populated on result");
+  });
+
+  // 13c. Search with Tags filter (AND)
+  await run("search (Tags filter, AND)", async () => {
+    const resp = await client.search(TEST_INDEX, {
+      vector: [0.5, 0.5, 0.0, 0.0],
+      k: 10,
+      tags: { env: "prod", owner: "alice" },
+    });
+    const guids = resp.results.map((r) => r.guid);
+    assert(guids.includes(filterGuidA), "A has env=prod and owner=alice");
+    assert(!guids.includes(filterGuidB), "B has env=prod but owner=bob");
+    assert(!guids.includes(filterGuidC), "C has owner=alice but env=dev");
+  });
+
+  // 13d. Search with caseInsensitive=true
+  await run("search (caseInsensitive)", async () => {
+    const miss = await client.search(TEST_INDEX, {
+      vector: [0.5, 0.5, 0.0, 0.0],
+      k: 10,
+      labels: ["RED"],
+      caseInsensitive: false,
+    });
+    assert(miss.results.length === 0, `case-sensitive 'RED' should not match, got ${miss.results.length}`);
+
+    const hit = await client.search(TEST_INDEX, {
+      vector: [0.5, 0.5, 0.0, 0.0],
+      k: 10,
+      labels: ["RED"],
+      caseInsensitive: true,
+    });
+    const guids = hit.results.map((r) => r.guid);
+    assert(guids.includes(filterGuidA) && guids.includes(filterGuidB),
+      `case-insensitive 'RED' should match A and B; got ${JSON.stringify(guids)}`);
+  });
+
+  // 13e. Enumerate with Labels + caseInsensitive
+  await run("enumerateVectors (Labels filter + caseInsensitive)", async () => {
+    const result = await client.enumerateVectors(
+      TEST_INDEX,
+      { maxResults: 100, labels: ["RED"], caseInsensitive: true },
+      false,
+    );
+    assert(result.totalRecords === 2, `expected totalRecords=2, got ${result.totalRecords}`);
+    assert(result.filteredCount > 0, `expected filteredCount > 0, got ${result.filteredCount}`);
+  });
+
   // 14. Remove vector
   await run("removeVector", async () => {
     assert(vectorGuid.length > 0, "no vector guid captured from addVector");

@@ -34,8 +34,11 @@ All parameters are optional. Aliases are matched case-insensitively.
 | `suffix`           | string   |                | *(none)*           | Case-insensitive `EndsWith` filter. |
 | `createdAfterUtc`  | ISO-8601 | `after`        | *(none)*           | Keep only records created strictly after this timestamp. |
 | `createdBeforeUtc` | ISO-8601 | `before`       | *(none)*           | Keep only records created strictly before this timestamp. |
+| `labels`           | string   |                | *(none)*           | Comma-separated list of required labels. **AND semantics** — a record is kept only when every label is present on its `Labels`. Individual labels cannot contain `,`. |
+| `tags`             | string   |                | *(none)*           | Comma-separated list of `key:value` pairs. **AND semantics** — every key must exist on the record's `Tags` with a stringified value equal to the filter value. Keys cannot contain `:` or `,`; values cannot contain `,`. |
+| `caseInsensitive`  | bool     |                | `false`            | When `true`, labels, tag keys, and tag values are compared using `StringComparison.OrdinalIgnoreCase`. Accepts `true` / `false` / `1` / `0`. |
 
-Invalid values (`skip=-1`, unknown `ordering`, malformed timestamp, `createdAfterUtc >= createdBeforeUtc`, or `skip > 0` combined with a `continuationToken`) yield `400 Bad Request` with a descriptive message.
+Invalid values (`skip=-1`, unknown `ordering`, malformed timestamp, `createdAfterUtc >= createdBeforeUtc`, malformed `tags` segment, unrecognised `caseInsensitive` value, or `skip > 0` combined with a `continuationToken`) yield `400 Bad Request` with a descriptive message.
 
 ### `EnumerationResult<T>`
 
@@ -48,13 +51,17 @@ Invalid values (`skip=-1`, unknown `ordering`, malformed timestamp, `createdAfte
   "TotalRecords": 137,
   "RecordsRemaining": 112,
   "TimestampUtc": "2026-04-16T00:44:46.248497Z",
+  "FilteredCount": 0,
   "Objects": [ /* page contents */ ]
 }
 ```
 
 `ContinuationToken` is serialized only when the page is not the last and the
 underlying collection supports cursor paging. `TotalRecords` reflects the
-filtered set — not the total records in the database.
+filtered set — not the total records in the database. `FilteredCount` is the
+number of records dropped by the `labels` / `tags` metadata filter specifically
+(independent of `prefix`/`suffix`/`createdAfter/Before`) — zero when no
+metadata filter was supplied.
 
 ## Endpoints
 
@@ -135,15 +142,28 @@ Delete an index and all its vectors.
 
 K-nearest-neighbour query.
 
-- Body: `{ "Vector": [...], "K": 10, "Ef": null | int }`.
-- Response: `SearchResponse` — `{ "Results": [{GUID, Vector, Distance}], "SearchTimeMs": n }`.
+- Body:
+  ```json
+  {
+    "Vector": [0.1, 0.2, 0.3, 0.4],
+    "K": 10,
+    "Ef": null,
+    "Labels": ["red", "small"],
+    "Tags": { "env": "prod", "owner": "alice" },
+    "CaseInsensitive": false
+  }
+  ```
+  - `Labels`, `Tags`, `CaseInsensitive` are optional (v1.2+). `Labels` uses **AND** semantics (every label must be present on the vector). `Tags` uses **AND** on key/value equality; stored tag values are stringified via `Convert.ToString(value, InvariantCulture)` before comparison. `CaseInsensitive=true` folds both labels and tag keys/values with `OrdinalIgnoreCase`.
+- Response: `SearchResponse` — `{ "Results": [{GUID, Vector, Distance, Name, Labels, Tags}], "SearchTimeMs": n, "FilteredCount": m }`.
+  - `Name` / `Labels` / `Tags` are populated on each result when set on the stored vector (null otherwise).
+  - `FilteredCount` is the number of HNSW candidates dropped by the metadata filter — zero when no filter is set. Because filtering is applied **after** graph traversal, restrictive filters can return fewer than `K` results; `FilteredCount` makes this visible.
 - Errors: `400` (dimension mismatch), `404` (index not found).
 
 ### `GET /v1.0/indexes/{name}/vectors`
 
 Enumerate vectors stored in an index.
 
-- Query: standard `EnumerationQuery` fields (`maxResults`, `skip`, `ordering`, `prefix`, `suffix`, `createdAfterUtc`, `createdBeforeUtc`) — see *Enumeration contract* above. The `prefix` filter is matched case-insensitively against the GUID's string form.
+- Query: standard `EnumerationQuery` fields (`maxResults`, `skip`, `ordering`, `prefix`, `suffix`, `createdAfterUtc`, `createdBeforeUtc`, `labels`, `tags`, `caseInsensitive`) — see *Enumeration contract* above. The `prefix` filter is matched case-insensitively against the GUID's string form. The `labels` / `tags` filters are applied **before** pagination, so `TotalRecords` reflects the filtered set and `FilteredCount` reports how many records were dropped by them.
 - Additional query parameter: `includeVectors=true|false` (default `false`). Aliases: `IncludeVectors`, `include`. When `false` the `Vector` field is omitted from every object in the page.
 - Response: `EnumerationResult<VectorEntryResponse>` with `Objects` shaped as:
   ```json
@@ -162,6 +182,10 @@ curl -H "x-api-key: $KEY" \
 # include the vector values
 curl -H "x-api-key: $KEY" \
   "http://localhost:8080/v1.0/indexes/my-index/vectors?maxResults=10&includeVectors=true"
+
+# filter by labels and tags (AND semantics, case-insensitive)
+curl -H "x-api-key: $KEY" \
+  "http://localhost:8080/v1.0/indexes/my-index/vectors?labels=red,small&tags=env:prod,owner:alice&caseInsensitive=true"
 ```
 
 ### `GET /v1.0/indexes/{name}/vectors/{guid}`

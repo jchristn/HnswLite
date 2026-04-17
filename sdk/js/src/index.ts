@@ -35,6 +35,17 @@ function toCamelCase(str: string): string {
   return str.charAt(0).toLowerCase() + str.slice(1);
 }
 
+/**
+ * Fields whose inner keys are DATA (not schema) and must not be transformed
+ * between camelCase and PascalCase by the key-walker. Comparison is
+ * case-insensitive so `tags`, `Tags`, and any variant are all opaque.
+ */
+const OPAQUE_KEYS: ReadonlySet<string> = new Set(["tags"]);
+
+function isOpaqueKey(k: string): boolean {
+  return OPAQUE_KEYS.has(k.toLowerCase());
+}
+
 /** Recursively convert all object keys from camelCase to PascalCase. */
 function keysToPascal(obj: unknown): unknown {
   if (obj === null || obj === undefined) return obj;
@@ -42,7 +53,7 @@ function keysToPascal(obj: unknown): unknown {
   if (typeof obj === "object") {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
-      out[toPascalCase(k)] = keysToPascal(v);
+      out[toPascalCase(k)] = isOpaqueKey(k) ? v : keysToPascal(v);
     }
     return out;
   }
@@ -56,7 +67,7 @@ function keysToCamel(obj: unknown): unknown {
   if (typeof obj === "object") {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
-      out[toCamelCase(k)] = keysToCamel(v);
+      out[toCamelCase(k)] = isOpaqueKey(k) ? v : keysToCamel(v);
     }
     return out;
   }
@@ -166,6 +177,24 @@ export class HnswLiteClient {
       if (query.suffix !== undefined) q["suffix"] = query.suffix;
       if (query.createdAfterUtc !== undefined) q["createdAfterUtc"] = query.createdAfterUtc;
       if (query.createdBeforeUtc !== undefined) q["createdBeforeUtc"] = query.createdBeforeUtc;
+      // Labels are joined with commas. Individual labels must not contain ','.
+      // URLSearchParams (used in request()) handles percent-encoding of the
+      // overall value, so we don't pre-encode here.
+      if (query.labels && query.labels.length > 0) {
+        const filtered = query.labels.filter((s) => s !== undefined && s !== null && s !== "");
+        if (filtered.length > 0) q["labels"] = filtered.join(",");
+      }
+      // Tags are serialised as `key:value,key:value`. Keys must not contain ':'
+      // or ','; values must not contain ','.
+      if (query.tags) {
+        const parts: string[] = [];
+        for (const [k, v] of Object.entries(query.tags)) {
+          if (!k) continue;
+          parts.push(`${k}:${v ?? ""}`);
+        }
+        if (parts.length > 0) q["tags"] = parts.join(",");
+      }
+      if (query.caseInsensitive) q["caseInsensitive"] = "true";
     }
     return q;
   }

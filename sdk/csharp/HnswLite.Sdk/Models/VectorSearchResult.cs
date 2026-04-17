@@ -25,6 +25,21 @@ namespace HnswLite.Sdk.Models
         /// </summary>
         public float Distance { get; set; } = 0;
 
+        /// <summary>
+        /// Optional human-readable name of the vector. Null when no name was set.
+        /// </summary>
+        public string? Name { get; set; } = null;
+
+        /// <summary>
+        /// Optional classification labels attached to the vector. Null when none were set.
+        /// </summary>
+        public List<string>? Labels { get; set; } = null;
+
+        /// <summary>
+        /// Optional arbitrary key/value tags attached to the vector. Null when none were set.
+        /// </summary>
+        public Dictionary<string, object>? Tags { get; set; } = null;
+
         #endregion
     }
 }

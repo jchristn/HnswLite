@@ -49,6 +49,47 @@ BASE_URL=http://localhost:8080 API_KEY=YOUR_API_KEY node dist/tests/integration.
 
 ## API coverage matrix
 
+### Filtering by labels and tags (v1.2+)
+
+All three SDKs accept the same optional metadata filter triple — `labels`,
+`tags`, and `caseInsensitive` (AND semantics across both filters) — on `search`
+and `enumerateVectors`. The response carries a `FilteredCount` showing how many
+records were dropped by the filter.
+
+```csharp
+// C#
+var resp = await client.SearchAsync("demo", new SearchRequest {
+    Vector = query,
+    K = 10,
+    Labels = new List<string> { "red", "small" },
+    Tags   = new Dictionary<string, string> { { "env", "prod" } },
+    CaseInsensitive = false
+});
+Console.WriteLine($"Matches={resp.Results.Count}, Filtered={resp.FilteredCount}");
+```
+
+```python
+# Python
+resp = client.search(
+    "demo", query, k=10,
+    labels=["red", "small"],
+    tags={"env": "prod"},
+    case_insensitive=False,
+)
+print(resp["Results"], resp["FilteredCount"])
+```
+
+```ts
+// TypeScript
+const resp = await client.search("demo", {
+  vector: query, k: 10,
+  labels: ["red", "small"],
+  tags: { env: "prod" },
+  caseInsensitive: false,
+});
+console.log(resp.results, resp.filteredCount);
+```
+
 All three SDKs expose the same method set:
 
 | Endpoint                                    | C# method              | Python method          | JS/TS method           |

@@ -37,6 +37,10 @@ export default function Vectors() {
   const [skip, setSkip] = useState<number>(0);
   const [maxResults, setMaxResults] = useState<number>(50);
   const [prefix, setPrefix] = useState<string>('');
+  const [labelsField, setLabelsField] = useState<string>('');
+  const [tagsField, setTagsField] = useState<string>('');
+  const [caseInsensitive, setCaseInsensitive] = useState<boolean>(false);
+  const [filterError, setFilterError] = useState<string | null>(null);
   const [includeVectors, setIncludeVectors] = useState<boolean>(false);
 
   const [viewingJson, setViewingJson] = useState<VectorEntry | null>(null);
@@ -65,12 +69,46 @@ export default function Vectors() {
     }
     setLoading(true);
     setError(null);
+    setFilterError(null);
+
+    // Parse optional label/tag filters before issuing the request so parse errors
+    // surface immediately instead of shipping an empty query.
+    const labels = labelsField.trim().length > 0
+      ? labelsField.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+      : undefined;
+
+    let tags: Record<string, string> | undefined;
+    if (tagsField.trim().length > 0) {
+      try {
+        const obj: unknown = JSON.parse(tagsField);
+        if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
+          throw new Error('Tags must be a JSON object.');
+        }
+        tags = {};
+        for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+          tags[k] = v === null || v === undefined ? '' : String(v);
+        }
+      } catch (e) {
+        setFilterError(e instanceof Error ? e.message : String(e));
+        setLoading(false);
+        return;
+      }
+    }
+
     try {
       const [ix, result] = await Promise.all([
         getIndex(selectedName),
         enumerateVectors(
           selectedName,
-          { skip, maxResults, prefix: prefix.trim() || undefined, ordering: 'NameAscending' },
+          {
+            skip,
+            maxResults,
+            prefix: prefix.trim() || undefined,
+            ordering: 'NameAscending',
+            labels,
+            tags,
+            caseInsensitive: caseInsensitive || undefined,
+          },
           includeVectors,
         ),
       ]);
@@ -81,7 +119,7 @@ export default function Vectors() {
     } finally {
       setLoading(false);
     }
-  }, [selectedName, skip, maxResults, prefix, includeVectors]);
+  }, [selectedName, skip, maxResults, prefix, labelsField, tagsField, caseInsensitive, includeVectors]);
 
   useEffect(() => {
     void reload();
@@ -145,6 +183,7 @@ export default function Vectors() {
       </div>
 
       {error && <div className="form-error">{error}</div>}
+      {filterError && <div className="form-error">Filter parse error: {filterError}</div>}
 
       <div className="workspace-card" style={{ padding: 12 }}>
         <div className="field-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
@@ -194,6 +233,56 @@ export default function Vectors() {
             </div>
           </label>
         </div>
+
+        <details style={{ marginTop: 12, border: '1px solid var(--border-color)', borderRadius: 6, padding: '8px 12px' }}>
+          <summary style={{ cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+            Metadata filters (Labels &amp; Tags)
+          </summary>
+          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+              Both filters use AND semantics — a record is kept only when every label you list is present and
+              every tag key/value matches. Records dropped by the filter are reported as <code>FilteredCount</code> in the pagination footer.
+            </div>
+            <label className="field">
+              <span>Labels (comma-separated; every label must be present)</span>
+              <input
+                value={labelsField}
+                onChange={(e) => {
+                  setLabelsField(e.target.value);
+                  setSkip(0);
+                }}
+                placeholder="red, small"
+                disabled={!selectedName}
+              />
+            </label>
+            <label className="field">
+              <span>Tags (JSON object; every key must match)</span>
+              <textarea
+                rows={3}
+                value={tagsField}
+                onChange={(e) => {
+                  setTagsField(e.target.value);
+                  setSkip(0);
+                }}
+                placeholder='{"env": "prod", "owner": "alice"}'
+                disabled={!selectedName}
+              />
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem' }}>
+              <input
+                type="checkbox"
+                checked={caseInsensitive}
+                onChange={(e) => {
+                  setCaseInsensitive(e.target.checked);
+                  setSkip(0);
+                }}
+                disabled={!selectedName}
+                style={{ width: 'auto' }}
+              />
+              <span>Case-insensitive label/tag comparison</span>
+            </label>
+          </div>
+        </details>
       </div>
 
       <div className="workspace-card">
@@ -271,6 +360,11 @@ export default function Vectors() {
             </tbody>
           </table>
         </div>
+        {(page?.filteredCount ?? 0) > 0 && (
+          <div style={{ padding: '6px 12px', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+            {page!.filteredCount.toLocaleString()} record{page!.filteredCount === 1 ? '' : 's'} filtered out by metadata filter
+          </div>
+        )}
         <Pagination
           skip={skip}
           maxResults={maxResults}

@@ -1,6 +1,39 @@
 # Change Log
 
-## v1.1.2 (current)
+## v1.2.0
+
+### Metadata filters on search and enumeration
+
+- **`POST /v1.0/indexes/{name}/search`** and **`GET /v1.0/indexes/{name}/vectors`** both accept new optional `Labels`, `Tags`, and `CaseInsensitive` parameters.
+  - **AND semantics on both** — a record is kept only when every label in the filter is present on its `Labels`, AND every key in the `Tags` filter exists on the record's `Tags` with an equal stringified value.
+  - **`CaseInsensitive`** (default `false`) toggles `StringComparison.OrdinalIgnoreCase` for labels, tag keys, and tag values.
+  - Tag values on the stored side are stringified via `Convert.ToString(value, InvariantCulture)` before comparison, so `42L` equals `"42"` and `true` equals `"True"`.
+  - Query-string form: `?labels=red,small&tags=env:prod,owner:alice&caseInsensitive=true`.
+- **`FilteredCount` on responses** — both `SearchResponse` and `EnumerationResult<T>` now report how many candidates/records were dropped by the metadata filter. Zero when no filter was supplied. Search can return fewer than `K` results when the filter is restrictive; `FilteredCount` makes this visible instead of silent.
+- **Shared `MetadataFilter` helper** (`HnswIndex.Server.Services.MetadataFilter`) — single predicate used by both endpoints; handles null filters as no-ops, case folding, and invariant-culture stringification.
+- **Enumeration pagination correctness** — the metadata filter is applied before `Skip`/`MaxResults` so `TotalRecords` stays accurate.
+- **23 new test cases** across four suites in `Test.Shared/MetadataFilterSuites.cs` (helper unit tests, search end-to-end, enumerate end-to-end, query-string parsing). Total: 81 passing cases.
+
+### SDKs
+
+- **C# SDK** — `SearchRequest` / `EnumerationQuery` gained `Labels` / `Tags` / `CaseInsensitive`; `SearchResponse` / `EnumerationResult` gained `FilteredCount`; `VectorSearchResult` now surfaces `Name` / `Labels` / `Tags` (previously dropped by the SDK model); `AddVectorRequest` gained the metadata triple so callers can set what they will later filter on. The enumeration query-string builder handles the new parameters with URL encoding.
+- **Python SDK** — `SearchRequest`, new `EnumerationQuery` dataclass, `SearchResponse`, `EnumerationResult`, `VectorSearchResult`, `VectorEntry`, and `AddVectorRequest` all updated. `search()` / `enumerate_vectors()` / `add_vector()` client methods gained the matching keyword arguments.
+- **JS/TS SDK** — mirror type additions; **bug fix:** `keysToPascal` / `keysToCamel` previously recursed into every object blindly, which would have mangled user-supplied tag keys (`{env: 'prod'}` → `{Env: 'prod'}`). An `OPAQUE_KEYS` set now leaves `tags` values verbatim.
+
+### Dashboard
+
+- **Search page** — collapsible "Metadata filters" section with Labels (comma-separated), Tags (JSON object), and Case-insensitive toggle. `FilteredCount` appears in the results header.
+- **Vectors page** — same three filter inputs alongside the existing GUID-prefix control. `FilteredCount` appears above the pagination footer when non-zero.
+- Type/client plumbing updated to match the server contract.
+
+### Documentation
+
+- `README.md` — new "New in v1.2.0" section and a "Filtering by labels and tags" subsection with cURL / JSON examples and the v1.2 limitations.
+- `METADATA_FILTERS.md` — implementation plan kept in sync with execution.
+
+---
+
+## v1.1.2 (previous)
 
 ### Performance — `ConfigureAwait(false)` audit
 

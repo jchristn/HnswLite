@@ -242,6 +242,110 @@ def run_all(base_url: str, api_key: str):
 
     test_search_with_ef()
 
+    # -- add vectors with metadata for filter tests ---------------------------
+
+    filter_guid_a = None
+    filter_guid_b = None
+    filter_guid_c = None
+
+    @run_test("add_vector_with_metadata")
+    def test_add_vector_with_metadata():
+        nonlocal filter_guid_a, filter_guid_b, filter_guid_c
+        a = client.add_vector(
+            index_name, [0.5, 0.5, 0.0, 0.0],
+            vector_name="filter-a",
+            labels=["red", "small"],
+            tags={"env": "prod", "owner": "alice"},
+        )
+        b = client.add_vector(
+            index_name, [0.4, 0.4, 0.1, 0.0],
+            vector_name="filter-b",
+            labels=["red", "big"],
+            tags={"env": "prod", "owner": "bob"},
+        )
+        c = client.add_vector(
+            index_name, [0.3, 0.3, 0.2, 0.0],
+            vector_name="filter-c",
+            labels=["blue", "small"],
+            tags={"env": "dev", "owner": "alice"},
+        )
+        filter_guid_a = a["GUID"]
+        filter_guid_b = b["GUID"]
+        filter_guid_c = c["GUID"]
+        vector_guids.extend([filter_guid_a, filter_guid_b, filter_guid_c])
+
+    test_add_vector_with_metadata()
+
+    # -- search with Labels filter (AND) --------------------------------------
+
+    @run_test("search_labels_and")
+    def test_search_labels_and():
+        resp = client.search(
+            index_name, [0.5, 0.5, 0.0, 0.0], k=10,
+            labels=["red", "small"],
+        )
+        # Only vector A has BOTH 'red' AND 'small'.
+        guids = [r["GUID"] for r in resp["Results"]]
+        assert filter_guid_a in guids, f"expected {filter_guid_a} in {guids}"
+        assert filter_guid_b not in guids
+        assert filter_guid_c not in guids
+        assert resp.get("FilteredCount", 0) > 0
+
+    test_search_labels_and()
+
+    # -- search with Tags filter (AND) ----------------------------------------
+
+    @run_test("search_tags_and")
+    def test_search_tags_and():
+        resp = client.search(
+            index_name, [0.5, 0.5, 0.0, 0.0], k=10,
+            tags={"env": "prod", "owner": "alice"},
+        )
+        guids = [r["GUID"] for r in resp["Results"]]
+        assert filter_guid_a in guids
+        assert filter_guid_b not in guids
+        assert filter_guid_c not in guids
+
+    test_search_tags_and()
+
+    # -- search with case_insensitive=True ------------------------------------
+
+    @run_test("search_case_insensitive")
+    def test_search_case_insensitive():
+        miss = client.search(
+            index_name, [0.5, 0.5, 0.0, 0.0], k=10,
+            labels=["RED"], case_insensitive=False,
+        )
+        assert len(miss["Results"]) == 0, (
+            f"case-sensitive 'RED' matched {len(miss['Results'])} results"
+        )
+
+        hit = client.search(
+            index_name, [0.5, 0.5, 0.0, 0.0], k=10,
+            labels=["RED"], case_insensitive=True,
+        )
+        guids = [r["GUID"] for r in hit["Results"]]
+        assert filter_guid_a in guids and filter_guid_b in guids, (
+            f"case-insensitive 'RED' should match A and B; got {guids}"
+        )
+
+    test_search_case_insensitive()
+
+    # -- enumerate with Labels filter and case_insensitive --------------------
+
+    @run_test("enumerate_labels_case_insensitive")
+    def test_enumerate_labels_case_insensitive():
+        resp = client.enumerate_vectors(
+            index_name, max_results=100,
+            labels=["RED"], case_insensitive=True,
+        )
+        assert resp["TotalRecords"] == 2, (
+            f"expected 2 records, got {resp['TotalRecords']}"
+        )
+        assert resp.get("FilteredCount", 0) > 0
+
+    test_enumerate_labels_case_insensitive()
+
     # -- remove vector --------------------------------------------------------
 
     @run_test("remove_vector")

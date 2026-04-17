@@ -1,6 +1,7 @@
 namespace HnswIndex.Server.Classes
 {
     using System;
+    using System.Collections.Generic;
     using System.Collections.Specialized;
     using System.Globalization;
     using System.Text.Json.Serialization;
@@ -71,6 +72,28 @@ namespace HnswIndex.Server.Classes
         /// Filter: keep only records with CreatedUtc &lt; this timestamp.
         /// </summary>
         public DateTime? CreatedBeforeUtc { get; set; } = null;
+
+        /// <summary>
+        /// Optional label filter. A record is kept only when <b>every</b> label in this list
+        /// is present on the record's <c>Labels</c> collection (AND semantics).
+        /// Comparison is case-sensitive unless <see cref="CaseInsensitive"/> is true.
+        /// Null or empty disables label filtering.
+        /// </summary>
+        public List<string>? Labels { get; set; } = null;
+
+        /// <summary>
+        /// Optional tag filter. A record is kept only when <b>every</b> key in this dictionary
+        /// exists on the record's <c>Tags</c> and its stringified value equals the filter value
+        /// (AND semantics). Comparison is case-sensitive unless <see cref="CaseInsensitive"/>
+        /// is true. Null or empty disables tag filtering.
+        /// </summary>
+        public Dictionary<string, string>? Tags { get; set; } = null;
+
+        /// <summary>
+        /// When true, label and tag comparisons (both keys and values) use
+        /// <c>StringComparison.OrdinalIgnoreCase</c>. Default is false (exact match).
+        /// </summary>
+        public bool CaseInsensitive { get; set; } = false;
 
         #endregion
 
@@ -159,6 +182,49 @@ namespace HnswIndex.Server.Classes
                         DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out DateTime parsed))
                     throw new ArgumentException("createdBeforeUtc must be an ISO-8601 timestamp.");
                 result.CreatedBeforeUtc = parsed;
+            }
+
+            string? labels = query["labels"] ?? query["Labels"];
+            if (labels != null)
+            {
+                List<string> parsedLabels = new List<string>();
+                foreach (string segment in labels.Split(','))
+                {
+                    string trimmed = segment.Trim();
+                    if (trimmed.Length > 0) parsedLabels.Add(trimmed);
+                }
+                if (parsedLabels.Count > 0) result.Labels = parsedLabels;
+            }
+
+            string? tags = query["tags"] ?? query["Tags"];
+            if (tags != null)
+            {
+                Dictionary<string, string> parsedTags = new Dictionary<string, string>();
+                foreach (string segment in tags.Split(','))
+                {
+                    string trimmed = segment.Trim();
+                    if (trimmed.Length == 0) continue;
+                    int colon = trimmed.IndexOf(':');
+                    if (colon <= 0)
+                        throw new ArgumentException("tags must be a comma-separated list of key:value pairs.");
+                    string key = trimmed.Substring(0, colon).Trim();
+                    string value = trimmed.Substring(colon + 1).Trim();
+                    if (key.Length == 0)
+                        throw new ArgumentException("tag keys must be non-empty.");
+                    parsedTags[key] = value;
+                }
+                if (parsedTags.Count > 0) result.Tags = parsedTags;
+            }
+
+            string? ci = query["caseInsensitive"] ?? query["CaseInsensitive"];
+            if (!string.IsNullOrEmpty(ci))
+            {
+                if (string.Equals(ci, "true", StringComparison.OrdinalIgnoreCase) || ci == "1")
+                    result.CaseInsensitive = true;
+                else if (string.Equals(ci, "false", StringComparison.OrdinalIgnoreCase) || ci == "0")
+                    result.CaseInsensitive = false;
+                else
+                    throw new ArgumentException("caseInsensitive must be true, false, 1, or 0.");
             }
 
             return result;

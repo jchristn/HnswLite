@@ -162,14 +162,28 @@ class HnswLiteClient:
         name: str,
         vector: List[float],
         guid: Optional[str] = None,
+        vector_name: Optional[str] = None,
+        labels: Optional[List[str]] = None,
+        tags: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """``POST /v1.0/indexes/{name}/vectors`` -- add a single vector.
+
+        ``vector_name``, ``labels``, and ``tags`` are optional metadata that
+        can later be used to filter search and enumeration results. ``tags``
+        values may be any JSON-serialisable type; server-side filtering
+        compares them via their stringified form.
 
         Returns the echoed ``AddVectorRequest`` dict.
         """
         body: Dict[str, Any] = {"Vector": vector}
         if guid is not None:
             body["GUID"] = guid
+        if vector_name is not None:
+            body["Name"] = vector_name
+        if labels is not None:
+            body["Labels"] = labels
+        if tags is not None:
+            body["Tags"] = tags
         resp = self._session.post(
             self._url(f"/v1.0/indexes/{name}/vectors"), json=body,
         )
@@ -215,6 +229,9 @@ class HnswLiteClient:
         suffix: Optional[str] = None,
         created_after_utc: Optional[str] = None,
         created_before_utc: Optional[str] = None,
+        labels: Optional[List[str]] = None,
+        tags: Optional[Dict[str, str]] = None,
+        case_insensitive: bool = False,
         include_vectors: bool = False,
     ) -> Dict[str, Any]:
         """``GET /v1.0/indexes/{name}/vectors`` -- list vectors with optional filters.
@@ -222,6 +239,16 @@ class HnswLiteClient:
         When ``include_vectors`` is ``False`` (the default) the returned objects
         contain only the ``GUID`` field; when ``True`` each object also carries
         its ``Vector`` values.
+
+        ``labels`` and ``tags`` apply metadata filtering (AND semantics on both):
+        a record is kept only when every supplied label is present on its
+        ``Labels`` and every supplied tag key/value matches its ``Tags``.
+        Set ``case_insensitive=True`` to compare labels, tag keys, and tag
+        values using an ordinal case-insensitive comparison.
+
+        The returned dict includes a ``FilteredCount`` indicating how many
+        records were dropped by the label/tag filter (independent of other
+        filters such as ``prefix``).
 
         Returns the parsed ``EnumerationResult<VectorEntry>`` dict.
         """
@@ -242,6 +269,17 @@ class HnswLiteClient:
             params["createdAfterUtc"] = created_after_utc
         if created_before_utc is not None:
             params["createdBeforeUtc"] = created_before_utc
+        if labels:
+            # Labels are transmitted as a comma-separated string. Individual
+            # labels may not contain commas; such labels cannot be expressed
+            # via the query-string form.
+            params["labels"] = ",".join(labels)
+        if tags:
+            # Tags are transmitted as ``key:value`` pairs joined by commas.
+            # Keys may not contain ':' or ','; values may not contain ','.
+            params["tags"] = ",".join(f"{k}:{v}" for k, v in tags.items())
+        if case_insensitive:
+            params["caseInsensitive"] = "true"
         params["includeVectors"] = "true" if include_vectors else "false"
 
         path = f"/v1.0/indexes/{quote(index_name, safe='')}/vectors"
@@ -274,15 +312,32 @@ class HnswLiteClient:
         vector: List[float],
         k: int = 10,
         ef: Optional[int] = None,
+        labels: Optional[List[str]] = None,
+        tags: Optional[Dict[str, str]] = None,
+        case_insensitive: bool = False,
     ) -> Dict[str, Any]:
         """``POST /v1.0/indexes/{name}/search`` -- nearest-neighbor search.
 
-        Returns the ``SearchResponse`` dict containing ``Results`` and
-        ``SearchTimeMs``.
+        ``labels`` and ``tags`` filter the top-K candidates after graph
+        traversal (AND semantics on both). Because filtering is post-HNSW,
+        the response may contain fewer than ``k`` results -- the returned
+        dict's ``FilteredCount`` reports how many candidates were dropped.
+
+        ``case_insensitive=True`` compares labels, tag keys, and tag values
+        using an ordinal case-insensitive comparison.
+
+        Returns the ``SearchResponse`` dict containing ``Results``,
+        ``SearchTimeMs``, and ``FilteredCount``.
         """
         body: Dict[str, Any] = {"Vector": vector, "K": k}
         if ef is not None:
             body["Ef"] = ef
+        if labels is not None:
+            body["Labels"] = labels
+        if tags is not None:
+            body["Tags"] = tags
+        if case_insensitive:
+            body["CaseInsensitive"] = True
         resp = self._session.post(
             self._url(f"/v1.0/indexes/{name}/search"), json=body,
         )

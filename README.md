@@ -36,6 +36,46 @@ HnswLite implements the Hierarchical Navigable Small World algorithm, which prov
 - **Paginated enumeration contract** across every GET collection endpoint (`EnumerationQuery` / `EnumerationResult<T>`).
 - **OPTIONS preflight + CORS** out of the box in the REST server.
 
+## New in v1.2.0
+
+- **Metadata filters.** Both `POST /v1.0/indexes/{name}/search` and `GET /v1.0/indexes/{name}/vectors` now accept optional `Labels`, `Tags`, and `CaseInsensitive` parameters. Filtering uses **AND** semantics on both — every label must be present and every tag key/value must match for a record to be kept. When `CaseInsensitive` is true, labels, tag keys, and tag values are all compared using `StringComparison.OrdinalIgnoreCase`.
+- **`FilteredCount` on responses.** Both `SearchResponse` and `EnumerationResult<T>` now include a `FilteredCount` integer reporting how many candidates/records were dropped by the metadata filter — so callers can tell at a glance whether a restrictive filter is responsible for a short page.
+- Full coverage across **C# / Python / JS SDKs** and the **dashboard** (Search and Vectors pages).
+
+### Filtering by labels and tags
+
+Request body (search):
+```json
+POST /v1.0/indexes/demo/search
+{
+  "Vector": [0.1, 0.2, 0.3, 0.4],
+  "K": 10,
+  "Labels": ["red", "small"],
+  "Tags": { "env": "prod", "owner": "alice" },
+  "CaseInsensitive": false
+}
+```
+
+Query-string (enumerate):
+```bash
+curl -H "x-api-key: $API_KEY" \
+  "http://localhost:8321/v1.0/indexes/demo/vectors?labels=red,small&tags=env:prod,owner:alice&caseInsensitive=true&includeVectors=false"
+```
+
+Both endpoints return a `FilteredCount` alongside the existing fields:
+```json
+{
+  "Results": [ ... ],
+  "SearchTimeMs": 2.41,
+  "FilteredCount": 3
+}
+```
+
+**Limitations (v1.2):**
+- Labels passed via query string cannot contain `,`; tag keys cannot contain `:` or `,`; tag values cannot contain `,`. Use the JSON body form (`POST /search`) when filter tokens contain these characters.
+- Tag values are compared as strings (via `Convert.ToString(value, InvariantCulture)` on the stored side). Numeric / boolean tag values stringify predictably (`42` → `"42"`, `true` → `"True"`).
+- Search applies the filter **after** HNSW traversal, so restrictive filters can return fewer than K results — `FilteredCount` tells you how many were dropped.
+
 ## New in v1.1.x
 
 See [CHANGELOG.md](CHANGELOG.md) for the full list. Highlights:

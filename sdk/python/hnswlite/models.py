@@ -7,7 +7,7 @@ but these classes serve as a typed reference for consumers.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -42,6 +42,9 @@ class AddVectorRequest:
     """Request body for POST /v1.0/indexes/{name}/vectors."""
     Vector: List[float]
     GUID: Optional[str] = None
+    Name: Optional[str] = None
+    Labels: Optional[List[str]] = None
+    Tags: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -52,10 +55,38 @@ class AddVectorsRequest:
 
 @dataclass
 class SearchRequest:
-    """Request body for POST /v1.0/indexes/{name}/search."""
+    """Request body for POST /v1.0/indexes/{name}/search.
+
+    When ``Labels`` or ``Tags`` are supplied the server performs the HNSW top-K
+    search first and then drops any result whose vector metadata does not
+    satisfy the filter (AND semantics across both fields). The response may
+    therefore contain fewer than ``K`` results; see ``SearchResponse.FilteredCount``
+    for the number of candidates dropped.
+
+    Comparisons are case-sensitive unless ``CaseInsensitive`` is true.
+    """
     Vector: List[float]
     K: int = 10
     Ef: Optional[int] = None
+    Labels: Optional[List[str]] = None
+    Tags: Optional[Dict[str, str]] = None
+    CaseInsensitive: bool = False
+
+
+@dataclass
+class EnumerationQuery:
+    """Query parameters for paginated enumeration endpoints."""
+    MaxResults: Optional[int] = None
+    Skip: Optional[int] = None
+    ContinuationToken: Optional[str] = None
+    Ordering: Optional[str] = None
+    Prefix: Optional[str] = None
+    Suffix: Optional[str] = None
+    CreatedAfterUtc: Optional[str] = None
+    CreatedBeforeUtc: Optional[str] = None
+    Labels: Optional[List[str]] = None
+    Tags: Optional[Dict[str, str]] = None
+    CaseInsensitive: bool = False
 
 
 @dataclass
@@ -64,6 +95,9 @@ class VectorSearchResult:
     GUID: str
     Vector: List[float]
     Distance: float
+    Name: Optional[str] = None
+    Labels: Optional[List[str]] = None
+    Tags: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -71,6 +105,7 @@ class SearchResponse:
     """Response from search endpoint."""
     Results: List[VectorSearchResult] = field(default_factory=list)
     SearchTimeMs: float = 0.0
+    FilteredCount: int = 0
 
 
 @dataclass
@@ -78,6 +113,9 @@ class VectorEntry:
     """A single entry returned by vector enumeration or retrieval endpoints."""
     GUID: str
     Vector: Optional[List[float]] = None
+    Name: Optional[str] = None
+    Labels: Optional[List[str]] = None
+    Tags: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -92,3 +130,4 @@ class EnumerationResult:
     RecordsRemaining: int
     TimestampUtc: str
     Objects: list = field(default_factory=list)
+    FilteredCount: int = 0

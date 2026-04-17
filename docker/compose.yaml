@@ -1,7 +1,7 @@
 services:
 
   hnswlite-server:
-    image: jchristn77/hnswlite-server:v1.1.0
+    image: jchristn77/hnswlite-server:v1.2.0
     container_name: hnswlite-server
     ports:
       - "8080:8080"
@@ -18,7 +18,7 @@ services:
     restart: unless-stopped
 
   hnswlite-dashboard:
-    image: jchristn77/hnswlite-dashboard:v1.1.0
+    image: jchristn77/hnswlite-dashboard:v1.2.0
     container_name: hnswlite-dashboard
     ports:
       - "8081:80"

@@ -210,15 +210,134 @@ namespace HnswLite.Sdk.Test
                     throw new Exception("Expected Vector length " + dimension + ", got " + entry.Vector.Count);
             });
 
+            // 11a. Add vectors with Labels/Tags for filter tests
+            Guid filterGuidA = Guid.Empty;
+            Guid filterGuidB = Guid.Empty;
+            Guid filterGuidC = Guid.Empty;
+            await RunTestAsync("POST /v1.0/indexes/{name}/vectors (AddVector with Labels/Tags)", async () =>
+            {
+                AddVectorRequest a = await client.AddVectorAsync(indexName, new AddVectorRequest
+                {
+                    Vector = new List<float> { 0.5f, 0.5f, 0f, 0f },
+                    Name = "filter-a",
+                    Labels = new List<string> { "red", "small" },
+                    Tags = new Dictionary<string, object> { { "env", "prod" }, { "owner", "alice" } }
+                });
+                filterGuidA = a.GUID ?? Guid.Empty;
+
+                AddVectorRequest b = await client.AddVectorAsync(indexName, new AddVectorRequest
+                {
+                    Vector = new List<float> { 0.4f, 0.4f, 0.1f, 0f },
+                    Name = "filter-b",
+                    Labels = new List<string> { "red", "big" },
+                    Tags = new Dictionary<string, object> { { "env", "prod" }, { "owner", "bob" } }
+                });
+                filterGuidB = b.GUID ?? Guid.Empty;
+
+                AddVectorRequest c = await client.AddVectorAsync(indexName, new AddVectorRequest
+                {
+                    Vector = new List<float> { 0.3f, 0.3f, 0.2f, 0f },
+                    Name = "filter-c",
+                    Labels = new List<string> { "blue", "small" },
+                    Tags = new Dictionary<string, object> { { "env", "dev" }, { "owner", "alice" } }
+                });
+                filterGuidC = c.GUID ?? Guid.Empty;
+
+                if (filterGuidA == Guid.Empty || filterGuidB == Guid.Empty || filterGuidC == Guid.Empty)
+                    throw new Exception("Expected non-empty GUIDs for metadata-tagged vectors");
+            });
+
+            // 11b. Search with Labels filter (AND)
+            await RunTestAsync("POST /v1.0/indexes/{name}/search (Labels filter, AND)", async () =>
+            {
+                SearchResponse r = await client.SearchAsync(indexName, new SearchRequest
+                {
+                    Vector = new List<float> { 0.5f, 0.5f, 0f, 0f },
+                    K = 10,
+                    Labels = new List<string> { "red", "small" }
+                });
+
+                // Only vector A has BOTH 'red' AND 'small'.
+                if (r.Results.Count != 1)
+                    throw new Exception("Expected 1 result for Labels=[red,small], got " + r.Results.Count);
+                if (r.Results[0].GUID != filterGuidA)
+                    throw new Exception("Expected GUID A, got " + r.Results[0].GUID);
+                if (r.FilteredCount <= 0)
+                    throw new Exception("Expected FilteredCount > 0 (got " + r.FilteredCount + ")");
+                if (r.Results[0].Labels == null || r.Results[0].Labels!.Count != 2)
+                    throw new Exception("Expected Labels populated on the result");
+            });
+
+            // 11c. Search with Tags filter (AND)
+            await RunTestAsync("POST /v1.0/indexes/{name}/search (Tags filter, AND)", async () =>
+            {
+                SearchResponse r = await client.SearchAsync(indexName, new SearchRequest
+                {
+                    Vector = new List<float> { 0.5f, 0.5f, 0f, 0f },
+                    K = 10,
+                    Tags = new Dictionary<string, string> { { "env", "prod" }, { "owner", "alice" } }
+                });
+
+                // Only vector A has env=prod AND owner=alice.
+                if (r.Results.Count != 1)
+                    throw new Exception("Expected 1 result, got " + r.Results.Count);
+                if (r.Results[0].GUID != filterGuidA)
+                    throw new Exception("Expected GUID A");
+            });
+
+            // 11d. Search with CaseInsensitive=true
+            await RunTestAsync("POST /v1.0/indexes/{name}/search (CaseInsensitive=true)", async () =>
+            {
+                SearchResponse miss = await client.SearchAsync(indexName, new SearchRequest
+                {
+                    Vector = new List<float> { 0.5f, 0.5f, 0f, 0f },
+                    K = 10,
+                    Labels = new List<string> { "RED" },
+                    CaseInsensitive = false
+                });
+                if (miss.Results.Count != 0)
+                    throw new Exception("Case-sensitive 'RED' should match nothing, got " + miss.Results.Count);
+
+                SearchResponse hit = await client.SearchAsync(indexName, new SearchRequest
+                {
+                    Vector = new List<float> { 0.5f, 0.5f, 0f, 0f },
+                    K = 10,
+                    Labels = new List<string> { "RED" },
+                    CaseInsensitive = true
+                });
+                // A and B both have 'red'.
+                if (hit.Results.Count != 2)
+                    throw new Exception("Case-insensitive 'RED' should match 2 vectors, got " + hit.Results.Count);
+            });
+
+            // 11e. Enumerate with Labels + CaseInsensitive query-string
+            await RunTestAsync("GET /v1.0/indexes/{name}/vectors (Labels filter + CaseInsensitive)", async () =>
+            {
+                EnumerationResult<VectorEntryResponse> r = await client.EnumerateVectorsAsync(
+                    indexName,
+                    new EnumerationQuery
+                    {
+                        MaxResults = 100,
+                        Labels = new List<string> { "RED" },
+                        CaseInsensitive = true
+                    },
+                    includeVectors: false);
+
+                if (r.TotalRecords != 2)
+                    throw new Exception("Expected TotalRecords=2, got " + r.TotalRecords);
+                if (r.FilteredCount <= 0)
+                    throw new Exception("Expected FilteredCount > 0, got " + r.FilteredCount);
+            });
+
             // 12. Remove vector
             await RunTestAsync("DELETE /v1.0/indexes/{name}/vectors/{guid} (RemoveVector)", async () =>
             {
                 await client.RemoveVectorAsync(indexName, vectorGuid1);
 
-                // Verify the index now has fewer vectors
+                // Verify the index now has fewer vectors (started with 3, added 3, removed 1 => 5)
                 IndexResponse idx = await client.GetIndexAsync(indexName);
-                if (idx.VectorCount != 2)
-                    throw new Exception("Expected 2 vectors after removal, got " + idx.VectorCount);
+                if (idx.VectorCount != 5)
+                    throw new Exception("Expected 5 vectors after removal, got " + idx.VectorCount);
             });
 
             // 13. Delete index

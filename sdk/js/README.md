@@ -120,6 +120,33 @@ for (const result of response.results) {
 console.log(`Search took ${response.searchTimeMs}ms`);
 ```
 
+#### Filter by labels and tags (v1.2+)
+
+Both `search` and `enumerateVectors` accept optional `labels`, `tags`, and
+`caseInsensitive` fields. Filters use **AND** semantics on both — a record
+is kept only when every supplied label is present AND every supplied tag
+key/value matches. The response carries a `filteredCount` showing how many
+records the server dropped.
+
+```typescript
+const response = await client.search("my-index", {
+  vector: [0.1, 0.2, 0.3, 0.4],
+  k: 10,
+  labels: ["red", "small"],
+  tags: { env: "prod", owner: "alice" },
+  caseInsensitive: false,
+});
+console.log(`matched=${response.results.length}, filtered=${response.filteredCount}`);
+
+// Case-insensitive enumeration
+const page = await client.enumerateVectors(
+  "my-index",
+  { maxResults: 50, labels: ["RED"], caseInsensitive: true },
+  false,
+);
+console.log(`total=${page.totalRecords}, filtered=${page.filteredCount}`);
+```
+
 ### `addVector(name, request): Promise<AddVectorRequest>`
 
 Add a single vector to an index.

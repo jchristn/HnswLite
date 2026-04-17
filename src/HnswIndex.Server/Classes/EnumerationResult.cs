@@ -45,7 +45,7 @@ namespace HnswIndex.Server.Classes
         public bool EndOfResults { get; set; } = true;
 
         /// <summary>
-        /// Total count of records matching the query (before pagination).
+        /// Total count of records matching the query (before pagination, after all filters).
         /// </summary>
         [JsonPropertyOrder(5)]
         public long TotalRecords { get; set; } = 0;
@@ -55,6 +55,16 @@ namespace HnswIndex.Server.Classes
         /// </summary>
         [JsonPropertyOrder(6)]
         public long RecordsRemaining { get; set; } = 0;
+
+        /// <summary>
+        /// Number of records dropped by the metadata filter
+        /// (<see cref="EnumerationQuery.Labels"/> or <see cref="EnumerationQuery.Tags"/>).
+        /// Zero when no metadata filter was supplied or when nothing matched to drop.
+        /// This is independent of the <c>Prefix</c>/<c>Suffix</c>/<c>CreatedAfter/Before</c>
+        /// filters, which are not counted here.
+        /// </summary>
+        [JsonPropertyOrder(8)]
+        public long FilteredCount { get; set; } = 0;
 
         /// <summary>
         /// Timestamp (UTC) when this response was generated.

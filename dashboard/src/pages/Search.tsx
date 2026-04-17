@@ -13,6 +13,9 @@ export default function Search() {
   const [vectorText, setVectorText] = useState<string>('');
   const [k, setK] = useState<number>(10);
   const [ef, setEf] = useState<string>('');
+  const [labelsField, setLabelsField] = useState<string>('');
+  const [tagsField, setTagsField] = useState<string>('');
+  const [caseInsensitive, setCaseInsensitive] = useState<boolean>(false);
   const [result, setResult] = useState<SearchResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -59,10 +62,36 @@ export default function Search() {
         throw new Error(`Vector length ${nums.length} does not match index dimension ${selected.dimension}`);
       }
       setSubmitting(true);
+
+      const parsedLabels = labelsField.trim().length > 0
+        ? labelsField.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+        : undefined;
+
+      let parsedTags: Record<string, string> | undefined;
+      if (tagsField.trim().length > 0) {
+        let obj: unknown;
+        try {
+          obj = JSON.parse(tagsField);
+        } catch {
+          throw new Error('Tags must be a JSON object mapping string keys to string values.');
+        }
+        if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
+          throw new Error('Tags must be a JSON object.');
+        }
+        const stringified: Record<string, string> = {};
+        for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+          stringified[key] = value === null || value === undefined ? '' : String(value);
+        }
+        parsedTags = stringified;
+      }
+
       const res = await searchVectors(selected.name, {
         Vector: nums,
         K: k,
         Ef: ef.trim() ? parseInt(ef, 10) : null,
+        Labels: parsedLabels,
+        Tags: parsedTags,
+        CaseInsensitive: caseInsensitive || undefined,
       });
       setResult(res);
     } catch (err) {
@@ -123,6 +152,45 @@ export default function Search() {
               <textarea rows={6} value={vectorText} onChange={(e) => setVectorText(e.target.value)} placeholder="0.12, -0.34, 0.56, ..." />
             </label>
 
+            <details style={{ border: '1px solid var(--border-color)', borderRadius: 6, padding: '8px 12px' }}>
+              <summary style={{ cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                Metadata filters (Labels &amp; Tags)
+              </summary>
+              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                  Both filters use AND semantics — a result is kept only when every label you list is present and
+                  every tag key/value matches. The response includes a <code>FilteredCount</code> showing how many
+                  HNSW candidates were dropped.
+                </div>
+                <label className="field">
+                  <span>Labels (comma-separated; every label must be present)</span>
+                  <input
+                    value={labelsField}
+                    onChange={(e) => setLabelsField(e.target.value)}
+                    placeholder="red, small"
+                  />
+                </label>
+                <label className="field">
+                  <span>Tags (JSON object; every key must match)</span>
+                  <textarea
+                    rows={3}
+                    value={tagsField}
+                    onChange={(e) => setTagsField(e.target.value)}
+                    placeholder='{"env": "prod", "owner": "alice"}'
+                  />
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={caseInsensitive}
+                    onChange={(e) => setCaseInsensitive(e.target.checked)}
+                    style={{ width: 'auto' }}
+                  />
+                  <span>Case-insensitive label/tag comparison</span>
+                </label>
+              </div>
+            </details>
+
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button type="button" className="btn btn-secondary" onClick={fillRandom} disabled={!selected}>
                 Fill with random
@@ -141,6 +209,7 @@ export default function Search() {
             <h3>Results</h3>
             <span className="workspace-subtitle">
               {result.searchTimeMs.toFixed(2)} ms · {result.results.length} matches
+              {result.filteredCount > 0 && ` · ${result.filteredCount} filtered out`}
             </span>
           </div>
           <div className="workspace-card-body tight">

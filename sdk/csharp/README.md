@@ -128,6 +128,27 @@ foreach (VectorSearchResult r in result.Results)
 }
 ```
 
+### Filter by Labels and Tags (v1.2+)
+
+`SearchRequest` and `EnumerationQuery` both accept optional `Labels`, `Tags`,
+and `CaseInsensitive` fields. Filters use **AND** semantics across both —
+a record is kept only when every supplied label is present AND every
+supplied tag key/value matches. The response exposes a `FilteredCount`
+reporting how many candidates were dropped.
+
+```csharp
+SearchResponse result = await client.SearchAsync("my-index", new SearchRequest
+{
+    Vector = new List<float> { 0.1f, 0.2f, 0.3f, 0.4f },
+    K = 10,
+    Labels = new List<string> { "red", "small" },
+    Tags = new Dictionary<string, string> { { "env", "prod" } },
+    CaseInsensitive = false,
+});
+
+Console.WriteLine($"Matches: {result.Results.Count}, filtered out: {result.FilteredCount}");
+```
+
 ### Enumerate Vectors
 
 ```csharp

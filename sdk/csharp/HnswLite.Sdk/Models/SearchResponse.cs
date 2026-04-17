@@ -19,6 +19,15 @@ namespace HnswLite.Sdk.Models
         /// </summary>
         public double SearchTimeMs { get; set; } = 0;
 
+        /// <summary>
+        /// Number of HNSW candidates that were dropped by the server-side metadata filter
+        /// (<see cref="SearchRequest.Labels"/> or <see cref="SearchRequest.Tags"/>).
+        /// Zero when no filter was supplied. When a filter is set,
+        /// <c>Results.Count + FilteredCount</c> equals the number of HNSW candidates
+        /// considered (at most <see cref="SearchRequest.K"/>).
+        /// </summary>
+        public int FilteredCount { get; set; } = 0;
+
         #endregion
     }
 }

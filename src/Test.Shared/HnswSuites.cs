@@ -45,6 +45,7 @@ namespace HnswLite.Test.Shared
                     SqlitePersistenceSuite(),
                 };
                 all.AddRange(HnswExtendedSuites.All);
+                all.AddRange(MetadataFilterSuites.All);
                 return all;
             }
         }

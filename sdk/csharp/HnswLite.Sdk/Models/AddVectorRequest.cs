@@ -20,6 +20,21 @@ namespace HnswLite.Sdk.Models
         /// </summary>
         public List<float> Vector { get; set; } = new List<float>();
 
+        /// <summary>
+        /// Optional human-readable name for the vector. May be null.
+        /// </summary>
+        public string? Name { get; set; } = null;
+
+        /// <summary>
+        /// Optional classification labels. May be null or empty.
+        /// </summary>
+        public List<string>? Labels { get; set; } = null;
+
+        /// <summary>
+        /// Optional arbitrary key/value tags. May be null or empty.
+        /// </summary>
+        public Dictionary<string, object>? Tags { get; set; } = null;
+
         #endregion
     }
 }

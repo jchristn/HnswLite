@@ -131,6 +131,36 @@ for r in result["Results"]:
     print(r["GUID"], r["Distance"])
 ```
 
+### Filter by Labels and Tags (v1.2+)
+
+Both `search()` and `enumerate_vectors()` accept optional `labels`, `tags`,
+and `case_insensitive` keyword arguments. Filters use **AND** semantics
+on both fields — a record is kept only when every supplied label is
+present AND every supplied tag key/value matches. The response carries a
+`FilteredCount` showing how many records were dropped by the filter.
+
+```python
+# Search with a label+tag filter (AND)
+result = client.search(
+    "my-index",
+    vector=[0.1, 0.2, 0.3, 0.4],
+    k=10,
+    labels=["red", "small"],
+    tags={"env": "prod", "owner": "alice"},
+    case_insensitive=False,
+)
+print(f"Matched {len(result['Results'])}, filtered out {result['FilteredCount']}")
+
+# Enumerate with case-insensitive label filter
+page = client.enumerate_vectors(
+    "my-index",
+    max_results=50,
+    labels=["RED"],
+    case_insensitive=True,
+)
+print(f"TotalRecords={page['TotalRecords']}, FilteredCount={page['FilteredCount']}")
+```
+
 ### Error Handling
 
 ```python

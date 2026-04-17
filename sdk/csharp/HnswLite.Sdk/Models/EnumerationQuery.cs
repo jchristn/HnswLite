@@ -1,6 +1,7 @@
 namespace HnswLite.Sdk.Models
 {
     using System;
+    using System.Collections.Generic;
 
     /// <summary>
     /// Query parameters for paginated enumeration endpoints.
@@ -48,6 +49,28 @@ namespace HnswLite.Sdk.Models
         /// Keep only records created strictly before this UTC timestamp.
         /// </summary>
         public DateTime? CreatedBeforeUtc { get; set; } = null;
+
+        /// <summary>
+        /// Optional label filter (AND semantics). A record is kept only when <b>every</b>
+        /// label in this list is present on the record's <c>Labels</c> collection. Null or
+        /// empty disables label filtering. Comparison is case-sensitive unless
+        /// <see cref="CaseInsensitive"/> is true.
+        /// </summary>
+        public List<string>? Labels { get; set; } = null;
+
+        /// <summary>
+        /// Optional tag filter (AND semantics). A record is kept only when <b>every</b> key
+        /// in this dictionary exists on the record's <c>Tags</c> and its stringified value
+        /// equals the filter value. Null or empty disables tag filtering. Comparison is
+        /// case-sensitive unless <see cref="CaseInsensitive"/> is true.
+        /// </summary>
+        public Dictionary<string, string>? Tags { get; set; } = null;
+
+        /// <summary>
+        /// When true, <see cref="Labels"/> and <see cref="Tags"/> comparisons are
+        /// case-insensitive. Default is false (exact match).
+        /// </summary>
+        public bool CaseInsensitive { get; set; } = false;
 
         #endregion
     }

@@ -10,6 +10,7 @@
     <ProjectReference Include="..\HnswIndex\HnswIndex.csproj" />
     <ProjectReference Include="..\HnswIndex.RamStorage\HnswIndex.RamStorage.csproj" />
     <ProjectReference Include="..\HnswIndex.SqliteStorage\HnswIndex.SqliteStorage.csproj" />
+    <ProjectReference Include="..\HnswIndex.Server\HnswIndex.Server.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -17,6 +17,15 @@ namespace HnswIndex.Server.Classes
         /// </summary>
         public double SearchTimeMs { get; set; } = 0;
 
+        /// <summary>
+        /// Number of HNSW candidates that were dropped by the metadata filter
+        /// (<see cref="SearchRequest.Labels"/> or <see cref="SearchRequest.Tags"/>).
+        /// Zero when no filter was supplied or when no candidates were filtered.
+        /// When a filter is supplied, <c>Results.Count + FilteredCount</c> equals the
+        /// number of HNSW candidates considered (at most <see cref="SearchRequest.K"/>).
+        /// </summary>
+        public int FilteredCount { get; set; } = 0;
+
         #endregion
 
         #region Private-Members

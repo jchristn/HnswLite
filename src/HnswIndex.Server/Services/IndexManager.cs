@@ -311,6 +311,32 @@ namespace HnswIndex.Server.Services
                 filtered = sorted.Where(g => g.ToString().StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList();
             }
 
+            // When a label/tag filter is present we must fetch every candidate node's metadata
+            // (not just the current page) so that pagination math reflects the post-filter set.
+            bool hasMetadataFilter = (query.Labels != null && query.Labels.Count > 0)
+                                     || (query.Tags != null && query.Tags.Count > 0);
+            long filteredOut = 0;
+            Dictionary<Guid, IHnswNode>? prefetchedNodes = null;
+
+            if (hasMetadataFilter && filtered.Count > 0)
+            {
+                prefetchedNodes = await provider.GetNodesAsync(filtered, cancellationToken).ConfigureAwait(false);
+                List<Guid> postMetadata = new List<Guid>(filtered.Count);
+                foreach (Guid id in filtered)
+                {
+                    prefetchedNodes.TryGetValue(id, out IHnswNode? node);
+                    if (MetadataFilter.Matches(node, query.Labels, query.Tags, query.CaseInsensitive))
+                    {
+                        postMetadata.Add(id);
+                    }
+                    else
+                    {
+                        filteredOut++;
+                    }
+                }
+                filtered = postMetadata;
+            }
+
             int skip = Math.Min(query.Skip, filtered.Count);
             int take = Math.Min(query.MaxResults, Math.Max(0, filtered.Count - skip));
             List<Guid> page = filtered.GetRange(skip, take);
@@ -318,9 +344,18 @@ namespace HnswIndex.Server.Services
             List<VectorEntryResponse> objects = new List<VectorEntryResponse>(page.Count);
             // Always fetch nodes so metadata (Name/Labels/Tags) is populated.
             // Vector bodies are included only when the caller requests them.
-            Dictionary<Guid, IHnswNode> nodes = page.Count > 0
-                ? await provider.GetNodesAsync(page, cancellationToken).ConfigureAwait(false)
-                : new Dictionary<Guid, IHnswNode>();
+            // Reuse the prefetched node map when available to avoid a second round-trip.
+            Dictionary<Guid, IHnswNode> nodes;
+            if (prefetchedNodes != null)
+            {
+                nodes = prefetchedNodes;
+            }
+            else
+            {
+                nodes = page.Count > 0
+                    ? await provider.GetNodesAsync(page, cancellationToken).ConfigureAwait(false)
+                    : new Dictionary<Guid, IHnswNode>();
+            }
             foreach (Guid id in page)
             {
                 if (nodes.TryGetValue(id, out IHnswNode? node) && node != null)
@@ -344,6 +379,7 @@ namespace HnswIndex.Server.Services
                 EndOfResults = remaining == 0,
                 ContinuationToken = null,
                 TimestampUtc = DateTime.UtcNow,
+                FilteredCount = filteredOut,
                 Objects = objects,
             };
         }
@@ -507,15 +543,28 @@ namespace HnswIndex.Server.Services
                 ? await searchProvider.GetNodesAsync(resultIds, cancellationToken).ConfigureAwait(false)
                 : new Dictionary<Guid, IHnswNode>();
 
+            bool hasFilter = (request.Labels != null && request.Labels.Count > 0)
+                             || (request.Tags != null && request.Tags.Count > 0);
+            int filteredOut = 0;
+
             foreach (VectorResult result in results)
             {
+                IHnswNode? n = null;
+                nodeMap.TryGetValue(result.GUID, out n);
+
+                if (hasFilter && !MetadataFilter.Matches(n, request.Labels, request.Tags, request.CaseInsensitive))
+                {
+                    filteredOut++;
+                    continue;
+                }
+
                 VectorSearchResult sr = new VectorSearchResult
                 {
                     GUID = result.GUID,
                     Vector = result.Vectors,
                     Distance = result.Distance,
                 };
-                if (nodeMap.TryGetValue(result.GUID, out IHnswNode? n) && n != null)
+                if (n != null)
                 {
                     sr.Name = n.Name;
                     sr.Labels = n.Labels;
@@ -527,7 +576,8 @@ namespace HnswIndex.Server.Services
             return new SearchResponse
             {
                 Results = searchResults,
-                SearchTimeMs = Math.Round(stopwatch.Elapsed.TotalMilliseconds, 2)
+                SearchTimeMs = Math.Round(stopwatch.Elapsed.TotalMilliseconds, 2),
+                FilteredCount = filteredOut
             };
         }
 

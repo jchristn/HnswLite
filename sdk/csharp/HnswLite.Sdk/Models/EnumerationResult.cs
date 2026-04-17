@@ -47,6 +47,13 @@ namespace HnswLite.Sdk.Models
         public long RecordsRemaining { get; set; } = 0;
 
         /// <summary>
+        /// Number of records dropped by the server-side metadata filter
+        /// (<c>Labels</c> or <c>Tags</c>). Zero when no metadata filter was supplied.
+        /// Independent of the other filters (Prefix/Suffix/CreatedAfter/Before).
+        /// </summary>
+        public long FilteredCount { get; set; } = 0;
+
+        /// <summary>
         /// Server-side UTC timestamp of the response.
         /// </summary>
         public DateTime TimestampUtc { get; set; } = DateTime.UtcNow;
