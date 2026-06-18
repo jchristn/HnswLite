@@ -5,7 +5,7 @@ echo "========================================"
 echo " HnswLite Factory Reset"
 echo "========================================"
 echo ""
-echo "This will delete all index databases and log files."
+echo "This will delete all PostgreSQL data, SQLite index databases, and log files."
 echo "Configuration (hnswindex.json) will be preserved."
 echo ""
 read -p "Type 'RESET' to confirm: " confirm
@@ -18,21 +18,31 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKER_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 HNSWLITE_DIR="${DOCKER_DIR}/hnswlite"
+POSTGRES_DIR="${DOCKER_DIR}/postgres"
 
-echo "[1/3] Stopping containers..."
+echo "[1/4] Stopping containers..."
 (cd "${DOCKER_DIR}" && docker compose down)
 echo ""
 
-echo "[2/3] Deleting index databases..."
+echo "[2/4] Deleting PostgreSQL data..."
+if [ -d "${POSTGRES_DIR}/data" ]; then
+    rm -rf "${POSTGRES_DIR}/data"
+    echo "  PostgreSQL data deleted."
+else
+    echo "  No PostgreSQL data directory found."
+fi
+echo ""
+
+echo "[3/4] Deleting SQLite index databases..."
 if [ -d "${HNSWLITE_DIR}/data" ]; then
     rm -rf "${HNSWLITE_DIR}/data"/*
-    echo "  Index databases deleted."
+    echo "  SQLite index databases deleted."
 else
     echo "  No data directory found."
 fi
 echo ""
 
-echo "[3/3] Deleting log files..."
+echo "[4/4] Deleting log files..."
 if [ -d "${HNSWLITE_DIR}/logs" ]; then
     rm -rf "${HNSWLITE_DIR}/logs"/*
     echo "  Log files deleted."
@@ -43,5 +53,6 @@ echo ""
 
 echo "========================================"
 echo " Factory reset complete."
+echo " PostgreSQL will be re-provisioned on next startup."
 echo " Run 'docker compose up -d' to restart."
 echo "========================================"

@@ -1,7 +1,9 @@
-﻿namespace Hnsw
+namespace Hnsw
 {
     using System;
     using System.Collections.Generic;
+    using System.Threading;
+    using System.Threading.Tasks;
 
     /// <summary>
     /// Interface for storing and retrieving HNSW node layer assignments.
@@ -11,49 +13,45 @@
     {
         /// <summary>
         /// Gets the layer assignment for a specific node.
-        /// Thread-safe operation.
         /// </summary>
         /// <param name="nodeId">Node identifier.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
         /// <returns>The layer number for the node, or 0 if not found.</returns>
-        int GetNodeLayer(Guid nodeId);
+        Task<int> GetNodeLayerAsync(Guid nodeId, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Sets the layer assignment for a specific node.
-        /// Thread-safe operation.
         /// </summary>
         /// <param name="nodeId">Node identifier. Cannot be Guid.Empty.</param>
         /// <param name="layer">Layer number. Minimum: 0, Maximum: 63.</param>
-        /// <exception cref="ArgumentException">Thrown when nodeId is Guid.Empty.</exception>
-        /// <exception cref="ArgumentOutOfRangeException">Thrown when layer is outside valid range.</exception>
-        void SetNodeLayer(Guid nodeId, int layer);
+        /// <param name="cancellationToken">Cancellation token.</param>
+        Task SetNodeLayerAsync(Guid nodeId, int layer, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Removes the layer assignment for a specific node.
-        /// Thread-safe operation.
-        /// No effect if the node doesn't exist.
         /// </summary>
         /// <param name="nodeId">Node identifier.</param>
-        void RemoveNodeLayer(Guid nodeId);
+        /// <param name="cancellationToken">Cancellation token.</param>
+        Task RemoveNodeLayerAsync(Guid nodeId, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Gets all node layer assignments.
-        /// Thread-safe operation.
-        /// Returns a copy to prevent external modification.
         /// </summary>
+        /// <param name="cancellationToken">Cancellation token.</param>
         /// <returns>Dictionary mapping node IDs to layer numbers.</returns>
-        Dictionary<Guid, int> GetAllNodeLayers();
+        Task<Dictionary<Guid, int>> GetAllNodeLayersAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Removes all layer assignments.
-        /// Thread-safe operation.
         /// </summary>
-        void Clear();
+        /// <param name="cancellationToken">Cancellation token.</param>
+        Task ClearLayersAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Gets the number of nodes with layer assignments.
-        /// Thread-safe operation.
         /// </summary>
+        /// <param name="cancellationToken">Cancellation token.</param>
         /// <returns>The count of nodes with layer assignments.</returns>
-        int Count { get; }
+        Task<int> GetLayerCountAsync(CancellationToken cancellationToken = default);
     }
 }

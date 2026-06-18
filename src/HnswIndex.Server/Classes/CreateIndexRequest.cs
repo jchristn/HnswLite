@@ -18,9 +18,9 @@ namespace HnswIndex.Server.Classes
         public int Dimension { get; set; } = 0;
 
         /// <summary>
-        /// Storage type (RAM or SQLite).
+        /// Storage type (PostgreSQL, SQLite, or RAM).
         /// </summary>
-        public string StorageType { get; set; } = "SQLite";
+        public string StorageType { get; set; } = "PostgreSQL";
 
         /// <summary>
         /// Distance function type.

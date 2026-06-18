@@ -15,7 +15,7 @@
             Gets the name of the distance function.
             </summary>
         </member>
-        <member name="M:Hnsw.CosineDistance.Distance(System.Collections.Generic.List{System.Single},System.Collections.Generic.List{System.Single})">
+        <member name="M:Hnsw.CosineDistance.Distance(System.Collections.Generic.IReadOnlyList{System.Single},System.Collections.Generic.IReadOnlyList{System.Single})">
             <summary>
             Calculates the cosine distance between two vectors.
             Returns 0 for identical vectors and approaches 2 for opposite vectors.
@@ -37,7 +37,7 @@
             Gets the name of the distance function.
             </summary>
         </member>
-        <member name="M:Hnsw.DotProductDistance.Distance(System.Collections.Generic.List{System.Single},System.Collections.Generic.List{System.Single})">
+        <member name="M:Hnsw.DotProductDistance.Distance(System.Collections.Generic.IReadOnlyList{System.Single},System.Collections.Generic.IReadOnlyList{System.Single})">
             <summary>
             Calculates the negative dot product between two vectors.
             Higher dot product results in lower distance (negated).
@@ -59,7 +59,7 @@
             Gets the name of the distance function.
             </summary>
         </member>
-        <member name="M:Hnsw.EuclideanDistance.Distance(System.Collections.Generic.List{System.Single},System.Collections.Generic.List{System.Single})">
+        <member name="M:Hnsw.EuclideanDistance.Distance(System.Collections.Generic.IReadOnlyList{System.Single},System.Collections.Generic.IReadOnlyList{System.Single})">
             <summary>
             Calculates the Euclidean distance between two vectors.
             </summary>
@@ -319,7 +319,7 @@
             Gets the name of the distance function.
             </summary>
         </member>
-        <member name="M:Hnsw.IDistanceFunction.Distance(System.Collections.Generic.List{System.Single},System.Collections.Generic.List{System.Single})">
+        <member name="M:Hnsw.IDistanceFunction.Distance(System.Collections.Generic.IReadOnlyList{System.Single},System.Collections.Generic.IReadOnlyList{System.Single})">
             <summary>
             Calculates the distance between two vectors.
             </summary>
@@ -335,51 +335,47 @@
             Implementations can use in-memory storage, database storage, or other persistence mechanisms.
             </summary>
         </member>
-        <member name="M:Hnsw.IHnswLayerStorage.GetNodeLayer(System.Guid)">
+        <member name="M:Hnsw.IHnswLayerStorage.GetNodeLayerAsync(System.Guid,System.Threading.CancellationToken)">
             <summary>
             Gets the layer assignment for a specific node.
-            Thread-safe operation.
             </summary>
             <param name="nodeId">Node identifier.</param>
+            <param name="cancellationToken">Cancellation token.</param>
             <returns>The layer number for the node, or 0 if not found.</returns>
         </member>
-        <member name="M:Hnsw.IHnswLayerStorage.SetNodeLayer(System.Guid,System.Int32)">
+        <member name="M:Hnsw.IHnswLayerStorage.SetNodeLayerAsync(System.Guid,System.Int32,System.Threading.CancellationToken)">
             <summary>
             Sets the layer assignment for a specific node.
-            Thread-safe operation.
             </summary>
             <param name="nodeId">Node identifier. Cannot be Guid.Empty.</param>
             <param name="layer">Layer number. Minimum: 0, Maximum: 63.</param>
-            <exception cref="T:System.ArgumentException">Thrown when nodeId is Guid.Empty.</exception>
-            <exception cref="T:System.ArgumentOutOfRangeException">Thrown when layer is outside valid range.</exception>
+            <param name="cancellationToken">Cancellation token.</param>
         </member>
-        <member name="M:Hnsw.IHnswLayerStorage.RemoveNodeLayer(System.Guid)">
+        <member name="M:Hnsw.IHnswLayerStorage.RemoveNodeLayerAsync(System.Guid,System.Threading.CancellationToken)">
             <summary>
             Removes the layer assignment for a specific node.
-            Thread-safe operation.
-            No effect if the node doesn't exist.
             </summary>
             <param name="nodeId">Node identifier.</param>
+            <param name="cancellationToken">Cancellation token.</param>
         </member>
-        <member name="M:Hnsw.IHnswLayerStorage.GetAllNodeLayers">
+        <member name="M:Hnsw.IHnswLayerStorage.GetAllNodeLayersAsync(System.Threading.CancellationToken)">
             <summary>
             Gets all node layer assignments.
-            Thread-safe operation.
-            Returns a copy to prevent external modification.
             </summary>
+            <param name="cancellationToken">Cancellation token.</param>
             <returns>Dictionary mapping node IDs to layer numbers.</returns>
         </member>
-        <member name="M:Hnsw.IHnswLayerStorage.Clear">
+        <member name="M:Hnsw.IHnswLayerStorage.ClearLayersAsync(System.Threading.CancellationToken)">
             <summary>
             Removes all layer assignments.
-            Thread-safe operation.
             </summary>
+            <param name="cancellationToken">Cancellation token.</param>
         </member>
-        <member name="P:Hnsw.IHnswLayerStorage.Count">
+        <member name="M:Hnsw.IHnswLayerStorage.GetLayerCountAsync(System.Threading.CancellationToken)">
             <summary>
             Gets the number of nodes with layer assignments.
-            Thread-safe operation.
             </summary>
+            <param name="cancellationToken">Cancellation token.</param>
             <returns>The count of nodes with layer assignments.</returns>
         </member>
         <member name="T:Hnsw.IHnswNode">
@@ -412,19 +408,24 @@
             Optional arbitrary key/value tags.
             </summary>
         </member>
-        <member name="M:Hnsw.IHnswNode.GetNeighbors">
+        <member name="M:Hnsw.IHnswNode.GetNeighborsAsync(System.Threading.CancellationToken)">
             <summary>
             Gets a copy of the node's neighbors organized by layer.
             </summary>
         </member>
-        <member name="M:Hnsw.IHnswNode.AddNeighbor(System.Int32,System.Guid)">
+        <member name="M:Hnsw.IHnswNode.AddNeighborAsync(System.Int32,System.Guid,System.Threading.CancellationToken)">
             <summary>
             Adds a neighbor connection at the specified layer.
             </summary>
         </member>
-        <member name="M:Hnsw.IHnswNode.RemoveNeighbor(System.Int32,System.Guid)">
+        <member name="M:Hnsw.IHnswNode.RemoveNeighborAsync(System.Int32,System.Guid,System.Threading.CancellationToken)">
             <summary>
             Removes a neighbor connection at the specified layer.
+            </summary>
+        </member>
+        <member name="M:Hnsw.IHnswNode.SetMetadataAsync(System.String,System.Collections.Generic.List{System.String},System.Collections.Generic.Dictionary{System.String,System.Object},System.Threading.CancellationToken)">
+            <summary>
+            Sets the optional metadata for this vector.
             </summary>
         </member>
         <member name="T:Hnsw.IHnswStorage">
@@ -489,9 +490,29 @@
             Gets the number of nodes in storage.
             </summary>
         </member>
-        <member name="P:Hnsw.IHnswStorage.EntryPoint">
+        <member name="M:Hnsw.IHnswStorage.GetEntryPointAsync(System.Threading.CancellationToken)">
             <summary>
-            Gets or sets the entry point node ID.
+            Gets the entry point node ID.
+            </summary>
+        </member>
+        <member name="M:Hnsw.IHnswStorage.SetEntryPointAsync(System.Nullable{System.Guid},System.Threading.CancellationToken)">
+            <summary>
+            Sets the entry point node ID.
+            </summary>
+        </member>
+        <member name="T:Hnsw.IHnswStorageTransaction">
+            <summary>
+            Represents an asynchronous storage transaction for graph mutations.
+            </summary>
+        </member>
+        <member name="M:Hnsw.IHnswStorageTransaction.CommitAsync(System.Threading.CancellationToken)">
+            <summary>
+            Commits the transaction.
+            </summary>
+        </member>
+        <member name="M:Hnsw.IHnswStorageTransaction.RollbackAsync(System.Threading.CancellationToken)">
+            <summary>
+            Rolls the transaction back.
             </summary>
         </member>
         <member name="T:Hnsw.IStorageProvider">
@@ -499,6 +520,17 @@
             Unified storage provider that combines vector node storage, layer assignment
             storage, and lifecycle management into a single interface.
             Implementations must be thread-safe.
+            </summary>
+        </member>
+        <member name="M:Hnsw.IStorageProvider.BeginTransactionAsync(System.Threading.CancellationToken)">
+            <summary>
+            Begins a transaction for a graph mutation operation.
+            Providers that do not need transactions may return a no-op transaction.
+            </summary>
+        </member>
+        <member name="M:Hnsw.IStorageProvider.FlushAsync(System.Threading.CancellationToken)">
+            <summary>
+            Flushes any buffered graph or metadata changes.
             </summary>
         </member>
         <member name="T:Hnsw.MinHeap`1">
@@ -681,6 +713,20 @@
             Creates a deep copy of this NodeState.
             </summary>
             <returns>A new NodeState instance with copied values.</returns>
+        </member>
+        <member name="T:Hnsw.NoOpHnswStorageTransaction">
+            <summary>
+            No-op transaction used by providers that do not require transactional resources.
+            </summary>
+        </member>
+        <member name="M:Hnsw.NoOpHnswStorageTransaction.CommitAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Hnsw.NoOpHnswStorageTransaction.RollbackAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Hnsw.NoOpHnswStorageTransaction.DisposeAsync">
+            <inheritdoc />
         </member>
         <member name="T:Hnsw.PriorityItem`1">
             <summary>

@@ -37,6 +37,10 @@ namespace HnswLite.Test.Shared
                 List<TestSuiteDescriptor> all = new List<TestSuiteDescriptor>
                 {
                     DistanceFunctionSuite(),
+                    PublicSurfaceSuites.ModelValidationSuite(),
+                    PublicSurfaceSuites.UtilitySuite(),
+                    PublicSurfaceSuites.IndexContractSuite(),
+                    PublicSurfaceSuites.StorageProviderContractSuite(),
                     RamBasicSuite(),
                     RamAdvancedSuite(),
                     RamValidationSuite(),
@@ -180,7 +184,8 @@ namespace HnswLite.Test.Shared
                         displayName: "Add five vectors and retrieve nearest neighbors",
                         executeAsync: async ct =>
                         {
-                            HnswIndex index = NewRamIndex(_Dimension);
+                            await using TestIndexScope scope = await NewIndexAsync(_Dimension, ct).ConfigureAwait(false);
+                            HnswIndex index = scope.Index;
                             Dictionary<Guid, List<float>> vectors = new Dictionary<Guid, List<float>>
                             {
                                 { Guid.NewGuid(), new List<float> { 1f, 1f } },
@@ -207,7 +212,8 @@ namespace HnswLite.Test.Shared
                         displayName: "Remove a vector and confirm it disappears from results",
                         executeAsync: async ct =>
                         {
-                            HnswIndex index = NewRamIndex(_Dimension);
+                            await using TestIndexScope scope = await NewIndexAsync(_Dimension, ct).ConfigureAwait(false);
+                            HnswIndex index = scope.Index;
                             Guid id1 = Guid.NewGuid();
                             Guid id2 = Guid.NewGuid();
                             Guid id3 = Guid.NewGuid();
@@ -232,7 +238,8 @@ namespace HnswLite.Test.Shared
                         displayName: "Empty index returns no results",
                         executeAsync: async ct =>
                         {
-                            HnswIndex index = NewRamIndex(_Dimension);
+                            await using TestIndexScope scope = await NewIndexAsync(_Dimension, ct).ConfigureAwait(false);
+                            HnswIndex index = scope.Index;
                             List<VectorResult> results = (await index.GetTopKAsync(
                                 new List<float> { 1f, 1f }, 5, cancellationToken: ct).ConfigureAwait(false)).ToList();
                             TestAssert.Equal(0, results.Count, "Empty-index result count");
@@ -244,7 +251,8 @@ namespace HnswLite.Test.Shared
                         displayName: "Single-element index returns that element",
                         executeAsync: async ct =>
                         {
-                            HnswIndex index = NewRamIndex(_Dimension);
+                            await using TestIndexScope scope = await NewIndexAsync(_Dimension, ct).ConfigureAwait(false);
+                            HnswIndex index = scope.Index;
                             Guid id = Guid.NewGuid();
                             await index.AddAsync(id, new List<float> { 5f, 5f }, ct).ConfigureAwait(false);
 
@@ -261,7 +269,8 @@ namespace HnswLite.Test.Shared
                         displayName: "Duplicate vectors all return with near-zero distance",
                         executeAsync: async ct =>
                         {
-                            HnswIndex index = NewRamIndex(_Dimension);
+                            await using TestIndexScope scope = await NewIndexAsync(_Dimension, ct).ConfigureAwait(false);
+                            HnswIndex index = scope.Index;
                             Dictionary<Guid, List<float>> dupes = new Dictionary<Guid, List<float>>();
                             for (int i = 0; i < _DuplicateCount; i++)
                                 dupes[Guid.NewGuid()] = new List<float> { 5f, 5f };
@@ -293,7 +302,8 @@ namespace HnswLite.Test.Shared
                         displayName: "Index supports 64-dimensional vectors",
                         executeAsync: async ct =>
                         {
-                            HnswIndex index = NewRamIndex(_HighDimension);
+                            await using TestIndexScope scope = await NewIndexAsync(_HighDimension, ct).ConfigureAwait(false);
+                            HnswIndex index = scope.Index;
                             Random rng = new Random(42);
                             Dictionary<Guid, List<float>> vectors = new Dictionary<Guid, List<float>>();
                             for (int i = 0; i < 20; i++)
@@ -312,7 +322,8 @@ namespace HnswLite.Test.Shared
                         displayName: "Batch add 20 then remove 10 leaves 10 in results",
                         executeAsync: async ct =>
                         {
-                            HnswIndex index = NewRamIndex(_Dimension);
+                            await using TestIndexScope scope = await NewIndexAsync(_Dimension, ct).ConfigureAwait(false);
+                            HnswIndex index = scope.Index;
                             Random rng = new Random(42);
                             List<Guid> ids = new List<Guid>();
                             Dictionary<Guid, List<float>> batch = new Dictionary<Guid, List<float>>();
@@ -342,7 +353,8 @@ namespace HnswLite.Test.Shared
                         displayName: "Configuring CosineDistance returns nearest by cosine similarity",
                         executeAsync: async ct =>
                         {
-                            HnswIndex index = NewRamIndex(_Dimension);
+                            await using TestIndexScope scope = await NewIndexAsync(_Dimension, ct).ConfigureAwait(false);
+                            HnswIndex index = scope.Index;
                             index.DistanceFunction = new CosineDistance();
 
                             await index.AddNodesAsync(new Dictionary<Guid, List<float>>
@@ -380,7 +392,8 @@ namespace HnswLite.Test.Shared
                         displayName: "Add rejects vector with wrong dimension",
                         executeAsync: async ct =>
                         {
-                            HnswIndex index = NewRamIndex(3);
+                            await using TestIndexScope scope = await NewIndexAsync(3, ct).ConfigureAwait(false);
+                            HnswIndex index = scope.Index;
                             await TestAssert.ThrowsAsync<ArgumentException>(
                                 () => index.AddAsync(Guid.NewGuid(), new List<float> { 1f, 2f }, ct),
                                 "Wrong-dimension Add").ConfigureAwait(false);
@@ -391,7 +404,8 @@ namespace HnswLite.Test.Shared
                         displayName: "Add rejects null vector",
                         executeAsync: async ct =>
                         {
-                            HnswIndex index = NewRamIndex(_Dimension);
+                            await using TestIndexScope scope = await NewIndexAsync(_Dimension, ct).ConfigureAwait(false);
+                            HnswIndex index = scope.Index;
                             await TestAssert.ThrowsAsync<ArgumentNullException>(
                                 () => index.AddAsync(Guid.NewGuid(), null!, ct),
                                 "Null vector Add").ConfigureAwait(false);
@@ -400,13 +414,13 @@ namespace HnswLite.Test.Shared
                         suiteId: "Ram.Validation",
                         caseId: "NegativeMRejected",
                         displayName: "Setting M to a negative value throws",
-                        executeAsync: ct =>
+                        executeAsync: async ct =>
                         {
-                            HnswIndex index = NewRamIndex(_Dimension);
+                            await using TestIndexScope scope = await NewIndexAsync(_Dimension, ct).ConfigureAwait(false);
+                            HnswIndex index = scope.Index;
                             TestAssert.Throws<ArgumentOutOfRangeException>(
                                 () => index.M = -1,
                                 "Negative M");
-                            return Task.CompletedTask;
                         }),
                     new TestCaseDescriptor(
                         suiteId: "Ram.Validation",
@@ -425,7 +439,8 @@ namespace HnswLite.Test.Shared
                         displayName: "Cancelled token causes OperationCanceledException",
                         executeAsync: async ct =>
                         {
-                            HnswIndex index = NewRamIndex(_HighDimension);
+                            await using TestIndexScope scope = await NewIndexAsync(_HighDimension, ct).ConfigureAwait(false);
+                            HnswIndex index = scope.Index;
                             using CancellationTokenSource cts = new CancellationTokenSource();
                             cts.Cancel();
                             await TestAssert.ThrowsAsync<OperationCanceledException>(
@@ -455,7 +470,8 @@ namespace HnswLite.Test.Shared
                         displayName: "Export/import preserves results and parameters",
                         executeAsync: async ct =>
                         {
-                            HnswIndex original = NewRamIndex(_Dimension);
+                            await using TestIndexScope originalScope = await NewIndexAsync(_Dimension, ct).ConfigureAwait(false);
+                            HnswIndex original = originalScope.Index;
                             original.M = 8;
                             original.MaxM = 12;
                             original.DistanceFunction = new CosineDistance();
@@ -466,7 +482,8 @@ namespace HnswLite.Test.Shared
                             await original.AddNodesAsync(vectors, ct).ConfigureAwait(false);
 
                             HnswState state = await original.ExportStateAsync(ct).ConfigureAwait(false);
-                            HnswIndex imported = NewRamIndex(_Dimension);
+                            await using TestIndexScope importedScope = await NewIndexAsync(_Dimension, ct).ConfigureAwait(false);
+                            HnswIndex imported = importedScope.Index;
                             await imported.ImportStateAsync(state, ct).ConfigureAwait(false);
 
                             TestAssert.Equal(original.M, imported.M, "M preserved");
@@ -504,28 +521,19 @@ namespace HnswLite.Test.Shared
                         displayName: "SQLite index returns nearest neighbors",
                         executeAsync: async ct =>
                         {
-                            string path = NewTempDb();
-                            try
+                            await using TestIndexScope scope = await NewIndexAsync(_Dimension, ct, TestStorageKind.Sqlite).ConfigureAwait(false);
+                            HnswIndex index = scope.Index;
+                            await index.AddNodesAsync(new Dictionary<Guid, List<float>>
                             {
-                                SqliteProvider provider = new SqliteProvider(path);
-                                try
-                                {
-                                    HnswIndex index = new HnswIndex(_Dimension, provider);
-                                    await index.AddNodesAsync(new Dictionary<Guid, List<float>>
-                                    {
-                                        { Guid.NewGuid(), new List<float> { 1f, 1f } },
-                                        { Guid.NewGuid(), new List<float> { 2f, 2f } },
-                                        { Guid.NewGuid(), new List<float> { 10f, 10f } },
-                                    }, ct).ConfigureAwait(false);
+                                { Guid.NewGuid(), new List<float> { 1f, 1f } },
+                                { Guid.NewGuid(), new List<float> { 2f, 2f } },
+                                { Guid.NewGuid(), new List<float> { 10f, 10f } },
+                            }, ct).ConfigureAwait(false);
 
-                                    List<VectorResult> results = (await index.GetTopKAsync(
-                                        new List<float> { 1f, 1f }, 2, cancellationToken: ct).ConfigureAwait(false)).ToList();
+                            List<VectorResult> results = (await index.GetTopKAsync(
+                                new List<float> { 1f, 1f }, 2, cancellationToken: ct).ConfigureAwait(false)).ToList();
 
-                                    TestAssert.Equal(2, results.Count, "SQLite top-2 count");
-                                }
-                                finally { provider.Dispose(); }
-                            }
-                            finally { TryDelete(path); }
+                            TestAssert.Equal(2, results.Count, "SQLite top-2 count");
                         }),
 
                     new TestCaseDescriptor(
@@ -534,33 +542,24 @@ namespace HnswLite.Test.Shared
                         displayName: "SQLite remove excludes the removed GUID from results",
                         executeAsync: async ct =>
                         {
-                            string path = NewTempDb();
-                            try
+                            await using TestIndexScope scope = await NewIndexAsync(_Dimension, ct, TestStorageKind.Sqlite).ConfigureAwait(false);
+                            HnswIndex index = scope.Index;
+                            Guid keepA = Guid.NewGuid();
+                            Guid keepB = Guid.NewGuid();
+                            Guid drop = Guid.NewGuid();
+                            await index.AddNodesAsync(new Dictionary<Guid, List<float>>
                             {
-                                SqliteProvider provider = new SqliteProvider(path);
-                                try
-                                {
-                                    HnswIndex index = new HnswIndex(_Dimension, provider);
-                                    Guid keepA = Guid.NewGuid();
-                                    Guid keepB = Guid.NewGuid();
-                                    Guid drop = Guid.NewGuid();
-                                    await index.AddNodesAsync(new Dictionary<Guid, List<float>>
-                                    {
-                                        { keepA, new List<float> { 1f, 1f } },
-                                        { drop, new List<float> { 2f, 2f } },
-                                        { keepB, new List<float> { 3f, 3f } },
-                                    }, ct).ConfigureAwait(false);
+                                { keepA, new List<float> { 1f, 1f } },
+                                { drop, new List<float> { 2f, 2f } },
+                                { keepB, new List<float> { 3f, 3f } },
+                            }, ct).ConfigureAwait(false);
 
-                                    await index.RemoveAsync(drop, ct).ConfigureAwait(false);
+                            await index.RemoveAsync(drop, ct).ConfigureAwait(false);
 
-                                    List<VectorResult> results = (await index.GetTopKAsync(
-                                        new List<float> { 2f, 2f }, 5, cancellationToken: ct).ConfigureAwait(false)).ToList();
+                            List<VectorResult> results = (await index.GetTopKAsync(
+                                new List<float> { 2f, 2f }, 5, cancellationToken: ct).ConfigureAwait(false)).ToList();
 
-                                    TestAssert.False(results.Any(r => r.GUID == drop), "Dropped GUID absent");
-                                }
-                                finally { provider.Dispose(); }
-                            }
-                            finally { TryDelete(path); }
+                            TestAssert.False(results.Any(r => r.GUID == drop), "Dropped GUID absent");
                         }),
                 });
         }
@@ -582,40 +581,71 @@ namespace HnswLite.Test.Shared
                         displayName: "Data persists across close/reopen of the database",
                         executeAsync: async ct =>
                         {
-                            string path = NewTempDb();
+                            TestIndexScope? writer = null;
                             Guid expected = Guid.NewGuid();
                             try
                             {
-                                SqliteProvider w = new SqliteProvider(path);
-                                try
+                                writer = await NewIndexAsync(_Dimension, ct, TestStorageKind.Sqlite, cleanupLocationOnDispose: false).ConfigureAwait(false);
+                                HnswIndex index = writer.Index;
+                                await index.AddNodesAsync(new Dictionary<Guid, List<float>>
                                 {
-                                    HnswIndex index = new HnswIndex(_Dimension, w);
-                                    await index.AddNodesAsync(new Dictionary<Guid, List<float>>
-                                    {
-                                        { expected, new List<float> { 1f, 1f } },
-                                        { Guid.NewGuid(), new List<float> { 9f, 9f } },
-                                    }, ct).ConfigureAwait(false);
-                                }
-                                finally { w.Dispose(); }
+                                    { expected, new List<float> { 1f, 1f } },
+                                    { Guid.NewGuid(), new List<float> { 9f, 9f } },
+                                }, ct).ConfigureAwait(false);
 
-                                SqliteConnection.ClearAllPools();
+                                await writer.DisposeAsync().ConfigureAwait(false);
 
-                                SqliteProvider r = new SqliteProvider(path, createIfNotExists: false);
-                                try
-                                {
-                                    HnswIndex index = new HnswIndex(_Dimension, r);
-                                    List<VectorResult> results = (await index.GetTopKAsync(
-                                        new List<float> { 1f, 1f }, 1, cancellationToken: ct).ConfigureAwait(false)).ToList();
+                                await using TestIndexScope reader = await writer.ReopenAsync(ct).ConfigureAwait(false);
+                                HnswIndex reopened = reader.Index;
+                                List<VectorResult> results = (await reopened.GetTopKAsync(
+                                    new List<float> { 1f, 1f }, 1, cancellationToken: ct).ConfigureAwait(false)).ToList();
 
-                                    TestAssert.Equal(1, results.Count, "Persisted top-1 count");
-                                    TestAssert.Equal(expected, results[0].GUID, "Persisted GUID");
-                                }
-                                finally { r.Dispose(); }
+                                TestAssert.Equal(1, results.Count, "Persisted top-1 count");
+                                TestAssert.Equal(expected, results[0].GUID, "Persisted GUID");
                             }
                             finally
                             {
-                                SqliteConnection.ClearAllPools();
-                                TryDelete(path);
+                                if (writer != null)
+                                {
+                                    await writer.CleanupLocationAsync(ct).ConfigureAwait(false);
+                                }
+                            }
+                        }),
+
+                    new TestCaseDescriptor(
+                        suiteId: "Sqlite.Persistence",
+                        caseId: "NeighborMutationIsWriteThrough",
+                        displayName: "SQLite neighbor mutations persist without a provider flush",
+                        executeAsync: async ct =>
+                        {
+                            Guid a = Guid.NewGuid();
+                            Guid b = Guid.NewGuid();
+                            TestIndexScope? writer = null;
+                            TestIndexScope? reader = null;
+                            try
+                            {
+                                writer = await NewIndexAsync(_Dimension, ct, TestStorageKind.Sqlite, cleanupLocationOnDispose: false).ConfigureAwait(false);
+                                await writer.Provider.AddNodesAsync(new Dictionary<Guid, List<float>>
+                                {
+                                    { a, new List<float> { 1f, 1f } },
+                                    { b, new List<float> { 2f, 2f } },
+                                }, ct).ConfigureAwait(false);
+
+                                IHnswNode node = await writer.Provider.GetNodeAsync(a, ct).ConfigureAwait(false);
+                                await node.AddNeighborAsync(0, b, ct).ConfigureAwait(false);
+
+                                reader = await writer.ReopenAsync(ct).ConfigureAwait(false);
+                                IHnswNode reloaded = await reader.Provider.GetNodeAsync(a, ct).ConfigureAwait(false);
+                                Dictionary<int, HashSet<Guid>> neighbors = await reloaded.GetNeighborsAsync(ct).ConfigureAwait(false);
+
+                                TestAssert.True(neighbors.TryGetValue(0, out HashSet<Guid>? layerZero), "Layer zero neighbors exist");
+                                TestAssert.True(layerZero!.Contains(b), "Write-through neighbor persisted without FlushAsync");
+                            }
+                            finally
+                            {
+                                if (reader != null) await reader.DisposeAsync().ConfigureAwait(false);
+                                if (writer != null) await writer.DisposeAsync().ConfigureAwait(false);
+                                if (writer != null) await writer.CleanupLocationAsync(ct).ConfigureAwait(false);
                             }
                         }),
                 });
@@ -625,9 +655,19 @@ namespace HnswLite.Test.Shared
 
         #region Private-Methods
 
-        private static HnswIndex NewRamIndex(int dimension)
+        private static Task<TestIndexScope> NewIndexAsync(
+            int dimension,
+            CancellationToken cancellationToken,
+            TestStorageKind defaultKind = TestStorageKind.Ram,
+            int? seed = null,
+            bool cleanupLocationOnDispose = true)
         {
-            return new HnswIndex(dimension, new RamProvider());
+            return TestIndexScope.CreateAsync(
+                dimension,
+                cancellationToken,
+                seed,
+                defaultKind,
+                cleanupLocationOnDispose);
         }
 
         private static List<float> RandomVector(int dimension, Random rng)

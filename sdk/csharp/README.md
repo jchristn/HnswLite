@@ -46,7 +46,7 @@ IndexResponse index = await client.CreateIndexAsync(new CreateIndexRequest
 {
     Name = "my-index",
     Dimension = 384,
-    StorageType = "RAM",           // "RAM" or "SQLite"
+    StorageType = "PostgreSQL",    // "PostgreSQL", "SQLite", or "RAM"
     DistanceFunction = "Cosine",   // "Euclidean", "Cosine", or "DotProduct"
     M = 16,
     MaxM = 32,
@@ -240,10 +240,12 @@ using HnswLiteClient client = new HnswLiteClient(
 
 ```bash
 cd sdk/csharp/HnswLite.Sdk.Test
-dotnet run -- http://localhost:8080 your-api-key
+dotnet run -- http://localhost:8080 b6b6f6b0-c251-4733-93c8-5587370baa42 PostgreSQL
 ```
 
-The test harness exercises every SDK method and prints pass/fail for each. Exit code 0 means all tests passed.
+The test harness exercises every SDK method and prints pass/fail for each. Exit
+code 0 means all tests passed. You can also use `HNSWLITE_BASE_URL`,
+`HNSWLITE_API_KEY`, and `HNSWLITE_STORAGE_TYPE` instead of positional arguments.
 
 ## Target Frameworks
 

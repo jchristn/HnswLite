@@ -19,6 +19,7 @@ HnswLite implements the Hierarchical Navigable Small World algorithm, which prov
 | `src/HnswIndex/` | Core library (`HnswLite` on NuGet) |
 | `src/HnswIndex.RamStorage/` | In-memory storage provider |
 | `src/HnswIndex.SqliteStorage/` | SQLite storage provider |
+| `src/HnswIndex.PostgresqlStorage/` | PostgreSQL storage provider |
 | `src/HnswIndex.Server/` | Standalone REST server (Watson 7) |
 | `src/Test.Shared/` + `src/Test.{Automated,XUnit,NUnit,MSTest}/` | Touchstone-driven test suites |
 | `dashboard/` | React 19 + Vite dashboard |
@@ -29,12 +30,22 @@ HnswLite implements the Hierarchical Navigable Small World algorithm, which prov
 
 - **Pure C# implementation** — no native dependencies.
 - **Thread-safe**, async/await with cancellation tokens throughout.
-- **Unified `IStorageProvider` interface** — build-your-own backend by implementing one interface.
+- **Async-only `IStorageProvider` interface** - build your own backend by implementing one provider contract.
+- **Storage backends** - PostgreSQL, SQLite, and RAM.
 - **Multiple distance metrics** — Euclidean, Cosine, Dot Product, with SIMD acceleration via `System.Numerics.Vector<float>`.
 - **Batch operations** — efficient bulk insert and remove.
-- **Persistence by default** — the SQLite storage provider writes a self-describing `.db` file; the REST server reloads every index on startup.
+- **Persistence by default** - the REST server and Docker deployment default to PostgreSQL; SQLite remains available for embedded and fallback deployments.
 - **Paginated enumeration contract** across every GET collection endpoint (`EnumerationQuery` / `EnumerationResult<T>`).
 - **OPTIONS preflight + CORS** out of the box in the REST server.
+
+## New in v2.0.0
+
+- **Breaking async storage API.** `IHnswStorage`, `IHnswLayerStorage`, `IHnswNode`, and `IStorageProvider` are async-only. Node metadata is updated through `SetMetadataAsync(...)`, and providers implement `IAsyncDisposable`.
+- **PostgreSQL provider.** `HnswLite.PostgresqlStorage` stores index metadata, vectors, graph layers, neighbors, and vector metadata in PostgreSQL using async Npgsql APIs.
+- **PostgreSQL multi-index model.** One PostgreSQL schema stores all logical indexes in shared tables partitioned by `hnsw_indexes.id`/`index_id`.
+- **PostgreSQL server default.** New server-created indexes default to `PostgreSQL` unless `StorageType` is explicitly set to `SQLite` or `RAM`.
+- **Docker PostgreSQL deployment.** `docker/compose.yaml` starts PostgreSQL, runs a one-shot provisioner for schema/default records, then starts the server and dashboard.
+- **SDK and test updates.** C#, Python, and JS/TS SDK examples and harnesses default to Docker's PostgreSQL-backed server.
 
 ## New in v1.2.0
 
@@ -59,7 +70,7 @@ POST /v1.0/indexes/demo/search
 Query-string (enumerate):
 ```bash
 curl -H "x-api-key: $API_KEY" \
-  "http://localhost:8321/v1.0/indexes/demo/vectors?labels=red,small&tags=env:prod,owner:alice&caseInsensitive=true&includeVectors=false"
+  "http://localhost:8080/v1.0/indexes/demo/vectors?labels=red,small&tags=env:prod,owner:alice&caseInsensitive=true&includeVectors=false"
 ```
 
 Both endpoints return a `FilteredCount` alongside the existing fields:
@@ -94,12 +105,12 @@ See [CHANGELOG.md](CHANGELOG.md) for the full list. Highlights:
 
 ### Storage abstraction
 
-- **`IStorageProvider`** — a single interface that combines `IHnswStorage`, `IHnswLayerStorage`, and `IDisposable`. `HnswIndex` accepts it via a new constructor.
+- **`IStorageProvider`** - a single interface that combines `IHnswStorage`, `IHnswLayerStorage`, transaction/flush hooks, and `IAsyncDisposable`. `HnswIndex` accepts it via a provider constructor.
 - **`RamStorageProvider`** and **`SqliteStorageProvider`** consolidate the previous pair-of-objects setup into one lifecycle-managed instance.
 
 ### Server persistence
 
-- **Default `StorageType` is now `SQLite`**. The old default silently created RAM-only indexes that vanished on restart.
+- **Historical v1.1 default:** `StorageType` changed from `RAM` to `SQLite` in v1.1. In v2.0.0, the server and Docker default is `PostgreSQL`.
 - Server-owned metadata (GUID / dimension / distance function / M / MaxM / EfConstruction / created timestamp) is persisted **inside each SQLite `.db` file** via the library's `hnsw_metadata` key/value table under a `server.*` key prefix. No manifest file — the database IS the manifest.
 - `IndexManager` scans the SQLite directory on startup, opens every `.db`, and re-registers the index. Indexes survive restarts.
 
@@ -178,7 +189,7 @@ Three new SDKs with 100% endpoint coverage + integration test harnesses:
 ### Tips
 
 - Use `AddNodesAsync(...)` / `RemoveNodesAsync(...)` for batches — they acquire the write lock once.
-- Prefer `SqliteStorageProvider` for persistence; `RamStorageProvider` for ephemeral in-memory indexes.
+- Prefer `PostgresqlStorageProvider` for server and Docker persistence, `SqliteStorageProvider` for local embedded persistence, and `RamStorageProvider` for ephemeral in-memory indexes.
 - For high-dimensional embeddings use `CosineDistance`.
 
 ## Simple example (embedded)
@@ -186,15 +197,24 @@ Three new SDKs with 100% endpoint coverage + integration test harnesses:
 ```csharp
 using Hnsw;
 using Hnsw.RamStorage;
+using HnswIndex.PostgresqlStorage;
 using HnswIndex.SqliteStorage;
 
 // RAM
-using RamStorageProvider ram = new RamStorageProvider();
+await using RamStorageProvider ram = new RamStorageProvider();
 HnswIndex index = new HnswIndex(128, ram);
 
-// Or SQLite (persistent)
-using SqliteStorageProvider sqlite = new SqliteStorageProvider("my-index.db");
-HnswIndex persistentIndex = new HnswIndex(128, sqlite);
+// PostgreSQL (server/Docker default)
+string connectionString = "Host=localhost;Port=5432;Database=hnswlite;Username=hnswlite;Password=hnswlite";
+await using PostgresqlStorageProvider postgres = await PostgresqlStorageProvider.CreateAsync(
+    connectionString,
+    "my-index",
+    dimension: 128);
+HnswIndex persistentIndex = new HnswIndex(128, postgres);
+
+// Or SQLite (local embedded persistence)
+await using SqliteStorageProvider sqlite = await SqliteStorageProvider.CreateAsync("my-index.db");
+HnswIndex sqliteIndex = new HnswIndex(128, sqlite);
 
 // Configure
 index.M = 16;
@@ -219,13 +239,14 @@ foreach (VectorResult r in neighbors)
 
 // Export / import state
 HnswState state = await index.ExportStateAsync();
-HnswIndex restored = new HnswIndex(128, new RamStorageProvider());
+await using RamStorageProvider restoredStorage = new RamStorageProvider();
+HnswIndex restored = new HnswIndex(128, restoredStorage);
 await restored.ImportStateAsync(state);
 ```
 
 ### Best practices
 
-1. **Resource management.** `IStorageProvider` is `IDisposable` — use `using` to guarantee flush on scope exit (important for SQLite).
+1. **Resource management.** `IStorageProvider` is `IAsyncDisposable` - use `await using` to guarantee flush on scope exit.
 2. **Prefer batches.** Calling `AddNodesAsync` is substantially faster than a loop of `AddAsync` because it acquires the write lock once.
 3. **Tune `Ef` at search time.**
    ```csharp
@@ -235,7 +256,7 @@ await restored.ImportStateAsync(state);
 
 ### Custom storage backend
 
-Implement `IStorageProvider` (which aggregates `IHnswStorage`, `IHnswLayerStorage`, and `IDisposable`). See `RamStorageProvider` and `SqliteStorageProvider` as reference implementations. The server and dashboard are completely provider-agnostic.
+Implement `IStorageProvider` (which aggregates `IHnswStorage`, `IHnswLayerStorage`, transactional hooks, flush, and `IAsyncDisposable`). See `RamStorageProvider`, `SqliteStorageProvider`, and `PostgresqlStorageProvider` as reference implementations. The server and dashboard are provider-agnostic.
 
 ## REST server
 
@@ -248,6 +269,17 @@ dotnet run
 The server listens on `http://localhost:8080` by default. Authentication uses the `x-api-key` header (configurable via `Server.AdminApiKeyHeader`). OPTIONS pre-flight is unauthenticated and served by Watson's preflight hook; CORS headers are emitted on every response and configured under the `Cors` block in `hnswindex.json`.
 
 Full endpoint reference: [REST_API.md](REST_API.md). Interactive reference: [HNSW Index.postman_collection.json](HNSW%20Index.postman_collection.json).
+
+## Test runners
+
+The shared Touchstone tests can be run through `Test.Automated`, xUnit, NUnit, or MSTest. `Test.Automated` accepts storage overrides directly:
+
+```bash
+dotnet run --project src/Test.Automated/Test.Automated.csproj -- --storage sqlite --filename test.db
+dotnet run --project src/Test.Automated/Test.Automated.csproj -- --storage postgresql --host localhost --user hnsw --pass password --schema public --databasename hnswtest
+```
+
+The adapter projects use the same shared configuration through environment variables before `dotnet test`: `HNSWLITE_TEST_STORAGE`, `HNSWLITE_TEST_SQLITE_FILENAME`, `HNSWLITE_TEST_POSTGRES_CONNECTION`, or PostgreSQL components `HNSWLITE_TEST_POSTGRES_HOST`, `HNSWLITE_TEST_POSTGRES_PORT`, `HNSWLITE_TEST_POSTGRES_USER`, `HNSWLITE_TEST_POSTGRES_PASSWORD`, `HNSWLITE_TEST_POSTGRES_DATABASE`, and `HNSWLITE_TEST_POSTGRES_SCHEMA`.
 
 ## Dashboard
 
@@ -277,11 +309,18 @@ Each SDK has 100% endpoint coverage and a test harness. See [sdk/README.md](sdk/
 
 ```bash
 cd docker
-docker compose up -d
+docker compose up -d --build
 ```
 
 - Server:    `http://localhost:8080/`
 - Dashboard: `http://localhost:8081/dashboard/`
+- Storage:   PostgreSQL by default, provisioned by the Compose stack
+
+Build and push both release images with one tag:
+
+```cmd
+build-all.bat v2.0.0
+```
 
 Factory reset (with `RESET` confirmation):
 

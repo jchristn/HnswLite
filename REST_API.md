@@ -11,6 +11,8 @@ returns JSON (or an empty body on `204 No Content`).
   served by Watson's pre-flight hook (bypasses authentication). Origins / methods
   / headers are configured under the `Cors` block in `hnswindex.json`.
 - **Content type:** `application/json` for request bodies that exist.
+- **Default storage:** new indexes default to `PostgreSQL` when `StorageType`
+  is omitted or blank. Accepted values are `PostgreSQL`, `SQLite`, and `RAM`.
 
 ## Enumeration contract
 
@@ -93,7 +95,7 @@ Enumerate indexes.
   "GUID": "uuid",
   "Name": "string",
   "Dimension": 384,
-  "StorageType": "RAM | SQLite",
+  "StorageType": "PostgreSQL | SQLite | RAM",
   "DistanceFunction": "Euclidean | Cosine | DotProduct",
   "M": 16,
   "MaxM": 32,
@@ -117,7 +119,7 @@ curl -H "x-api-key: $KEY" \
 Create a new index.
 
 - Body: `CreateIndexRequest` — `Name`, `Dimension` (>0), `StorageType`
-  (`"RAM"` or `"SQLite"`), `DistanceFunction` (`"Euclidean"`, `"Cosine"`, or
+  (`"PostgreSQL"`, `"SQLite"`, or `"RAM"`), `DistanceFunction` (`"Euclidean"`, `"Cosine"`, or
   `"DotProduct"`), `M`, `MaxM`, `EfConstruction`.
 - Response: `201 Created` + `IndexResponse`.
 - Errors: `400` (invalid body / dimension), `409` (name already exists).

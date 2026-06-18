@@ -61,7 +61,7 @@ echo 5. Testing POST /v1.0/indexes (Create new index)
 set INDEX_NAME=test-index-windows
 echo Creating index: %INDEX_NAME%
 echo Response:
-curl -s -X POST %HEADERS% -d "{\"Name\": \"%INDEX_NAME%\",\"Dimension\": 3,\"StorageType\": \"Sqlite\",\"DistanceFunction\": \"Euclidean\",\"M\": 16,\"MaxM\": 32,\"EfConstruction\": 200}" "%BASE_URL%/v1.0/indexes"
+curl -s -X POST %HEADERS% -d "{\"Name\": \"%INDEX_NAME%\",\"Dimension\": 3,\"StorageType\": \"PostgreSQL\",\"DistanceFunction\": \"Euclidean\",\"M\": 16,\"MaxM\": 32,\"EfConstruction\": 200}" "%BASE_URL%/v1.0/indexes"
 echo.
 echo.
 

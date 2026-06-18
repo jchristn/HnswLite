@@ -31,7 +31,7 @@ namespace Hnsw
         /// <returns>The cosine distance between the vectors (1 - cosine similarity).</returns>
         /// <exception cref="ArgumentNullException">Thrown when a or b is null.</exception>
         /// <exception cref="ArgumentException">Thrown when vectors have different dimensions.</exception>
-        public float Distance(List<float> a, List<float> b)
+        public float Distance(IReadOnlyList<float> a, IReadOnlyList<float> b)
         {
             ArgumentNullException.ThrowIfNull(a, nameof(a));
             ArgumentNullException.ThrowIfNull(b, nameof(b));
@@ -41,8 +41,31 @@ namespace Hnsw
                 throw new ArgumentException($"Vectors must have the same dimension. Vector a has {a.Count} dimensions, vector b has {b.Count} dimensions.", nameof(b));
             }
 
-            ReadOnlySpan<float> spanA = CollectionsMarshal.AsSpan(a);
-            ReadOnlySpan<float> spanB = CollectionsMarshal.AsSpan(b);
+            if (a is not List<float> listA || b is not List<float> listB)
+            {
+                float fallbackDot = 0f;
+                float fallbackNormA = 0f;
+                float fallbackNormB = 0f;
+                for (int j = 0; j < a.Count; j++)
+                {
+                    float av = a[j];
+                    float bv = b[j];
+                    fallbackDot += av * bv;
+                    fallbackNormA += av * av;
+                    fallbackNormB += bv * bv;
+                }
+
+                if (fallbackNormA == 0f || fallbackNormB == 0f)
+                {
+                    return 1f;
+                }
+
+                float fallbackCosineSimilarity = fallbackDot / (MathF.Sqrt(fallbackNormA) * MathF.Sqrt(fallbackNormB));
+                return 1f - fallbackCosineSimilarity;
+            }
+
+            ReadOnlySpan<float> spanA = CollectionsMarshal.AsSpan(listA);
+            ReadOnlySpan<float> spanB = CollectionsMarshal.AsSpan(listB);
 
             float dotProduct = 0f;
             float normA = 0f;

@@ -1,11 +1,10 @@
-﻿namespace HnswIndex.SqliteStorage
+namespace HnswIndex.SqliteStorage
 {
     using System;
     using System.Collections.Generic;
     using System.IO;
     using System.Linq;
     using System.Runtime.InteropServices;
-    using System.Text.Json;
     using System.Threading;
     using System.Threading.Tasks;
     using Hnsw;
@@ -13,183 +12,591 @@
     using Microsoft.Data.Sqlite;
 
     /// <summary>
-    /// SQLite-based implementation of HNSW storage with thread-safe operations.
-    /// Provides persistent storage for HNSW nodes in a SQLite database.
+    /// SQLite-based implementation of HNSW node storage.
     /// </summary>
-    public class SqliteHnswStorage : IHnswStorage, IDisposable
+    public sealed class SqliteHnswStorage : IHnswStorage, IDisposable, IAsyncDisposable
     {
-#pragma warning disable CS8619 // Nullability of reference types in value doesn't match target type.
+        private readonly SqliteConnection _Connection;
+        private readonly SemaphoreSlim _DatabaseLock;
+        private readonly bool _OwnsDatabaseLock;
+        private readonly SemaphoreSlim _StorageLock = new SemaphoreSlim(1, 1);
+        private readonly Dictionary<Guid, SqliteHnswNode> _NodeCache = new Dictionary<Guid, SqliteHnswNode>();
+        private readonly string _DatabasePath;
+        private readonly string _NodesTableName;
+        private readonly string _NeighborsTableName;
+        private readonly string _MetadataTableName;
+        private Guid? _EntryPoint;
+        private bool _Disposed;
+        private bool _EntryPointLoaded;
 
-        // Private members
-        private readonly SqliteConnection _connection;
-        private readonly Dictionary<Guid, SqliteHnswNode> _nodeCache = new Dictionary<Guid, SqliteHnswNode>();
-        private readonly ReaderWriterLockSlim _storageLock = new ReaderWriterLockSlim();
-        private readonly string _databasePath;
-        private readonly string _nodesTableName;
-        private readonly string _neighborsTableName;
-        private readonly string _metadataTableName;
-        private Guid? _entryPoint = null;
-        private bool _disposed = false;
-        private bool _entryPointLoaded = false;
-
-        // Public properties
-        /// <summary>
-        /// Gets or sets the entry point node ID.
-        /// Can be null when storage is empty.
-        /// When setting, the value must either be null or correspond to an existing node ID.
-        /// Thread-safe property.
-        /// Default: null.
-        /// </summary>
-        public Guid? EntryPoint
+        private SqliteHnswStorage(
+            string databasePath,
+            string nodesTableName,
+            string neighborsTableName,
+            string metadataTableName,
+            SqliteConnection connection,
+            SemaphoreSlim databaseLock,
+            bool ownsDatabaseLock)
         {
-            get
-            {
-                ThrowIfDisposed();
-                _storageLock.EnterReadLock();
-                try
-                {
-                    if (!_entryPointLoaded)
-                    {
-                        _storageLock.ExitReadLock();
-                        _storageLock.EnterWriteLock();
-                        try
-                        {
-                            if (!_entryPointLoaded)
-                            {
-                                LoadEntryPointFromDatabase();
-                                _entryPointLoaded = true;
-                            }
-                        }
-                        finally
-                        {
-                            _storageLock.ExitWriteLock();
-                            _storageLock.EnterReadLock();
-                        }
-                    }
-                    return _entryPoint;
-                }
-                finally
-                {
-                    _storageLock.ExitReadLock();
-                }
-            }
-            set
-            {
-                ThrowIfDisposed();
-                _storageLock.EnterWriteLock();
-                try
-                {
-                    if (value.HasValue && !NodeExistsInDatabase(value.Value))
-                    {
-                        throw new ArgumentException($"Entry point node {value.Value} does not exist in storage.", nameof(value));
-                    }
-                    _entryPoint = value;
-                    SaveEntryPointToDatabase();
-                }
-                finally
-                {
-                    _storageLock.ExitWriteLock();
-                }
-            }
-        }
-
-        /// <summary>
-        /// Gets whether the storage is empty (contains no nodes).
-        /// Thread-safe property.
-        /// </summary>
-        public bool IsEmpty
-        {
-            get
-            {
-                ThrowIfDisposed();
-                _storageLock.EnterReadLock();
-                try
-                {
-                    SqliteCommand command = _connection.CreateCommand();
-                    command.CommandText = $"SELECT COUNT(*) FROM {_nodesTableName}";
-                    int count = Convert.ToInt32(command.ExecuteScalar());
-                    return count == 0;
-                }
-                finally
-                {
-                    _storageLock.ExitReadLock();
-                }
-            }
+            _DatabasePath = databasePath;
+            _NodesTableName = nodesTableName;
+            _NeighborsTableName = neighborsTableName;
+            _MetadataTableName = metadataTableName;
+            _Connection = connection;
+            _DatabaseLock = databaseLock;
+            _OwnsDatabaseLock = ownsDatabaseLock;
         }
 
         /// <summary>
         /// Gets whether the storage has been disposed.
         /// </summary>
-        public bool IsDisposed => _disposed;
+        public bool IsDisposed => _Disposed;
 
         /// <summary>
         /// Gets the database file path.
         /// </summary>
-        public string DatabasePath => _databasePath;
+        public string DatabasePath => _DatabasePath;
 
         /// <summary>
         /// Gets the SQLite database connection.
         /// </summary>
-        public SqliteConnection Connection => _connection;
+        public SqliteConnection Connection => _Connection;
 
-        // Constructors
         /// <summary>
-        /// Initializes a new instance of the SqliteHnswStorage class.
+        /// Creates a SQLite storage instance and initializes the backing schema asynchronously.
         /// </summary>
-        /// <param name="databasePath">Path to the SQLite database file. Cannot be null or empty.</param>
-        /// <param name="createIfNotExists">Whether to create the database if it doesn't exist. Default: true.</param>
-        /// <exception cref="ArgumentNullException">Thrown when databasePath is null or empty.</exception>
-        /// <exception cref="FileNotFoundException">Thrown when database doesn't exist and createIfNotExists is false.</exception>
-        public SqliteHnswStorage(string databasePath, bool createIfNotExists = true)
+        public static Task<SqliteHnswStorage> CreateAsync(
+            string databasePath,
+            bool createIfNotExists = true,
+            SemaphoreSlim? databaseLock = null,
+            CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(databasePath))
-                throw new ArgumentNullException(nameof(databasePath));
-
-            _databasePath = databasePath;
-            _nodesTableName = "hnsw_nodes";
-            _neighborsTableName = "hnsw_neighbors";
-            _metadataTableName = "hnsw_metadata";
-
-            if (!createIfNotExists && !File.Exists(databasePath))
-                throw new FileNotFoundException($"Database file not found: {databasePath}");
-
-            _connection = OpenAndConfigureConnection(databasePath);
-            InitializeDatabase();
+            return CreateAsync(
+                databasePath,
+                "hnsw_nodes",
+                "hnsw_neighbors",
+                "hnsw_metadata",
+                createIfNotExists,
+                databaseLock,
+                cancellationToken);
         }
 
         /// <summary>
-        /// Initializes a new instance of the SqliteHnswStorage class with custom table names.
+        /// Creates a SQLite storage instance with custom table names and initializes the backing schema asynchronously.
         /// </summary>
-        /// <param name="databasePath">Path to the SQLite database file. Cannot be null or empty.</param>
-        /// <param name="nodesTableName">Name for the nodes table. Cannot be null or empty.</param>
-        /// <param name="neighborsTableName">Name for the neighbors table. Cannot be null or empty.</param>
-        /// <param name="metadataTableName">Name for the metadata table. Cannot be null or empty.</param>
-        /// <param name="createIfNotExists">Whether to create the database if it doesn't exist. Default: true.</param>
-        /// <exception cref="ArgumentNullException">Thrown when any parameter is null or empty.</exception>
-        public SqliteHnswStorage(string databasePath, string nodesTableName, string neighborsTableName, string metadataTableName, bool createIfNotExists = true)
+        public static async Task<SqliteHnswStorage> CreateAsync(
+            string databasePath,
+            string nodesTableName,
+            string neighborsTableName,
+            string metadataTableName,
+            bool createIfNotExists = true,
+            SemaphoreSlim? databaseLock = null,
+            CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(databasePath))
-                throw new ArgumentNullException(nameof(databasePath));
-            if (string.IsNullOrWhiteSpace(nodesTableName))
-                throw new ArgumentNullException(nameof(nodesTableName));
-            if (string.IsNullOrWhiteSpace(neighborsTableName))
-                throw new ArgumentNullException(nameof(neighborsTableName));
-            if (string.IsNullOrWhiteSpace(metadataTableName))
-                throw new ArgumentNullException(nameof(metadataTableName));
-
-            _databasePath = databasePath;
-            _nodesTableName = nodesTableName;
-            _neighborsTableName = neighborsTableName;
-            _metadataTableName = metadataTableName;
-
+            if (string.IsNullOrWhiteSpace(databasePath)) throw new ArgumentNullException(nameof(databasePath));
+            if (string.IsNullOrWhiteSpace(nodesTableName)) throw new ArgumentNullException(nameof(nodesTableName));
+            if (string.IsNullOrWhiteSpace(neighborsTableName)) throw new ArgumentNullException(nameof(neighborsTableName));
+            if (string.IsNullOrWhiteSpace(metadataTableName)) throw new ArgumentNullException(nameof(metadataTableName));
             if (!createIfNotExists && !File.Exists(databasePath))
+            {
                 throw new FileNotFoundException($"Database file not found: {databasePath}");
+            }
 
-            _connection = OpenAndConfigureConnection(databasePath);
-            InitializeDatabase();
+            string? directory = Path.GetDirectoryName(Path.GetFullPath(databasePath));
+            if (!string.IsNullOrWhiteSpace(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            bool ownsDatabaseLock = databaseLock == null;
+            SemaphoreSlim sqliteLock = databaseLock ?? new SemaphoreSlim(1, 1);
+            SqliteConnection connection = await OpenAndConfigureConnectionAsync(databasePath, sqliteLock, cancellationToken).ConfigureAwait(false);
+
+            SqliteHnswStorage storage = new SqliteHnswStorage(
+                databasePath,
+                nodesTableName,
+                neighborsTableName,
+                metadataTableName,
+                connection,
+                sqliteLock,
+                ownsDatabaseLock);
+
+            try
+            {
+                await storage.InitializeDatabaseAsync(cancellationToken).ConfigureAwait(false);
+                return storage;
+            }
+            catch
+            {
+                await storage.DisposeAsync().ConfigureAwait(false);
+                throw;
+            }
         }
 
-        private static SqliteConnection OpenAndConfigureConnection(string databasePath)
+        /// <inheritdoc />
+        public async Task<Guid?> GetEntryPointAsync(CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            await _StorageLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await EnsureEntryPointLoadedUnsafeAsync(cancellationToken).ConfigureAwait(false);
+                return _EntryPoint;
+            }
+            finally
+            {
+                _StorageLock.Release();
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task SetEntryPointAsync(Guid? entryPoint, CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            await _StorageLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await _DatabaseLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    if (entryPoint.HasValue && !await NodeExistsInDatabaseCoreAsync(entryPoint.Value, null, cancellationToken).ConfigureAwait(false))
+                    {
+                        throw new ArgumentException($"Entry point node {entryPoint.Value} does not exist in storage.", nameof(entryPoint));
+                    }
+
+                    _EntryPoint = entryPoint;
+                    _EntryPointLoaded = true;
+                    await SaveEntryPointToDatabaseCoreAsync(null, cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    _DatabaseLock.Release();
+                }
+            }
+            finally
+            {
+                _StorageLock.Release();
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task<int> GetCountAsync(CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            await _DatabaseLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                using SqliteCommand command = _Connection.CreateCommand();
+                command.CommandText = $"SELECT COUNT(*) FROM {_NodesTableName}";
+                object? count = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                return Convert.ToInt32(count);
+            }
+            finally
+            {
+                _DatabaseLock.Release();
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task AddNodeAsync(Guid id, List<float> vector, CancellationToken cancellationToken = default)
+        {
+            ValidateNode(id, vector);
+            ThrowIfDisposed();
+
+            await _StorageLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                RemoveCachedNodeUnsafe(id);
+
+                await _DatabaseLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    using SqliteCommand command = _Connection.CreateCommand();
+                    command.CommandText = $@"
+                        INSERT OR REPLACE INTO {_NodesTableName} (id, vector_blob, vector_dimension, metadata_json, updated_at)
+                        VALUES (@id, @vectorBlob, @dimension, NULL, CURRENT_TIMESTAMP)";
+                    command.Parameters.AddWithValue("@id", id.ToByteArray());
+                    command.Parameters.AddWithValue("@vectorBlob", SerializeVector(vector));
+                    command.Parameters.AddWithValue("@dimension", vector.Count);
+                    await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+                    await EnsureEntryPointLoadedCoreAsync(null, cancellationToken).ConfigureAwait(false);
+                    if (_EntryPoint == null)
+                    {
+                        _EntryPoint = id;
+                        await SaveEntryPointToDatabaseCoreAsync(null, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+                finally
+                {
+                    _DatabaseLock.Release();
+                }
+
+                _NodeCache[id] = await CreateNodeAsync(id, vector, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _StorageLock.Release();
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task AddNodesAsync(Dictionary<Guid, List<float>> nodes, CancellationToken cancellationToken = default)
+        {
+            if (nodes == null) throw new ArgumentNullException(nameof(nodes));
+            foreach (KeyValuePair<Guid, List<float>> kvp in nodes)
+            {
+                ValidateNode(kvp.Key, kvp.Value);
+            }
+
+            ThrowIfDisposed();
+
+            await _StorageLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                foreach (Guid id in nodes.Keys)
+                {
+                    RemoveCachedNodeUnsafe(id);
+                }
+
+                await _DatabaseLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await using SqliteTransaction transaction = (SqliteTransaction)await _Connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        await EnsureEntryPointLoadedCoreAsync(transaction, cancellationToken).ConfigureAwait(false);
+                        bool wasEmpty = _EntryPoint == null;
+                        Guid? firstNodeId = null;
+
+                        using SqliteCommand command = _Connection.CreateCommand();
+                        command.Transaction = transaction;
+                        command.CommandText = $@"
+                            INSERT OR REPLACE INTO {_NodesTableName} (id, vector_blob, vector_dimension, metadata_json, updated_at)
+                            VALUES (@id, @vectorBlob, @dimension, NULL, CURRENT_TIMESTAMP)";
+
+                        foreach (KeyValuePair<Guid, List<float>> kvp in nodes)
+                        {
+                            firstNodeId ??= kvp.Key;
+                            command.Parameters.Clear();
+                            command.Parameters.AddWithValue("@id", kvp.Key.ToByteArray());
+                            command.Parameters.AddWithValue("@vectorBlob", SerializeVector(kvp.Value));
+                            command.Parameters.AddWithValue("@dimension", kvp.Value.Count);
+                            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                        }
+
+                        if (wasEmpty && firstNodeId.HasValue)
+                        {
+                            _EntryPoint = firstNodeId.Value;
+                            await SaveEntryPointToDatabaseCoreAsync(transaction, cancellationToken).ConfigureAwait(false);
+                        }
+
+                        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                        throw;
+                    }
+                }
+                finally
+                {
+                    _DatabaseLock.Release();
+                }
+
+                foreach (KeyValuePair<Guid, List<float>> kvp in nodes)
+                {
+                    _NodeCache[kvp.Key] = await CreateNodeAsync(kvp.Key, kvp.Value, cancellationToken).ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                _StorageLock.Release();
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task RemoveNodeAsync(Guid id, CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            await _StorageLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                RemoveCachedNodeUnsafe(id);
+
+                await _DatabaseLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    using SqliteCommand deleteNodeCommand = _Connection.CreateCommand();
+                    deleteNodeCommand.CommandText = $"DELETE FROM {_NodesTableName} WHERE id = @id";
+                    deleteNodeCommand.Parameters.AddWithValue("@id", id.ToByteArray());
+                    await deleteNodeCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+                    using SqliteCommand deleteNeighborsCommand = _Connection.CreateCommand();
+                    deleteNeighborsCommand.CommandText = $"DELETE FROM {_NeighborsTableName} WHERE node_id = @id";
+                    deleteNeighborsCommand.Parameters.AddWithValue("@id", id.ToByteArray());
+                    await deleteNeighborsCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+                    await EnsureEntryPointLoadedCoreAsync(null, cancellationToken).ConfigureAwait(false);
+                    if (_EntryPoint == id)
+                    {
+                        _EntryPoint = await SelectFirstNodeIdCoreAsync(null, cancellationToken).ConfigureAwait(false);
+                        await SaveEntryPointToDatabaseCoreAsync(null, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+                finally
+                {
+                    _DatabaseLock.Release();
+                }
+            }
+            finally
+            {
+                _StorageLock.Release();
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task RemoveNodesAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
+        {
+            if (ids == null) throw new ArgumentNullException(nameof(ids));
+            List<Guid> idList = ids.Where(id => id != Guid.Empty).Distinct().ToList();
+            ThrowIfDisposed();
+
+            if (idList.Count == 0)
+            {
+                return;
+            }
+
+            await _StorageLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                foreach (Guid id in idList)
+                {
+                    RemoveCachedNodeUnsafe(id);
+                }
+
+                await _DatabaseLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await using SqliteTransaction transaction = (SqliteTransaction)await _Connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        using SqliteCommand deleteNodeCommand = _Connection.CreateCommand();
+                        deleteNodeCommand.Transaction = transaction;
+                        deleteNodeCommand.CommandText = $"DELETE FROM {_NodesTableName} WHERE id = @id";
+
+                        using SqliteCommand deleteNeighborsCommand = _Connection.CreateCommand();
+                        deleteNeighborsCommand.Transaction = transaction;
+                        deleteNeighborsCommand.CommandText = $"DELETE FROM {_NeighborsTableName} WHERE node_id = @id";
+
+                        foreach (Guid id in idList)
+                        {
+                            byte[] idBytes = id.ToByteArray();
+                            deleteNodeCommand.Parameters.Clear();
+                            deleteNodeCommand.Parameters.AddWithValue("@id", idBytes);
+                            await deleteNodeCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+                            deleteNeighborsCommand.Parameters.Clear();
+                            deleteNeighborsCommand.Parameters.AddWithValue("@id", idBytes);
+                            await deleteNeighborsCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                        }
+
+                        await EnsureEntryPointLoadedCoreAsync(transaction, cancellationToken).ConfigureAwait(false);
+                        if (_EntryPoint.HasValue && idList.Contains(_EntryPoint.Value))
+                        {
+                            _EntryPoint = await SelectFirstNodeIdCoreAsync(transaction, cancellationToken).ConfigureAwait(false);
+                            await SaveEntryPointToDatabaseCoreAsync(transaction, cancellationToken).ConfigureAwait(false);
+                        }
+
+                        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                        throw;
+                    }
+                }
+                finally
+                {
+                    _DatabaseLock.Release();
+                }
+            }
+            finally
+            {
+                _StorageLock.Release();
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task<IHnswNode> GetNodeAsync(Guid id, CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            await _StorageLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (_NodeCache.TryGetValue(id, out SqliteHnswNode? cachedNode))
+                {
+                    return cachedNode;
+                }
+
+                List<float> vector = await LoadVectorAsync(id, cancellationToken).ConfigureAwait(false);
+                SqliteHnswNode node = await CreateNodeAsync(id, vector, cancellationToken).ConfigureAwait(false);
+                _NodeCache[id] = node;
+                return node;
+            }
+            finally
+            {
+                _StorageLock.Release();
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task<Dictionary<Guid, IHnswNode>> GetNodesAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
+        {
+            if (ids == null) throw new ArgumentNullException(nameof(ids));
+            ThrowIfDisposed();
+
+            List<Guid> requestedIds = ids.Distinct().ToList();
+            Dictionary<Guid, IHnswNode> result = new Dictionary<Guid, IHnswNode>();
+            if (requestedIds.Count == 0)
+            {
+                return result;
+            }
+
+            await _StorageLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                List<Guid> idsToLoad = new List<Guid>();
+                foreach (Guid id in requestedIds)
+                {
+                    if (_NodeCache.TryGetValue(id, out SqliteHnswNode? cachedNode))
+                    {
+                        result[id] = cachedNode;
+                    }
+                    else
+                    {
+                        idsToLoad.Add(id);
+                    }
+                }
+
+                if (idsToLoad.Count == 0)
+                {
+                    return result;
+                }
+
+                Dictionary<Guid, List<float>> loadedVectors = await LoadVectorsAsync(idsToLoad, cancellationToken).ConfigureAwait(false);
+                foreach (KeyValuePair<Guid, List<float>> kvp in loadedVectors)
+                {
+                    SqliteHnswNode node = await CreateNodeAsync(kvp.Key, kvp.Value, cancellationToken).ConfigureAwait(false);
+                    _NodeCache[kvp.Key] = node;
+                    result[kvp.Key] = node;
+                }
+
+                return result;
+            }
+            finally
+            {
+                _StorageLock.Release();
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task<TryGetNodeResult> TryGetNodeAsync(Guid id, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                IHnswNode node = await GetNodeAsync(id, cancellationToken).ConfigureAwait(false);
+                return TryGetNodeResult.Found(node);
+            }
+            catch (KeyNotFoundException)
+            {
+                return TryGetNodeResult.NotFound();
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task<IEnumerable<Guid>> GetAllNodeIdsAsync(CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            List<Guid> nodeIds = new List<Guid>();
+            await _DatabaseLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                using SqliteCommand command = _Connection.CreateCommand();
+                command.CommandText = $"SELECT id FROM {_NodesTableName}";
+
+                using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    nodeIds.Add(new Guid((byte[])reader[0]));
+                }
+            }
+            finally
+            {
+                _DatabaseLock.Release();
+            }
+
+            return nodeIds;
+        }
+
+        /// <summary>
+        /// Flushes any cached node changes.
+        /// </summary>
+        public async Task FlushAsync(CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            List<SqliteHnswNode> nodes;
+            await _StorageLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                nodes = _NodeCache.Values.ToList();
+            }
+            finally
+            {
+                _StorageLock.Release();
+            }
+
+            foreach (SqliteHnswNode node in nodes)
+            {
+                await node.FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        /// <inheritdoc />
+        public async ValueTask DisposeAsync()
+        {
+            if (_Disposed) return;
+            try
+            {
+                await FlushAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                // Ignore dispose-time flush failures.
+            }
+
+            DisposeCore();
+            GC.SuppressFinalize(this);
+        }
+
+        /// <inheritdoc />
+        public void Dispose()
+        {
+            DisposeCore();
+            GC.SuppressFinalize(this);
+        }
+
+        private static async Task<SqliteConnection> OpenAndConfigureConnectionAsync(
+            string databasePath,
+            SemaphoreSlim databaseLock,
+            CancellationToken cancellationToken)
         {
             string connectionString = new SqliteConnectionStringBuilder
             {
@@ -199,986 +606,278 @@
                 Pooling = true,
             }.ToString();
 
-            SqliteConnection conn = new SqliteConnection(connectionString);
-            conn.Open();
+            SqliteConnection connection = new SqliteConnection(connectionString);
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-            // PRAGMAs applied to every connection — keep both constructors aligned.
-            ApplyPragma(conn, "PRAGMA journal_mode=WAL");                  // crash recovery + concurrent readers
-            ApplyPragma(conn, "PRAGMA synchronous=FULL");                  // full ACID durability
-            ApplyPragma(conn, "PRAGMA cache_size=10000");                  // 10k-page page cache
-            ApplyPragma(conn, "PRAGMA temp_store=MEMORY");                 // keep temp tables/indexes in RAM
-            ApplyPragma(conn, "PRAGMA mmap_size=268435456");               // 256 MB memory-mapped reads
-            ApplyPragma(conn, "PRAGMA wal_autocheckpoint=1000");           // bound WAL growth (~4 MB)
-
-            return conn;
-        }
-
-        private static void ApplyPragma(SqliteConnection conn, string sql)
-        {
-            using SqliteCommand cmd = conn.CreateCommand();
-            cmd.CommandText = sql;
-            cmd.ExecuteNonQuery();
-        }
-
-        // Public methods
-        /// <summary>
-        /// Gets the number of nodes in storage.
-        /// Thread-safe operation.
-        /// Minimum: 0, Maximum: int.MaxValue (limited by available disk space).
-        /// </summary>
-        /// <param name="cancellationToken">Cancellation token.</param>
-        /// <returns>The number of nodes in storage.</returns>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public async Task<int> GetCountAsync(CancellationToken cancellationToken = default)
-        {
-            ThrowIfDisposed();
-
-            return await Task.Run(() =>
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                _storageLock.EnterReadLock();
-                try
-                {
-                    SqliteCommand command = _connection.CreateCommand();
-                    command.CommandText = $"SELECT COUNT(*) FROM {_nodesTableName}";
-                    return Convert.ToInt32(command.ExecuteScalar());
-                }
-                finally
-                {
-                    _storageLock.ExitReadLock();
-                }
-            }, cancellationToken);
-        }
-
-        /// <summary>
-        /// Adds a new node to storage.
-        /// Thread-safe operation.
-        /// If this is the first node and EntryPoint is null, it becomes the entry point.
-        /// If a node with the same ID already exists, it will be replaced.
-        /// </summary>
-        /// <param name="id">Node identifier. Cannot be Guid.Empty.</param>
-        /// <param name="vector">Vector data. Cannot be null or empty. All values must be finite.</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
-        /// <exception cref="ArgumentException">Thrown when id is Guid.Empty.</exception>
-        /// <exception cref="ArgumentNullException">Thrown when vector is null.</exception>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public async Task AddNodeAsync(Guid id, List<float> vector, CancellationToken cancellationToken = default)
-        {
-            ThrowIfDisposed();
-
-            if (id == Guid.Empty)
-                throw new ArgumentException("Id cannot be Guid.Empty.", nameof(id));
-            if (vector == null)
-                throw new ArgumentNullException(nameof(vector));
-            if (vector.Count == 0)
-                throw new ArgumentException("Vector cannot be empty.", nameof(vector));
-
-            await Task.Run(() =>
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                _storageLock.EnterWriteLock();
-                try
-                {
-                    // Remove from cache if exists
-                    if (_nodeCache.TryGetValue(id, out SqliteHnswNode? existingNode))
-                    {
-                        existingNode.Dispose();
-                        _nodeCache.Remove(id);
-                    }
-
-                    // Save vector to database using binary format for better performance
-                    byte[] vectorBlob = SerializeVector(vector);
-                    SqliteCommand command = _connection.CreateCommand();
-                    command.CommandText = $@"
-                        INSERT OR REPLACE INTO {_nodesTableName} (id, vector_blob, vector_dimension, metadata_json, updated_at)
-                        VALUES (@id, @vectorBlob, @dimension, NULL, CURRENT_TIMESTAMP)";
-                    command.Parameters.AddWithValue("@id", id.ToByteArray());
-                    command.Parameters.AddWithValue("@vectorBlob", vectorBlob);
-                    command.Parameters.AddWithValue("@dimension", vector.Count);
-                    command.ExecuteNonQuery();
-
-                    // Create node and add to cache
-                    SqliteHnswNode node = new SqliteHnswNode(id, vector, _connection, _neighborsTableName, _nodesTableName);
-                    _nodeCache[id] = node;
-
-                    // Set as entry point if this is the first node
-                    if (!_entryPointLoaded)
-                    {
-                        LoadEntryPointFromDatabase();
-                        _entryPointLoaded = true;
-                    }
-
-                    if (_entryPoint == null)
-                    {
-                        _entryPoint = id;
-                        SaveEntryPointToDatabase();
-                    }
-                }
-                finally
-                {
-                    _storageLock.ExitWriteLock();
-                }
-            }, cancellationToken);
-        }
-
-        /// <summary>
-        /// Adds multiple nodes to storage in a batch operation.
-        /// Thread-safe operation.
-        /// More efficient than calling AddNodeAsync multiple times.
-        /// If this is the first batch and EntryPoint is null, the first node becomes the entry point.
-        /// </summary>
-        /// <param name="nodes">Dictionary mapping node IDs to their vector data. Cannot be null.</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
-        /// <exception cref="ArgumentNullException">Thrown when nodes is null.</exception>
-        /// <exception cref="ArgumentException">Thrown when any node ID is Guid.Empty or vector is invalid.</exception>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public async Task AddNodesAsync(Dictionary<Guid, List<float>> nodes, CancellationToken cancellationToken = default)
-        {
-            ThrowIfDisposed();
-
-            if (nodes == null)
-                throw new ArgumentNullException(nameof(nodes));
-
-            await Task.Run(() =>
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                // Validate all nodes first
-                foreach (KeyValuePair<Guid, List<float>> kvp in nodes)
-                {
-                    if (kvp.Key == Guid.Empty)
-                        throw new ArgumentException($"Node ID cannot be Guid.Empty.", nameof(nodes));
-                    if (kvp.Value == null)
-                        throw new ArgumentNullException(nameof(nodes), $"Vector for node {kvp.Key} is null.");
-                    if (kvp.Value.Count == 0)
-                        throw new ArgumentException($"Vector for node {kvp.Key} cannot be empty.", nameof(nodes));
-                }
-
-                _storageLock.EnterWriteLock();
-                try
-                {
-                    // Use a transaction for batch operation
-                    using SqliteTransaction transaction = _connection.BeginTransaction();
-                    try
-                    {
-                        bool wasEmpty = false;
-
-                        // Check if this is the first batch
-                        if (!_entryPointLoaded)
-                        {
-                            LoadEntryPointFromDatabase();
-                            _entryPointLoaded = true;
-                            wasEmpty = _entryPoint == null;
-                        }
-                        else
-                        {
-                            wasEmpty = _entryPoint == null;
-                        }
-
-                        // Prepare the insert command
-                        SqliteCommand command = _connection.CreateCommand();
-                        command.Transaction = transaction;
-                        command.CommandText = $@"
-                            INSERT OR REPLACE INTO {_nodesTableName} (id, vector_blob, vector_dimension, metadata_json, updated_at)
-                            VALUES (@id, @vectorBlob, @dimension, NULL, CURRENT_TIMESTAMP)";
-
-                        // Add all nodes
-                        Guid? firstNodeId = null;
-                        foreach (KeyValuePair<Guid, List<float>> kvp in nodes)
-                        {
-                            if (firstNodeId == null)
-                                firstNodeId = kvp.Key;
-
-                            // Remove from cache if exists
-                            if (_nodeCache.TryGetValue(kvp.Key, out SqliteHnswNode? existingNode))
-                            {
-                                existingNode.Dispose();
-                                _nodeCache.Remove(kvp.Key);
-                            }
-
-                            // Save vector to database using binary format for better performance
-                            byte[] vectorBlob = SerializeVector(kvp.Value);
-                            command.Parameters.Clear();
-                            command.Parameters.AddWithValue("@id", kvp.Key.ToByteArray());
-                            command.Parameters.AddWithValue("@vectorBlob", vectorBlob);
-                            command.Parameters.AddWithValue("@dimension", kvp.Value.Count);
-                            command.ExecuteNonQuery();
-
-                            // Create node and add to cache
-                            SqliteHnswNode node = new SqliteHnswNode(kvp.Key, kvp.Value, _connection, _neighborsTableName, _nodesTableName);
-                            _nodeCache[kvp.Key] = node;
-                        }
-
-                        // Set entry point if this was the first batch
-                        if (wasEmpty && firstNodeId.HasValue)
-                        {
-                            _entryPoint = firstNodeId.Value;
-                            SaveEntryPointToDatabase();
-                        }
-
-                        transaction.Commit();
-                    }
-                    catch
-                    {
-                        transaction.Rollback();
-                        throw;
-                    }
-                }
-                finally
-                {
-                    _storageLock.ExitWriteLock();
-                }
-            }, cancellationToken);
-        }
-
-        /// <summary>
-        /// Removes a node from storage.
-        /// Thread-safe operation.
-        /// If the removed node was the entry point, a new entry point is automatically selected.
-        /// No effect if the node doesn't exist.
-        /// </summary>
-        /// <param name="id">Node identifier to remove.</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public async Task RemoveNodeAsync(Guid id, CancellationToken cancellationToken = default)
-        {
-            ThrowIfDisposed();
-
-            await Task.Run(() =>
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                _storageLock.EnterWriteLock();
-                try
-                {
-                    // Remove from cache
-                    if (_nodeCache.TryGetValue(id, out SqliteHnswNode? node))
-                    {
-                        node.Dispose();
-                        _nodeCache.Remove(id);
-                    }
-
-                    // Remove from database
-                    SqliteCommand deleteNodeCommand = _connection.CreateCommand();
-                    deleteNodeCommand.CommandText = $"DELETE FROM {_nodesTableName} WHERE id = @id";
-                    deleteNodeCommand.Parameters.AddWithValue("@id", id.ToByteArray());
-                    deleteNodeCommand.ExecuteNonQuery();
-
-                    SqliteCommand deleteNeighborsCommand = _connection.CreateCommand();
-                    deleteNeighborsCommand.CommandText = $"DELETE FROM {_neighborsTableName} WHERE node_id = @id";
-                    deleteNeighborsCommand.Parameters.AddWithValue("@id", id.ToByteArray());
-                    deleteNeighborsCommand.ExecuteNonQuery();
-
-                    // Remove layer assignment
-                    SqliteCommand deleteLayerCommand = _connection.CreateCommand();
-                    deleteLayerCommand.CommandText = $"DELETE FROM {_nodesTableName}_layers WHERE node_id = @id";
-                    deleteLayerCommand.Parameters.AddWithValue("@id", id.ToByteArray());
-                    deleteLayerCommand.ExecuteNonQuery();
-
-                    // Update entry point if necessary
-                    if (_entryPoint == id)
-                    {
-                        SqliteCommand newEntryPointCommand = _connection.CreateCommand();
-                        newEntryPointCommand.CommandText = $"SELECT id FROM {_nodesTableName} LIMIT 1";
-                        object? result = newEntryPointCommand.ExecuteScalar();
-
-                        if (result != null && result != DBNull.Value)
-                        {
-                            if (Guid.TryParse(result.ToString(), out Guid newEntryPoint))
-                                _entryPoint = newEntryPoint;
-                            else
-                                _entryPoint = null;
-                        }
-                        else
-                        {
-                            _entryPoint = null;
-                        }
-
-                        SaveEntryPointToDatabase();
-                    }
-                }
-                finally
-                {
-                    _storageLock.ExitWriteLock();
-                }
-            }, cancellationToken);
-        }
-
-        /// <summary>
-        /// Removes multiple nodes from storage in a batch operation.
-        /// Thread-safe operation.
-        /// More efficient than calling RemoveNodeAsync multiple times.
-        /// If any removed node was the entry point, a new entry point is automatically selected.
-        /// </summary>
-        /// <param name="ids">Collection of node IDs to remove. Cannot be null.</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
-        /// <exception cref="ArgumentNullException">Thrown when ids is null.</exception>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public async Task RemoveNodesAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
-        {
-            ThrowIfDisposed();
-
-            if (ids == null)
-                throw new ArgumentNullException(nameof(ids));
-
-            await Task.Run(() =>
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                _storageLock.EnterWriteLock();
-                try
-                {
-                    // Use a transaction for batch operation
-                    using SqliteTransaction transaction = _connection.BeginTransaction();
-                    try
-                    {
-                        bool entryPointRemoved = false;
-
-                        // Prepare delete commands
-                        SqliteCommand deleteNodeCommand = _connection.CreateCommand();
-                        deleteNodeCommand.Transaction = transaction;
-                        deleteNodeCommand.CommandText = $"DELETE FROM {_nodesTableName} WHERE id = @id";
-
-                        SqliteCommand deleteNeighborsCommand = _connection.CreateCommand();
-                        deleteNeighborsCommand.Transaction = transaction;
-                        deleteNeighborsCommand.CommandText = $"DELETE FROM {_neighborsTableName} WHERE node_id = @id";
-
-                        SqliteCommand deleteLayerCommand = _connection.CreateCommand();
-                        deleteLayerCommand.Transaction = transaction;
-                        deleteLayerCommand.CommandText = $"DELETE FROM {_nodesTableName}_layers WHERE node_id = @id";
-
-                        foreach (Guid id in ids)
-                        {
-                            // Remove from cache
-                            if (_nodeCache.TryGetValue(id, out SqliteHnswNode? node))
-                            {
-                                node.Dispose();
-                                _nodeCache.Remove(id);
-                            }
-
-                            // Remove from database
-                            deleteNodeCommand.Parameters.Clear();
-                            deleteNodeCommand.Parameters.AddWithValue("@id", id.ToByteArray());
-                            deleteNodeCommand.ExecuteNonQuery();
-
-                            deleteNeighborsCommand.Parameters.Clear();
-                            deleteNeighborsCommand.Parameters.AddWithValue("@id", id.ToByteArray());
-                            deleteNeighborsCommand.ExecuteNonQuery();
-
-                            deleteLayerCommand.Parameters.Clear();
-                            deleteLayerCommand.Parameters.AddWithValue("@id", id.ToByteArray());
-                            deleteLayerCommand.ExecuteNonQuery();
-
-                            if (_entryPoint == id)
-                            {
-                                entryPointRemoved = true;
-                            }
-                        }
-
-                        // Update entry point if necessary
-                        if (entryPointRemoved)
-                        {
-                            SqliteCommand newEntryPointCommand = _connection.CreateCommand();
-                            newEntryPointCommand.Transaction = transaction;
-                            newEntryPointCommand.CommandText = $"SELECT id FROM {_nodesTableName} LIMIT 1";
-                            object? result = newEntryPointCommand.ExecuteScalar();
-
-                            if (result != null && result != DBNull.Value)
-                            {
-                                if (Guid.TryParse(result.ToString(), out Guid newEntryPoint))
-                                    _entryPoint = newEntryPoint;
-                                else
-                                    _entryPoint = null;
-                            }
-                            else
-                            {
-                                _entryPoint = null;
-                            }
-
-                            SaveEntryPointToDatabase();
-                        }
-
-                        transaction.Commit();
-                    }
-                    catch
-                    {
-                        transaction.Rollback();
-                        throw;
-                    }
-                }
-                finally
-                {
-                    _storageLock.ExitWriteLock();
-                }
-            }, cancellationToken);
-        }
-
-        /// <summary>
-        /// Gets a node by ID.
-        /// Thread-safe operation.
-        /// Uses caching for improved performance.
-        /// </summary>
-        /// <param name="id">Node identifier.</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
-        /// <returns>The requested node.</returns>
-        /// <exception cref="KeyNotFoundException">Thrown when the node doesn't exist.</exception>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public async Task<IHnswNode> GetNodeAsync(Guid id, CancellationToken cancellationToken = default)
-        {
-            ThrowIfDisposed();
-
-            return await Task.Run(() =>
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                _storageLock.EnterReadLock();
-                try
-                {
-                    // Check cache first
-                    if (_nodeCache.TryGetValue(id, out SqliteHnswNode? cachedNode))
-                        return cachedNode;
-                }
-                finally
-                {
-                    _storageLock.ExitReadLock();
-                }
-
-                // Not in cache, load from database
-                _storageLock.EnterWriteLock();
-                try
-                {
-                    // Double-check cache after acquiring write lock
-                    if (_nodeCache.TryGetValue(id, out SqliteHnswNode? cachedNode))
-                        return cachedNode;
-
-                    // Load from database
-                    SqliteCommand command = _connection.CreateCommand();
-                    command.CommandText = $"SELECT vector_blob FROM {_nodesTableName} WHERE id = @id";
-                    command.Parameters.AddWithValue("@id", id.ToByteArray());
-
-                    object? result = command.ExecuteScalar();
-                    if (result == null || result == DBNull.Value)
-                        throw new KeyNotFoundException($"Node with ID {id} not found in storage.");
-
-                    byte[] vectorBlob = (byte[])result;
-                    List<float> vector = DeserializeVector(vectorBlob);
-
-                    SqliteHnswNode node = new SqliteHnswNode(id, vector, _connection, _neighborsTableName, _nodesTableName);
-                    _nodeCache[id] = node;
-                    return node;
-                }
-                finally
-                {
-                    _storageLock.ExitWriteLock();
-                }
-            }, cancellationToken);
-        }
-
-        /// <summary>
-        /// Gets multiple nodes by their IDs in a batch operation.
-        /// Thread-safe operation.
-        /// More efficient than calling GetNodeAsync multiple times.
-        /// Uses caching for improved performance.
-        /// </summary>
-        /// <param name="ids">Collection of node IDs to retrieve. Cannot be null.</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
-        /// <returns>Dictionary mapping node IDs to their corresponding nodes. Only includes nodes that exist.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when ids is null.</exception>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public async Task<Dictionary<Guid, IHnswNode>> GetNodesAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
-        {
-            ThrowIfDisposed();
-
-            if (ids == null)
-                throw new ArgumentNullException(nameof(ids));
-
-            return await Task.Run(() =>
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                Dictionary<Guid, IHnswNode> result = new Dictionary<Guid, IHnswNode>();
-                List<Guid> idsToLoad = new List<Guid>();
-
-                // First pass: get cached nodes
-                _storageLock.EnterReadLock();
-                try
-                {
-                    foreach (Guid id in ids)
-                    {
-                        if (_nodeCache.TryGetValue(id, out SqliteHnswNode? cachedNode))
-                        {
-                            result[id] = cachedNode;
-                        }
-                        else
-                        {
-                            idsToLoad.Add(id);
-                        }
-                    }
-                }
-                finally
-                {
-                    _storageLock.ExitReadLock();
-                }
-
-                // Second pass: load missing nodes from database
-                if (idsToLoad.Count > 0)
-                {
-                    _storageLock.EnterWriteLock();
-                    try
-                    {
-                        // Build a query to get all nodes in one go
-                        string placeholders = string.Join(",", idsToLoad.Select((_, i) => $"@id{i}"));
-                        SqliteCommand command = _connection.CreateCommand();
-                        command.CommandText = $"SELECT id, vector_blob FROM {_nodesTableName} WHERE id IN ({placeholders})";
-
-                        for (int i = 0; i < idsToLoad.Count; i++)
-                        {
-                            command.Parameters.AddWithValue($"@id{i}", idsToLoad[i].ToByteArray());
-                        }
-
-                        using SqliteDataReader reader = command.ExecuteReader();
-                        while (reader.Read())
-                        {
-                            byte[] idBytes = (byte[])reader[0];
-                            Guid nodeId = new Guid(idBytes);
-                            byte[] vectorBlob = (byte[])reader[1];
-                            List<float> vector = DeserializeVector(vectorBlob);
-
-                            SqliteHnswNode node = new SqliteHnswNode(nodeId, vector, _connection, _neighborsTableName, _nodesTableName);
-                            _nodeCache[nodeId] = node;
-                            result[nodeId] = node;
-                        }
-                    }
-                    finally
-                    {
-                        _storageLock.ExitWriteLock();
-                    }
-                }
-
-                return result;
-            }, cancellationToken);
-        }
-
-        /// <summary>
-        /// Tries to get a node by ID.
-        /// Thread-safe operation.
-        /// Uses caching for improved performance.
-        /// </summary>
-        /// <param name="id">Node identifier.</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
-        /// <returns>A tuple indicating success and the node if found.</returns>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public async Task<TryGetNodeResult> TryGetNodeAsync(Guid id, CancellationToken cancellationToken = default)
-        {
-            ThrowIfDisposed();
-
-            return await Task.Run(() =>
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                try
-                {
-                    IHnswNode node = GetNodeAsync(id, cancellationToken).Result;
-                    return TryGetNodeResult.Found(node);
-                }
-                catch (KeyNotFoundException)
-                {
-                    return TryGetNodeResult.NotFound();
-                }
-                catch (AggregateException ex) when (ex.InnerException is KeyNotFoundException)
-                {
-                    return TryGetNodeResult.NotFound();
-                }
-            }, cancellationToken);
-        }
-
-        /// <summary>
-        /// Gets all node IDs in storage.
-        /// Thread-safe operation.
-        /// Returns a new list to prevent external modification.
-        /// </summary>
-        /// <param name="cancellationToken">Cancellation token.</param>
-        /// <returns>A collection of all node IDs in storage.</returns>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public async Task<IEnumerable<Guid>> GetAllNodeIdsAsync(CancellationToken cancellationToken = default)
-        {
-            ThrowIfDisposed();
-
-            return await Task.Run(() =>
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                _storageLock.EnterReadLock();
-                try
-                {
-                    List<Guid> nodeIds = new List<Guid>();
-                    SqliteCommand command = _connection.CreateCommand();
-                    command.CommandText = $"SELECT id FROM {_nodesTableName}";
-
-                    using SqliteDataReader reader = command.ExecuteReader();
-                    while (reader.Read())
-                    {
-                        byte[] idBytes = (byte[])reader[0];
-                        Guid nodeId = new Guid(idBytes);
-                        nodeIds.Add(nodeId);
-                    }
-
-                    return nodeIds;
-                }
-                finally
-                {
-                    _storageLock.ExitReadLock();
-                }
-            }, cancellationToken);
-        }
-
-        /// <summary>
-        /// Checks if a node exists in storage.
-        /// Thread-safe operation.
-        /// </summary>
-        /// <param name="id">Node identifier to check.</param>
-        /// <returns>true if the node exists; otherwise, false.</returns>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public bool ContainsNode(Guid id)
-        {
-            ThrowIfDisposed();
-
-            _storageLock.EnterReadLock();
+            await databaseLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                // Check cache first
-                if (_nodeCache.ContainsKey(id))
-                    return true;
-
-                // Check database
-                return NodeExistsInDatabase(id);
+                await ApplyPragmaAsync(connection, "PRAGMA journal_mode=WAL", cancellationToken).ConfigureAwait(false);
+                await ApplyPragmaAsync(connection, "PRAGMA synchronous=FULL", cancellationToken).ConfigureAwait(false);
+                await ApplyPragmaAsync(connection, "PRAGMA cache_size=10000", cancellationToken).ConfigureAwait(false);
+                await ApplyPragmaAsync(connection, "PRAGMA temp_store=MEMORY", cancellationToken).ConfigureAwait(false);
+                await ApplyPragmaAsync(connection, "PRAGMA mmap_size=268435456", cancellationToken).ConfigureAwait(false);
+                await ApplyPragmaAsync(connection, "PRAGMA wal_autocheckpoint=1000", cancellationToken).ConfigureAwait(false);
             }
             finally
             {
-                _storageLock.ExitReadLock();
+                databaseLock.Release();
             }
+
+            return connection;
         }
 
-        /// <summary>
-        /// Clears all nodes from storage.
-        /// Thread-safe operation.
-        /// Also clears the entry point.
-        /// </summary>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public void Clear()
+        private static async Task ApplyPragmaAsync(SqliteConnection connection, string sql, CancellationToken cancellationToken)
         {
-            ThrowIfDisposed();
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = sql;
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
 
-            _storageLock.EnterWriteLock();
+        private async Task InitializeDatabaseAsync(CancellationToken cancellationToken)
+        {
+            await _DatabaseLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                // Dispose all cached nodes
-                foreach (SqliteHnswNode node in _nodeCache.Values)
+                using SqliteCommand createNodesTableCommand = _Connection.CreateCommand();
+                createNodesTableCommand.CommandText = $@"
+                    CREATE TABLE IF NOT EXISTS {_NodesTableName} (
+                        id BLOB PRIMARY KEY,
+                        vector_blob BLOB NOT NULL,
+                        vector_dimension INTEGER NOT NULL,
+                        metadata_json TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )";
+                await createNodesTableCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+                using SqliteCommand addMetaCol = _Connection.CreateCommand();
+                addMetaCol.CommandText = $"ALTER TABLE {_NodesTableName} ADD COLUMN metadata_json TEXT";
+                try
                 {
-                    node.Dispose();
+                    await addMetaCol.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
                 }
-                _nodeCache.Clear();
+                catch (SqliteException)
+                {
+                    // Column already exists.
+                }
 
-                // Clear database tables
-                SqliteCommand clearNodesCommand = _connection.CreateCommand();
-                clearNodesCommand.CommandText = $"DELETE FROM {_nodesTableName}";
-                clearNodesCommand.ExecuteNonQuery();
+                using SqliteCommand createNeighborsTableCommand = _Connection.CreateCommand();
+                createNeighborsTableCommand.CommandText = $@"
+                    CREATE TABLE IF NOT EXISTS {_NeighborsTableName} (
+                        node_id BLOB PRIMARY KEY,
+                        neighbors_blob BLOB,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )";
+                await createNeighborsTableCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
-                SqliteCommand clearNeighborsCommand = _connection.CreateCommand();
-                clearNeighborsCommand.CommandText = $"DELETE FROM {_neighborsTableName}";
-                clearNeighborsCommand.ExecuteNonQuery();
+                using SqliteCommand createMetadataTableCommand = _Connection.CreateCommand();
+                createMetadataTableCommand.CommandText = $@"
+                    CREATE TABLE IF NOT EXISTS {_MetadataTableName} (
+                        key TEXT PRIMARY KEY,
+                        value TEXT,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )";
+                await createMetadataTableCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
-                SqliteCommand clearLayersCommand = _connection.CreateCommand();
-                clearLayersCommand.CommandText = $"DELETE FROM {_nodesTableName}_layers";
-                clearLayersCommand.ExecuteNonQuery();
+                using SqliteCommand createNodeIndexCommand = _Connection.CreateCommand();
+                createNodeIndexCommand.CommandText = $"CREATE INDEX IF NOT EXISTS idx_{_NodesTableName}_id ON {_NodesTableName}(id)";
+                await createNodeIndexCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
-                _entryPoint = null;
-                SaveEntryPointToDatabase();
+                using SqliteCommand createNeighborIndexCommand = _Connection.CreateCommand();
+                createNeighborIndexCommand.CommandText = $"CREATE INDEX IF NOT EXISTS idx_{_NeighborsTableName}_node_id ON {_NeighborsTableName}(node_id)";
+                await createNeighborIndexCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
             finally
             {
-                _storageLock.ExitWriteLock();
+                _DatabaseLock.Release();
             }
         }
 
-        /// <summary>
-        /// Forces a flush of all cached data to the database.
-        /// Thread-safe operation.
-        /// </summary>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public void Flush()
+        private async Task<List<float>> LoadVectorAsync(Guid id, CancellationToken cancellationToken)
         {
-            ThrowIfDisposed();
-
-            _storageLock.EnterReadLock();
+            await _DatabaseLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                foreach (SqliteHnswNode node in _nodeCache.Values)
+                using SqliteCommand command = _Connection.CreateCommand();
+                command.CommandText = $"SELECT vector_blob FROM {_NodesTableName} WHERE id = @id";
+                command.Parameters.AddWithValue("@id", id.ToByteArray());
+
+                object? result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                if (result is not byte[] vectorBlob)
                 {
-                    node.Flush();
+                    throw new KeyNotFoundException($"Node with ID {id} not found in storage.");
+                }
+
+                return DeserializeVector(vectorBlob);
+            }
+            finally
+            {
+                _DatabaseLock.Release();
+            }
+        }
+
+        private async Task<Dictionary<Guid, List<float>>> LoadVectorsAsync(List<Guid> idsToLoad, CancellationToken cancellationToken)
+        {
+            Dictionary<Guid, List<float>> result = new Dictionary<Guid, List<float>>();
+            string placeholders = string.Join(",", idsToLoad.Select((_, i) => $"@id{i}"));
+
+            await _DatabaseLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                using SqliteCommand command = _Connection.CreateCommand();
+                command.CommandText = $"SELECT id, vector_blob FROM {_NodesTableName} WHERE id IN ({placeholders})";
+                for (int i = 0; i < idsToLoad.Count; i++)
+                {
+                    command.Parameters.AddWithValue($"@id{i}", idsToLoad[i].ToByteArray());
+                }
+
+                using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    Guid nodeId = new Guid((byte[])reader[0]);
+                    result[nodeId] = DeserializeVector((byte[])reader[1]);
                 }
             }
             finally
             {
-                _storageLock.ExitReadLock();
+                _DatabaseLock.Release();
             }
+
+            return result;
         }
 
-        /// <summary>
-        /// Disposes of the storage and all contained nodes.
-        /// </summary>
-        public void Dispose()
+        private async Task<SqliteHnswNode> CreateNodeAsync(Guid id, List<float> vector, CancellationToken cancellationToken)
         {
-            Dispose(true);
-            GC.SuppressFinalize(this);
+            return await SqliteHnswNode.CreateAsync(
+                id,
+                vector,
+                _Connection,
+                _DatabaseLock,
+                _NeighborsTableName,
+                _NodesTableName,
+                cancellationToken).ConfigureAwait(false);
         }
 
-        // Protected methods
-        /// <summary>
-        /// Disposes of the storage resources.
-        /// </summary>
-        /// <param name="disposing">true if disposing managed resources; otherwise, false.</param>
-        protected virtual void Dispose(bool disposing)
+        private async Task EnsureEntryPointLoadedUnsafeAsync(CancellationToken cancellationToken)
         {
-            if (!_disposed)
+            await _DatabaseLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                if (disposing)
-                {
-                    _storageLock.EnterWriteLock();
-                    try
-                    {
-                        // Flush and dispose all cached nodes
-                        foreach (SqliteHnswNode node in _nodeCache.Values)
-                        {
-                            try
-                            {
-                                node.Flush();
-                                node.Dispose();
-                            }
-                            catch
-                            {
-                                // Ignore errors during disposal
-                            }
-                        }
-                        _nodeCache.Clear();
-                    }
-                    finally
-                    {
-                        _storageLock.ExitWriteLock();
-                    }
-
-                    _storageLock?.Dispose();
-                    _connection?.Dispose();
-                }
-                _disposed = true;
+                await EnsureEntryPointLoadedCoreAsync(null, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _DatabaseLock.Release();
             }
         }
 
-        // Private methods
+        private async Task EnsureEntryPointLoadedCoreAsync(SqliteTransaction? transaction, CancellationToken cancellationToken)
+        {
+            if (_EntryPointLoaded)
+            {
+                return;
+            }
+
+            _EntryPoint = await LoadEntryPointFromDatabaseCoreAsync(transaction, cancellationToken).ConfigureAwait(false);
+            _EntryPointLoaded = true;
+        }
+
+        private async Task<Guid?> LoadEntryPointFromDatabaseCoreAsync(SqliteTransaction? transaction, CancellationToken cancellationToken)
+        {
+            using SqliteCommand command = _Connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = $"SELECT value FROM {_MetadataTableName} WHERE key = 'entry_point'";
+            object? result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+
+            return result != null
+                   && result != DBNull.Value
+                   && Guid.TryParse(result.ToString(), out Guid entryPoint)
+                ? entryPoint
+                : null;
+        }
+
+        private async Task SaveEntryPointToDatabaseCoreAsync(SqliteTransaction? transaction, CancellationToken cancellationToken)
+        {
+            using SqliteCommand command = _Connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = $@"
+                INSERT OR REPLACE INTO {_MetadataTableName} (key, value, updated_at)
+                VALUES ('entry_point', @value, CURRENT_TIMESTAMP)";
+            command.Parameters.AddWithValue("@value", _EntryPoint?.ToString() ?? string.Empty);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        private async Task<bool> NodeExistsInDatabaseCoreAsync(Guid id, SqliteTransaction? transaction, CancellationToken cancellationToken)
+        {
+            using SqliteCommand command = _Connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = $"SELECT COUNT(*) FROM {_NodesTableName} WHERE id = @id";
+            command.Parameters.AddWithValue("@id", id.ToByteArray());
+            object? count = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            return Convert.ToInt32(count) > 0;
+        }
+
+        private async Task<Guid?> SelectFirstNodeIdCoreAsync(SqliteTransaction? transaction, CancellationToken cancellationToken)
+        {
+            using SqliteCommand command = _Connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = $"SELECT id FROM {_NodesTableName} LIMIT 1";
+            object? result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            return result is byte[] idBytes ? new Guid(idBytes) : null;
+        }
+
+        private void RemoveCachedNodeUnsafe(Guid id)
+        {
+            if (_NodeCache.TryGetValue(id, out SqliteHnswNode? existingNode))
+            {
+                existingNode.Dispose();
+                _NodeCache.Remove(id);
+            }
+        }
+
+        private void DisposeCore()
+        {
+            if (_Disposed) return;
+            _Disposed = true;
+
+            foreach (SqliteHnswNode node in _NodeCache.Values)
+            {
+                node.Dispose();
+            }
+
+            _NodeCache.Clear();
+            _Connection.Dispose();
+            _StorageLock.Dispose();
+            if (_OwnsDatabaseLock)
+            {
+                _DatabaseLock.Dispose();
+            }
+        }
+
         private void ThrowIfDisposed()
         {
-            if (_disposed)
+            if (_Disposed)
+            {
                 throw new ObjectDisposedException(nameof(SqliteHnswStorage));
-        }
-
-        private void InitializeDatabase()
-        {
-            // Create nodes table with binary storage for better performance
-            SqliteCommand createNodesTableCommand = _connection.CreateCommand();
-            createNodesTableCommand.CommandText = $@"
-                CREATE TABLE IF NOT EXISTS {_nodesTableName} (
-                    id BLOB PRIMARY KEY,
-                    vector_blob BLOB NOT NULL,
-                    vector_dimension INTEGER NOT NULL,
-                    metadata_json TEXT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )";
-            createNodesTableCommand.ExecuteNonQuery();
-
-            // Ensure metadata_json column exists (migrates databases created before v1.1.x)
-            SqliteCommand addMetaCol = _connection.CreateCommand();
-            addMetaCol.CommandText = $"ALTER TABLE {_nodesTableName} ADD COLUMN metadata_json TEXT";
-            try { addMetaCol.ExecuteNonQuery(); } catch (SqliteException) { /* column already exists */ }
-            createNodesTableCommand.ExecuteNonQuery();
-
-            // Create neighbors table
-            SqliteCommand createNeighborsTableCommand = _connection.CreateCommand();
-            createNeighborsTableCommand.CommandText = $@"
-                CREATE TABLE IF NOT EXISTS {_neighborsTableName} (
-                    node_id BLOB PRIMARY KEY,
-                    neighbors_blob BLOB,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )";
-            createNeighborsTableCommand.ExecuteNonQuery();
-
-            // Create metadata table
-            SqliteCommand createMetadataTableCommand = _connection.CreateCommand();
-            createMetadataTableCommand.CommandText = $@"
-                CREATE TABLE IF NOT EXISTS {_metadataTableName} (
-                    key TEXT PRIMARY KEY,
-                    value TEXT,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )";
-            createMetadataTableCommand.ExecuteNonQuery();
-
-            // Create node layers table
-            SqliteCommand createNodeLayersTableCommand = _connection.CreateCommand();
-            createNodeLayersTableCommand.CommandText = $@"
-                CREATE TABLE IF NOT EXISTS {_nodesTableName}_layers (
-                    node_id BLOB PRIMARY KEY,
-                    layer INTEGER NOT NULL,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (node_id) REFERENCES {_nodesTableName}(id) ON DELETE CASCADE
-                )";
-            createNodeLayersTableCommand.ExecuteNonQuery();
-
-            // Create indexes for performance
-            SqliteCommand createNodeIndexCommand = _connection.CreateCommand();
-            createNodeIndexCommand.CommandText = $"CREATE INDEX IF NOT EXISTS idx_{_nodesTableName}_id ON {_nodesTableName}(id)";
-            createNodeIndexCommand.ExecuteNonQuery();
-
-            SqliteCommand createNeighborIndexCommand = _connection.CreateCommand();
-            createNeighborIndexCommand.CommandText = $"CREATE INDEX IF NOT EXISTS idx_{_neighborsTableName}_node_id ON {_neighborsTableName}(node_id)";
-            createNeighborIndexCommand.ExecuteNonQuery();
-
-            SqliteCommand createLayersIndexCommand = _connection.CreateCommand();
-            createLayersIndexCommand.CommandText = $"CREATE INDEX IF NOT EXISTS idx_{_nodesTableName}_layers_node_id ON {_nodesTableName}_layers(node_id)";
-            createLayersIndexCommand.ExecuteNonQuery();
-        }
-
-        /// <summary>
-        /// Sets the layer for a node in the database.
-        /// Thread-safe operation.
-        /// </summary>
-        /// <param name="nodeId">Node identifier.</param>
-        /// <param name="layer">Layer number.</param>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public void SetNodeLayer(Guid nodeId, int layer)
-        {
-            ThrowIfDisposed();
-
-            _storageLock.EnterWriteLock();
-            try
-            {
-                SqliteCommand command = _connection.CreateCommand();
-                command.CommandText = $@"
-                    INSERT OR REPLACE INTO {_nodesTableName}_layers (node_id, layer, updated_at) 
-                    VALUES (@nodeId, @layer, CURRENT_TIMESTAMP)";
-                command.Parameters.AddWithValue("@nodeId", nodeId.ToByteArray());
-                command.Parameters.AddWithValue("@layer", layer);
-                command.ExecuteNonQuery();
-            }
-            finally
-            {
-                _storageLock.ExitWriteLock();
             }
         }
 
-        /// <summary>
-        /// Gets the layer for a node from the database.
-        /// Thread-safe operation.
-        /// </summary>
-        /// <param name="nodeId">Node identifier.</param>
-        /// <returns>The layer number, or 0 if not found.</returns>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public int GetNodeLayer(Guid nodeId)
+        private static void ValidateNode(Guid id, List<float> vector)
         {
-            ThrowIfDisposed();
-
-            _storageLock.EnterReadLock();
-            try
+            if (id == Guid.Empty) throw new ArgumentException("Id cannot be Guid.Empty.", nameof(id));
+            if (vector == null) throw new ArgumentNullException(nameof(vector));
+            if (vector.Count == 0) throw new ArgumentException("Vector cannot be empty.", nameof(vector));
+            for (int i = 0; i < vector.Count; i++)
             {
-                SqliteCommand command = _connection.CreateCommand();
-                command.CommandText = $"SELECT layer FROM {_nodesTableName}_layers WHERE node_id = @nodeId";
-                command.Parameters.AddWithValue("@nodeId", nodeId.ToByteArray());
-
-                object? result = command.ExecuteScalar();
-                if (result != null && result != DBNull.Value)
+                if (float.IsNaN(vector[i]) || float.IsInfinity(vector[i]))
                 {
-                    return Convert.ToInt32(result);
+                    throw new ArgumentException($"Vector contains invalid value at index {i}. All values must be finite.", nameof(vector));
                 }
-                return 0; // Default layer
-            }
-            finally
-            {
-                _storageLock.ExitReadLock();
             }
         }
 
-        /// <summary>
-        /// Gets all node layer assignments from the database.
-        /// Thread-safe operation.
-        /// </summary>
-        /// <returns>Dictionary mapping node IDs to layer numbers.</returns>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public Dictionary<Guid, int> GetAllNodeLayers()
-        {
-            ThrowIfDisposed();
-
-            _storageLock.EnterReadLock();
-            try
-            {
-                Dictionary<Guid, int> layers = new Dictionary<Guid, int>();
-                SqliteCommand command = _connection.CreateCommand();
-                command.CommandText = $"SELECT node_id, layer FROM {_nodesTableName}_layers";
-
-                using SqliteDataReader reader = command.ExecuteReader();
-                while (reader.Read())
-                {
-                    byte[] idBytes = (byte[])reader[0];
-                    Guid nodeId = new Guid(idBytes);
-                    layers[nodeId] = reader.GetInt32(1);
-                }
-
-                return layers;
-            }
-            finally
-            {
-                _storageLock.ExitReadLock();
-            }
-        }
-
-        private bool NodeExistsInDatabase(Guid id)
-        {
-            SqliteCommand command = _connection.CreateCommand();
-            command.CommandText = $"SELECT COUNT(*) FROM {_nodesTableName} WHERE id = @id";
-            command.Parameters.AddWithValue("@id", id.ToByteArray());
-            int count = Convert.ToInt32(command.ExecuteScalar());
-            return count > 0;
-        }
-
-        private void LoadEntryPointFromDatabase()
-        {
-            SqliteCommand command = _connection.CreateCommand();
-            command.CommandText = $"SELECT value FROM {_metadataTableName} WHERE key = 'entry_point'";
-            object? result = command.ExecuteScalar();
-
-            if (result != null && result != DBNull.Value)
-            {
-                if (Guid.TryParse(result.ToString(), out Guid entryPoint))
-                    _entryPoint = entryPoint;
-                else
-                    _entryPoint = null;
-            }
-            else
-            {
-                _entryPoint = null;
-            }
-        }
-
-        private void SaveEntryPointToDatabase()
-        {
-            SqliteCommand command = _connection.CreateCommand();
-            command.CommandText = $@"
-                INSERT OR REPLACE INTO {_metadataTableName} (key, value, updated_at) 
-                VALUES ('entry_point', @value, CURRENT_TIMESTAMP)";
-            command.Parameters.AddWithValue("@value", _entryPoint?.ToString() ?? string.Empty);
-            command.ExecuteNonQuery();
-        }
-
-        private byte[] SerializeVector(List<float> vector)
+        private static byte[] SerializeVector(List<float> vector)
         {
             byte[] result = new byte[4 + vector.Count * 4];
             BitConverter.TryWriteBytes(result.AsSpan(0, 4), vector.Count);
@@ -1187,7 +886,7 @@
             return result;
         }
 
-        private List<float> DeserializeVector(byte[] bytes)
+        private static List<float> DeserializeVector(byte[] bytes)
         {
             int count = BitConverter.ToInt32(bytes, 0);
             ReadOnlySpan<float> floats = MemoryMarshal.Cast<byte, float>(bytes.AsSpan(4, count * 4));
@@ -1196,56 +895,8 @@
             {
                 vector.Add(floats[i]);
             }
+
             return vector;
         }
-
-        private byte[] SerializeNeighbors(Dictionary<int, HashSet<Guid>> neighbors)
-        {
-            using MemoryStream ms = new MemoryStream();
-            using BinaryWriter writer = new BinaryWriter(ms);
-            
-            writer.Write(neighbors.Count);
-            foreach (KeyValuePair<int, HashSet<Guid>> kvp in neighbors)
-            {
-                writer.Write(kvp.Key); // layer
-                writer.Write(kvp.Value.Count); // neighbor count
-                foreach (Guid neighborId in kvp.Value)
-                {
-                    writer.Write(neighborId.ToByteArray());
-                }
-            }
-            return ms.ToArray();
-        }
-
-        private Dictionary<int, HashSet<Guid>> DeserializeNeighbors(byte[] bytes)
-        {
-            if (bytes == null || bytes.Length == 0)
-                return new Dictionary<int, HashSet<Guid>>();
-                
-            using MemoryStream ms = new MemoryStream(bytes);
-            using BinaryReader reader = new BinaryReader(ms);
-            
-            Dictionary<int, HashSet<Guid>> neighbors = new Dictionary<int, HashSet<Guid>>();
-            int layerCount = reader.ReadInt32();
-            
-            for (int i = 0; i < layerCount; i++)
-            {
-                int layer = reader.ReadInt32();
-                int neighborCount = reader.ReadInt32();
-                HashSet<Guid> layerNeighbors = new HashSet<Guid>();
-                
-                for (int j = 0; j < neighborCount; j++)
-                {
-                    byte[] guidBytes = reader.ReadBytes(16);
-                    layerNeighbors.Add(new Guid(guidBytes));
-                }
-                
-                neighbors[layer] = layerNeighbors;
-            }
-            
-            return neighbors;
-        }
-
-#pragma warning restore CS8619 // Nullability of reference types in value doesn't match target type.
     }
 }

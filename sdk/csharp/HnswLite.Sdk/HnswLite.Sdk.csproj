@@ -5,11 +5,12 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
+    <IsPackable>true</IsPackable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
 
     <!-- NuGet package metadata -->
     <PackageId>HnswLite.Sdk</PackageId>
-    <Version>1.2.0</Version>
+    <Version>2.0.1</Version>
     <Authors>Joel Christner</Authors>
     <Company>Joel Christner</Company>
     <Description>C# SDK for the HnswLite REST API — approximate nearest neighbor search powered by HNSW graphs.</Description>

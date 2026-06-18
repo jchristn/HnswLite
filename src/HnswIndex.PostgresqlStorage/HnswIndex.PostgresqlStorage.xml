@@ -1,0 +1,153 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>HnswIndex.PostgresqlStorage</name>
+    </assembly>
+    <members>
+        <member name="T:HnswIndex.PostgresqlStorage.PostgresqlHnswNode">
+            <summary>
+            PostgreSQL-backed HNSW node.
+            </summary>
+        </member>
+        <member name="P:HnswIndex.PostgresqlStorage.PostgresqlHnswNode.Id">
+            <inheritdoc />
+        </member>
+        <member name="P:HnswIndex.PostgresqlStorage.PostgresqlHnswNode.Vector">
+            <inheritdoc />
+        </member>
+        <member name="P:HnswIndex.PostgresqlStorage.PostgresqlHnswNode.Name">
+            <inheritdoc />
+        </member>
+        <member name="P:HnswIndex.PostgresqlStorage.PostgresqlHnswNode.Labels">
+            <inheritdoc />
+        </member>
+        <member name="P:HnswIndex.PostgresqlStorage.PostgresqlHnswNode.Tags">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlHnswNode.GetNeighborsAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlHnswNode.AddNeighborAsync(System.Int32,System.Guid,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlHnswNode.RemoveNeighborAsync(System.Int32,System.Guid,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlHnswNode.SetMetadataAsync(System.String,System.Collections.Generic.List{System.String},System.Collections.Generic.Dictionary{System.String,System.Object},System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="T:HnswIndex.PostgresqlStorage.PostgresqlIndexMetadata">
+            <summary>
+            Server-facing PostgreSQL index metadata.
+            </summary>
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlIndexMetadata.#ctor(System.Guid,System.String,System.Int32,System.String,System.Int32,System.Int32,System.Int32,System.DateTime,System.Int32)">
+            <summary>
+            Server-facing PostgreSQL index metadata.
+            </summary>
+        </member>
+        <member name="T:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider">
+            <summary>
+            PostgreSQL-backed implementation of HNSW storage.
+            Multiple logical indexes share one schema and are isolated by the
+            <c>hnsw_indexes.id</c> partition key stored on every node, layer, neighbor,
+            and metadata row.
+            </summary>
+        </member>
+        <member name="P:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.IndexId">
+            <summary>
+            Gets the PostgreSQL index identifier.
+            </summary>
+        </member>
+        <member name="P:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.IndexName">
+            <summary>
+            Gets the logical index name.
+            </summary>
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.ListIndexesAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Lists index metadata stored in PostgreSQL.
+            </summary>
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.ListIndexesAsync(Npgsql.NpgsqlDataSource,System.Threading.CancellationToken)">
+            <summary>
+            Lists index metadata using a caller-owned PostgreSQL data source.
+            </summary>
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.CreateAsync(System.String,System.String,System.Int32,System.String,System.Int32,System.Int32,System.Int32,System.Boolean,System.Threading.CancellationToken)">
+            <summary>
+            Creates or opens a PostgreSQL storage provider.
+            </summary>
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.CreateAsync(Npgsql.NpgsqlDataSource,System.String,System.Int32,System.String,System.Int32,System.Int32,System.Int32,System.Boolean,System.Threading.CancellationToken)">
+            <summary>
+            Creates or opens a PostgreSQL storage provider using a caller-owned data source.
+            </summary>
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.AddNodeAsync(System.Guid,System.Collections.Generic.List{System.Single},System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.AddNodesAsync(System.Collections.Generic.Dictionary{System.Guid,System.Collections.Generic.List{System.Single}},System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.RemoveNodeAsync(System.Guid,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.RemoveNodesAsync(System.Collections.Generic.IEnumerable{System.Guid},System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.GetNodeAsync(System.Guid,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.GetNodesAsync(System.Collections.Generic.IEnumerable{System.Guid},System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.TryGetNodeAsync(System.Guid,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.GetAllNodeIdsAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.GetCountAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.GetEntryPointAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.SetEntryPointAsync(System.Nullable{System.Guid},System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.GetNodeLayerAsync(System.Guid,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.SetNodeLayerAsync(System.Guid,System.Int32,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.RemoveNodeLayerAsync(System.Guid,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.GetAllNodeLayersAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.ClearLayersAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.GetLayerCountAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.BeginTransactionAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.FlushAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.ClearAsync(System.Threading.CancellationToken)">
+            <summary>
+            Clears all data for this index.
+            </summary>
+        </member>
+        <member name="M:HnswIndex.PostgresqlStorage.PostgresqlStorageProvider.DisposeAsync">
+            <inheritdoc />
+        </member>
+    </members>
+</doc>

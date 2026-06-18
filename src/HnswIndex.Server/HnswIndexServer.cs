@@ -77,7 +77,10 @@ namespace HnswIndex.Server
 
             _Logging.Info(_Header + "shutdown requested — flushing and disposing");
             _Server?.Dispose();
-            _IndexManager?.Dispose();
+            if (_IndexManager != null)
+            {
+                await _IndexManager.DisposeAsync().ConfigureAwait(false);
+            }
             _Logging.Info(_Header + "shutdown complete");
 
             return 0;
@@ -186,7 +189,9 @@ namespace HnswIndex.Server
                 _Logging.Debug(_Header + "logging initialized");
 
                 // Initialize index manager
-                _IndexManager = new IndexManager(_Settings.Storage.SqliteDirectory, _Logging);
+                _IndexManager = new IndexManager(_Settings.Storage, _Logging);
+                await _IndexManager.ReloadSqlitePersistedIndexesAsync().ConfigureAwait(false);
+                await _IndexManager.ReloadPostgresqlIndexesAsync().ConfigureAwait(false);
 
                 // Initialize REST handler
                 RestServiceHandler.Initialize(_IndexManager, _Settings, _Logging);

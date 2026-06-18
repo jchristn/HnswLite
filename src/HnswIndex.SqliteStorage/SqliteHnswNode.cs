@@ -4,30 +4,61 @@ namespace Hnsw.SqliteStorage
     using System.Collections.Generic;
     using System.IO;
     using System.Linq;
-    using System.Threading;
     using System.Text.Json;
-    using Microsoft.Data.Sqlite;
+    using System.Threading;
+    using System.Threading.Tasks;
     using Hnsw;
+    using Microsoft.Data.Sqlite;
 
     /// <summary>
-    /// SQLite-based implementation of HNSW node with thread-safe operations.
+    /// SQLite-backed HNSW node implementation.
     /// </summary>
-    public class SqliteHnswNode : IHnswNode, IDisposable
+    public sealed class SqliteHnswNode : IHnswNode, IDisposable
     {
-        #region Public-Members
+        private readonly Guid _Id;
+        private readonly List<float> _Vector;
+        private readonly Dictionary<int, HashSet<Guid>> _Neighbors = new Dictionary<int, HashSet<Guid>>();
+        private readonly SemaphoreSlim _NodeLock = new SemaphoreSlim(1, 1);
+        private readonly SemaphoreSlim _DatabaseLock;
+        private readonly SqliteConnection _Connection;
+        private readonly string _NeighborsTableName;
+        private readonly string? _NodesTableName;
+        private bool _Disposed;
+        private bool _IsDirty;
+        private string? _Name;
+        private List<string>? _Labels;
+        private Dictionary<string, object>? _Tags;
 
-        /// <summary>
-        /// Gets the unique identifier of the node.
-        /// Cannot be Guid.Empty.
-        /// </summary>
+        private SqliteHnswNode(
+            Guid id,
+            List<float> vector,
+            SqliteConnection connection,
+            SemaphoreSlim databaseLock,
+            string neighborsTableName,
+            string? nodesTableName)
+        {
+            _Id = id;
+            _Vector = new List<float>(vector);
+            _Connection = connection;
+            _DatabaseLock = databaseLock;
+            _NeighborsTableName = neighborsTableName;
+            _NodesTableName = nodesTableName;
+        }
+
+        /// <inheritdoc />
         public Guid Id => _Id;
 
-        /// <summary>
-        /// Gets the vector associated with the node.
-        /// Never null. Vector dimension typically ranges from 1 to 4096.
-        /// All values must be finite (not NaN or Infinity).
-        /// </summary>
-        public List<float> Vector => _Vector;
+        /// <inheritdoc />
+        public IReadOnlyList<float> Vector => _Vector;
+
+        /// <inheritdoc />
+        public string? Name => _Name;
+
+        /// <inheritdoc />
+        public IReadOnlyList<string>? Labels => _Labels;
+
+        /// <inheritdoc />
+        public IReadOnlyDictionary<string, object>? Tags => _Tags;
 
         /// <summary>
         /// Gets whether this node has been disposed.
@@ -35,92 +66,177 @@ namespace Hnsw.SqliteStorage
         public bool IsDisposed => _Disposed;
 
         /// <summary>
-        /// Gets whether the node has unsaved changes.
+        /// Gets whether this node has unsaved neighbor changes after a failed write.
         /// </summary>
         public bool IsDirty => _IsDirty;
 
         /// <summary>
-        /// Optional human-readable name for this vector.
-        /// Setting this marks the node as dirty.
+        /// Creates and asynchronously loads a SQLite-backed node.
         /// </summary>
-        public string? Name
+        public static async Task<SqliteHnswNode> CreateAsync(
+            Guid id,
+            List<float> vector,
+            SqliteConnection connection,
+            SemaphoreSlim databaseLock,
+            string neighborsTableName,
+            string? nodesTableName = null,
+            CancellationToken cancellationToken = default)
         {
-            get { return _Name; }
-            set { _Name = value; SaveMetadataToDatabase(); }
+            Validate(id, vector, connection, databaseLock, neighborsTableName);
+
+            SqliteHnswNode node = new SqliteHnswNode(id, vector, connection, databaseLock, neighborsTableName, nodesTableName);
+            await node.LoadNeighborsFromDatabaseAsync(cancellationToken).ConfigureAwait(false);
+            await node.LoadMetadataFromDatabaseAsync(cancellationToken).ConfigureAwait(false);
+            return node;
         }
 
-        /// <summary>
-        /// Optional classification labels.
-        /// Setting this writes immediately to the database.
-        /// </summary>
-        public List<string>? Labels
+        /// <inheritdoc />
+        public async Task<Dictionary<int, HashSet<Guid>>> GetNeighborsAsync(CancellationToken cancellationToken = default)
         {
-            get { return _Labels; }
-            set { _Labels = value; SaveMetadataToDatabase(); }
-        }
-
-        /// <summary>
-        /// Optional arbitrary key/value tags.
-        /// Setting this writes immediately to the database.
-        /// </summary>
-        public Dictionary<string, object>? Tags
-        {
-            get { return _Tags; }
-            set { _Tags = value; SaveMetadataToDatabase(); }
-        }
-
-        #endregion
-
-        #region Private-Members
-
-        private readonly Guid _Id;
-        private readonly List<float> _Vector;
-        private readonly Dictionary<int, HashSet<Guid>> _Neighbors = new Dictionary<int, HashSet<Guid>>();
-        private readonly ReaderWriterLockSlim _NodeLock = new ReaderWriterLockSlim();
-        private readonly SqliteConnection _Connection;
-        private readonly string _TableName;
-        private readonly string? _NodesTableName;
-        private bool _Disposed = false;
-        private bool _IsDirty = false;
-        private string? _Name;
-        private List<string>? _Labels;
-        private Dictionary<string, object>? _Tags;
-
-        #endregion
-
-        #region Constructors-and-Factories
-
-        /// <summary>
-        /// Initializes a new instance of the SqliteHnswNode class.
-        /// </summary>
-        /// <param name="id">Node identifier. Cannot be Guid.Empty.</param>
-        /// <param name="vector">Vector data. Cannot be null or empty. All values must be finite.</param>
-        /// <param name="connection">SQLite database connection. Cannot be null.</param>
-        /// <param name="tableName">Table name for storing neighbors. Cannot be null or empty.</param>
-        /// <param name="nodesTableName">Table name for the nodes table (for metadata persistence). Null to skip metadata.</param>
-        /// <exception cref="ArgumentException">Thrown when id is Guid.Empty or vector contains invalid values.</exception>
-        /// <exception cref="ArgumentNullException">Thrown when vector, connection, or tableName is null.</exception>
-        public SqliteHnswNode(Guid id, List<float> vector, SqliteConnection connection, string tableName, string? nodesTableName = null)
-        {
-            if (id == Guid.Empty)
+            ThrowIfDisposed();
+            await _NodeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                throw new ArgumentException("Id cannot be Guid.Empty.", nameof(id));
+                return _Neighbors.ToDictionary(kvp => kvp.Key, kvp => new HashSet<Guid>(kvp.Value));
             }
-            
+            finally
+            {
+                _NodeLock.Release();
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task AddNeighborAsync(int layer, Guid neighborGuid, CancellationToken cancellationToken = default)
+        {
+            ValidateNeighbor(layer, neighborGuid);
+
+            await _NodeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (!_Neighbors.TryGetValue(layer, out HashSet<Guid>? layerNeighbors))
+                {
+                    layerNeighbors = new HashSet<Guid>();
+                    _Neighbors[layer] = layerNeighbors;
+                }
+
+                if (!layerNeighbors.Add(neighborGuid))
+                {
+                    return;
+                }
+
+                _IsDirty = true;
+                await SaveNeighborsToDatabaseAsync(cancellationToken).ConfigureAwait(false);
+                _IsDirty = false;
+            }
+            finally
+            {
+                _NodeLock.Release();
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task RemoveNeighborAsync(int layer, Guid neighborGuid, CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+            if (layer < 0) throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot be negative.");
+            if (layer > 63) throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot exceed 63.");
+
+            await _NodeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (!_Neighbors.TryGetValue(layer, out HashSet<Guid>? layerNeighbors))
+                {
+                    return;
+                }
+
+                if (!layerNeighbors.Remove(neighborGuid))
+                {
+                    return;
+                }
+
+                if (layerNeighbors.Count == 0)
+                {
+                    _Neighbors.Remove(layer);
+                }
+
+                _IsDirty = true;
+                await SaveNeighborsToDatabaseAsync(cancellationToken).ConfigureAwait(false);
+                _IsDirty = false;
+            }
+            finally
+            {
+                _NodeLock.Release();
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task SetMetadataAsync(
+            string? name,
+            List<string>? labels,
+            Dictionary<string, object>? tags,
+            CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            await _NodeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                _Name = name;
+                _Labels = labels == null ? null : new List<string>(labels);
+                _Tags = tags == null ? null : new Dictionary<string, object>(tags);
+                await SaveMetadataToDatabaseAsync(cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _NodeLock.Release();
+            }
+        }
+
+        /// <summary>
+        /// Forces a retry of any buffered neighbor write that previously failed.
+        /// </summary>
+        public async Task FlushAsync(CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            await _NodeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (_IsDirty)
+                {
+                    await SaveNeighborsToDatabaseAsync(cancellationToken).ConfigureAwait(false);
+                    await SaveMetadataToDatabaseAsync(cancellationToken).ConfigureAwait(false);
+                    _IsDirty = false;
+                }
+            }
+            finally
+            {
+                _NodeLock.Release();
+            }
+        }
+
+        /// <inheritdoc />
+        public void Dispose()
+        {
+            if (_Disposed) return;
+            _Disposed = true;
+            _NodeLock.Dispose();
+        }
+
+        private static void Validate(
+            Guid id,
+            List<float> vector,
+            SqliteConnection connection,
+            SemaphoreSlim databaseLock,
+            string neighborsTableName)
+        {
+            if (id == Guid.Empty) throw new ArgumentException("Id cannot be Guid.Empty.", nameof(id));
             ArgumentNullException.ThrowIfNull(vector, nameof(vector));
             ArgumentNullException.ThrowIfNull(connection, nameof(connection));
-            
-            if (vector.Count == 0)
-            {
-                throw new ArgumentException("Vector cannot be empty.", nameof(vector));
-            }
-            
-            if (string.IsNullOrWhiteSpace(tableName))
-            {
-                throw new ArgumentNullException(nameof(tableName));
-            }
+            ArgumentNullException.ThrowIfNull(databaseLock, nameof(databaseLock));
+            if (string.IsNullOrWhiteSpace(neighborsTableName)) throw new ArgumentNullException(nameof(neighborsTableName));
+            if (vector.Count == 0) throw new ArgumentException("Vector cannot be empty.", nameof(vector));
 
-            // Validate vector values
             for (int i = 0; i < vector.Count; i++)
             {
                 if (float.IsNaN(vector[i]) || float.IsInfinity(vector[i]))
@@ -128,297 +244,15 @@ namespace Hnsw.SqliteStorage
                     throw new ArgumentException($"Vector contains invalid value at index {i}. All values must be finite.", nameof(vector));
                 }
             }
-
-            _Id = id;
-            _Vector = new List<float>(vector); // Create defensive copy
-            _Connection = connection;
-            _TableName = tableName;
-            _NodesTableName = nodesTableName;
-
-            LoadNeighborsFromDatabase();
-            LoadMetadataFromDatabase();
         }
 
-        #endregion
-
-        #region Public-Methods
-
-        /// <summary>
-        /// Gets a copy of the node's neighbors organized by layer.
-        /// Thread-safe operation.
-        /// Returns a dictionary where keys are layer numbers (0 to MaxLayers-1) and values are sets of neighbor IDs.
-        /// Never returns null. Returns an empty dictionary if no neighbors exist.
-        /// </summary>
-        /// <returns>A copy of the neighbors dictionary.</returns>
-        /// <exception cref="ObjectDisposedException">Thrown when the node has been disposed.</exception>
-        public Dictionary<int, HashSet<Guid>> GetNeighbors()
+        private void ValidateNeighbor(int layer, Guid neighborGuid)
         {
             ThrowIfDisposed();
-
-            _NodeLock.EnterReadLock();
-            try
-            {
-                Dictionary<int, HashSet<Guid>> result = new Dictionary<int, HashSet<Guid>>();
-                foreach (KeyValuePair<int, HashSet<Guid>> kvp in _Neighbors)
-                {
-                    result[kvp.Key] = new HashSet<Guid>(kvp.Value);
-                }
-                return result;
-            }
-            finally
-            {
-                _NodeLock.ExitReadLock();
-            }
-        }
-
-        /// <summary>
-        /// Adds a neighbor connection at the specified layer.
-        /// Thread-safe operation. Idempotent - adding the same neighbor multiple times has no additional effect.
-        /// </summary>
-        /// <param name="layer">The layer number. Minimum: 0, Maximum: 63.</param>
-        /// <param name="NeighborGUID">The ID of the neighbor to add. Cannot be Guid.Empty or equal to this node's ID.</param>
-        /// <exception cref="ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
-        /// <exception cref="ArgumentException">Thrown when NeighborGUID is invalid.</exception>
-        /// <exception cref="ObjectDisposedException">Thrown when the node has been disposed.</exception>
-        public void AddNeighbor(int layer, Guid NeighborGUID)
-        {
-            ThrowIfDisposed();
-
-            if (layer < 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot be negative.");
-            }
-            
-            if (layer > 63)
-            {
-                throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot exceed 63.");
-            }
-            
-            if (NeighborGUID == Guid.Empty)
-            {
-                throw new ArgumentException("NeighborId cannot be Guid.Empty.", nameof(NeighborGUID));
-            }
-            
-            if (NeighborGUID == _Id)
-            {
-                throw new ArgumentException("Node cannot be its own neighbor.", nameof(NeighborGUID));
-            }
-
-            _NodeLock.EnterWriteLock();
-            try
-            {
-                if (!_Neighbors.ContainsKey(layer))
-                {
-                    _Neighbors[layer] = new HashSet<Guid>();
-                }
-
-                if (_Neighbors[layer].Add(NeighborGUID))
-                {
-                    _IsDirty = true;
-                    // Don't save immediately - wait for explicit Flush() call for better batch performance
-                    // SaveNeighborsToDatabase();
-                }
-            }
-            finally
-            {
-                _NodeLock.ExitWriteLock();
-            }
-        }
-
-        /// <summary>
-        /// Removes a neighbor connection at the specified layer.
-        /// Thread-safe operation. No effect if the neighbor doesn't exist.
-        /// Removes the layer entry if it becomes empty after neighbor removal.
-        /// </summary>
-        /// <param name="layer">The layer number. Minimum: 0, Maximum: 63.</param>
-        /// <param name="NeighborGUID">The ID of the neighbor to remove.</param>
-        /// <exception cref="ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
-        /// <exception cref="ObjectDisposedException">Thrown when the node has been disposed.</exception>
-        public void RemoveNeighbor(int layer, Guid NeighborGUID)
-        {
-            ThrowIfDisposed();
-
-            if (layer < 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot be negative.");
-            }
-            
-            if (layer > 63)
-            {
-                throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot exceed 63.");
-            }
-
-            _NodeLock.EnterWriteLock();
-            try
-            {
-                if (_Neighbors.ContainsKey(layer))
-                {
-                    if (_Neighbors[layer].Remove(NeighborGUID))
-                    {
-                        _IsDirty = true;
-                        if (_Neighbors[layer].Count == 0)
-                        {
-                            _Neighbors.Remove(layer);
-                        }
-                        // Don't save immediately - wait for explicit Flush() call for better batch performance
-                        // SaveNeighborsToDatabase();
-                    }
-                }
-            }
-            finally
-            {
-                _NodeLock.ExitWriteLock();
-            }
-        }
-
-        /// <summary>
-        /// Gets the number of neighbors at a specific layer.
-        /// Thread-safe operation.
-        /// </summary>
-        /// <param name="layer">The layer number. Minimum: 0, Maximum: 63.</param>
-        /// <returns>The number of neighbors at the specified layer, or 0 if the layer has no neighbors.</returns>
-        /// <exception cref="ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
-        /// <exception cref="ObjectDisposedException">Thrown when the node has been disposed.</exception>
-        public int GetNeighborCount(int layer)
-        {
-            ThrowIfDisposed();
-
-            if (layer < 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot be negative.");
-            }
-            
-            if (layer > 63)
-            {
-                throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot exceed 63.");
-            }
-
-            _NodeLock.EnterReadLock();
-            try
-            {
-                return _Neighbors.TryGetValue(layer, out HashSet<Guid>? layerNeighbors) ? layerNeighbors.Count : 0;
-            }
-            finally
-            {
-                _NodeLock.ExitReadLock();
-            }
-        }
-
-        /// <summary>
-        /// Gets the total number of neighbors across all layers.
-        /// Thread-safe operation.
-        /// </summary>
-        /// <returns>The total number of neighbors.</returns>
-        /// <exception cref="ObjectDisposedException">Thrown when the node has been disposed.</exception>
-        public int GetTotalNeighborCount()
-        {
-            ThrowIfDisposed();
-
-            _NodeLock.EnterReadLock();
-            try
-            {
-                return _Neighbors.Values.Sum(set => set.Count);
-            }
-            finally
-            {
-                _NodeLock.ExitReadLock();
-            }
-        }
-
-        /// <summary>
-        /// Checks if a specific neighbor exists at the given layer.
-        /// Thread-safe operation.
-        /// </summary>
-        /// <param name="layer">The layer number. Minimum: 0, Maximum: 63.</param>
-        /// <param name="NeighborGUID">The neighbor ID to check.</param>
-        /// <returns>true if the neighbor exists at the specified layer; otherwise, false.</returns>
-        /// <exception cref="ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
-        /// <exception cref="ObjectDisposedException">Thrown when the node has been disposed.</exception>
-        public bool HasNeighbor(int layer, Guid NeighborGUID)
-        {
-            ThrowIfDisposed();
-
-            if (layer < 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot be negative.");
-            }
-            
-            if (layer > 63)
-            {
-                throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot exceed 63.");
-            }
-
-            _NodeLock.EnterReadLock();
-            try
-            {
-                return _Neighbors.TryGetValue(layer, out HashSet<Guid>? layerNeighbors) && layerNeighbors.Contains(NeighborGUID);
-            }
-            finally
-            {
-                _NodeLock.ExitReadLock();
-            }
-        }
-
-        /// <summary>
-        /// Forces a save of neighbor data to the database.
-        /// Thread-safe operation.
-        /// </summary>
-        /// <exception cref="ObjectDisposedException">Thrown when the node has been disposed.</exception>
-        public void Flush()
-        {
-            ThrowIfDisposed();
-
-            _NodeLock.EnterWriteLock();
-            try
-            {
-                if (_IsDirty)
-                {
-                    SaveNeighborsToDatabase();
-                    SaveMetadataToDatabase();
-                    _IsDirty = false;
-                }
-            }
-            finally
-            {
-                _NodeLock.ExitWriteLock();
-            }
-        }
-
-        /// <summary>
-        /// Disposes of the node's resources.
-        /// </summary>
-        public void Dispose()
-        {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        #endregion
-
-        #region Private-Methods
-
-        /// <summary>
-        /// Disposes of the node's resources.
-        /// </summary>
-        /// <param name="disposing">true if disposing managed resources; otherwise, false.</param>
-        protected virtual void Dispose(bool disposing)
-        {
-            if (!_Disposed)
-            {
-                if (disposing)
-                {
-                    try
-                    {
-                        Flush(); // Save any pending changes
-                    }
-                    catch
-                    {
-                        // Ignore errors during disposal
-                    }
-                    _NodeLock?.Dispose();
-                }
-                _Disposed = true;
-            }
+            if (layer < 0) throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot be negative.");
+            if (layer > 63) throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot exceed 63.");
+            if (neighborGuid == Guid.Empty) throw new ArgumentException("NeighborId cannot be Guid.Empty.", nameof(neighborGuid));
+            if (neighborGuid == _Id) throw new ArgumentException("Node cannot be its own neighbor.", nameof(neighborGuid));
         }
 
         private void ThrowIfDisposed()
@@ -429,183 +263,201 @@ namespace Hnsw.SqliteStorage
             }
         }
 
-        private void LoadNeighborsFromDatabase()
+        private async Task LoadNeighborsFromDatabaseAsync(CancellationToken cancellationToken)
         {
+            await _DatabaseLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                SqliteCommand command = _Connection.CreateCommand();
-                command.CommandText = $"SELECT neighbors_blob FROM {_TableName} WHERE node_id = @nodeId";
+                using SqliteCommand command = _Connection.CreateCommand();
+                command.CommandText = $"SELECT neighbors_blob FROM {_NeighborsTableName} WHERE node_id = @nodeId";
                 command.Parameters.AddWithValue("@nodeId", _Id.ToByteArray());
 
-                object? result = command.ExecuteScalar();
-                if (result != null && result != DBNull.Value)
+                object? result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                if (result is byte[] blob && blob.Length > 0)
                 {
-                    byte[]? blob = (byte[]?)result;
-                    if (blob != null && blob.Length > 0)
+                    Dictionary<int, HashSet<Guid>> deserializedNeighbors = DeserializeNeighbors(blob);
+                    _Neighbors.Clear();
+                    foreach (KeyValuePair<int, HashSet<Guid>> kvp in deserializedNeighbors)
                     {
-                        Dictionary<int, HashSet<Guid>> deserializedNeighbors = DeserializeNeighbors(blob);
-                        _Neighbors.Clear();
-                        foreach (KeyValuePair<int, HashSet<Guid>> kvp in deserializedNeighbors)
-                        {
-                            _Neighbors[kvp.Key] = kvp.Value;
-                        }
+                        _Neighbors[kvp.Key] = kvp.Value;
                     }
                 }
             }
-            catch
+            finally
             {
-                // If loading fails, start with empty neighbors
-                _Neighbors.Clear();
+                _DatabaseLock.Release();
             }
         }
 
-        private void SaveNeighborsToDatabase()
+        private async Task SaveNeighborsToDatabaseAsync(CancellationToken cancellationToken)
         {
+            byte[] blob = SerializeNeighbors(_Neighbors);
+
+            await _DatabaseLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                byte[] blob = SerializeNeighbors(_Neighbors);
-
-                SqliteCommand command = _Connection.CreateCommand();
+                using SqliteCommand command = _Connection.CreateCommand();
                 command.CommandText = $@"
-                    INSERT OR REPLACE INTO {_TableName} (node_id, neighbors_blob, updated_at) 
+                    INSERT OR REPLACE INTO {_NeighborsTableName} (node_id, neighbors_blob, updated_at)
                     VALUES (@nodeId, @neighborsBlob, CURRENT_TIMESTAMP)";
                 command.Parameters.AddWithValue("@nodeId", _Id.ToByteArray());
                 command.Parameters.AddWithValue("@neighborsBlob", blob);
 
-                command.ExecuteNonQuery();
-                _IsDirty = false;
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
             catch
             {
-                // Mark as dirty if save fails so we can retry later
                 _IsDirty = true;
                 throw;
             }
+            finally
+            {
+                _DatabaseLock.Release();
+            }
         }
 
-        private byte[] SerializeNeighbors(Dictionary<int, HashSet<Guid>> neighbors)
-        {
-            using MemoryStream ms = new MemoryStream();
-            using BinaryWriter writer = new BinaryWriter(ms);
-            
-            writer.Write(neighbors.Count);
-            foreach (KeyValuePair<int, HashSet<Guid>> kvp in neighbors)
-            {
-                writer.Write(kvp.Key); // layer
-                writer.Write(kvp.Value.Count); // neighbor count
-                foreach (Guid NeighborGUID in kvp.Value)
-                {
-                    writer.Write(NeighborGUID.ToByteArray());
-                }
-            }
-            return ms.ToArray();
-        }
-
-        private Dictionary<int, HashSet<Guid>> DeserializeNeighbors(byte[] bytes)
-        {
-            if (bytes == null || bytes.Length == 0)
-            {
-                return new Dictionary<int, HashSet<Guid>>();
-            }
-                
-            using MemoryStream ms = new MemoryStream(bytes);
-            using BinaryReader reader = new BinaryReader(ms);
-            
-            Dictionary<int, HashSet<Guid>> neighbors = new Dictionary<int, HashSet<Guid>>();
-            int layerCount = reader.ReadInt32();
-            
-            for (int i = 0; i < layerCount; i++)
-            {
-                int layer = reader.ReadInt32();
-                int neighborCount = reader.ReadInt32();
-                HashSet<Guid> layerNeighbors = new HashSet<Guid>();
-                
-                for (int j = 0; j < neighborCount; j++)
-                {
-                    byte[] guidBytes = reader.ReadBytes(16);
-                    layerNeighbors.Add(new Guid(guidBytes));
-                }
-                
-                neighbors[layer] = layerNeighbors;
-            }
-            
-            return neighbors;
-        }
-
-        private void LoadMetadataFromDatabase()
+        private async Task LoadMetadataFromDatabaseAsync(CancellationToken cancellationToken)
         {
             if (string.IsNullOrEmpty(_NodesTableName)) return;
+
+            await _DatabaseLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 using SqliteCommand cmd = _Connection.CreateCommand();
                 cmd.CommandText = $"SELECT metadata_json FROM {_NodesTableName} WHERE id = @id";
                 cmd.Parameters.AddWithValue("@id", _Id.ToByteArray());
-                object? result = cmd.ExecuteScalar();
-                if (result is string json && json.Length > 0)
+
+                object? result = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                if (result is not string json || json.Length == 0)
                 {
-                    JsonDocument doc = JsonDocument.Parse(json);
-                    JsonElement root = doc.RootElement;
+                    return;
+                }
 
-                    if (root.TryGetProperty("Name", out JsonElement nameEl) && nameEl.ValueKind == JsonValueKind.String)
-                        _Name = nameEl.GetString();
+                using JsonDocument doc = JsonDocument.Parse(json);
+                JsonElement root = doc.RootElement;
 
-                    if (root.TryGetProperty("Labels", out JsonElement labelsEl) && labelsEl.ValueKind == JsonValueKind.Array)
+                if (root.TryGetProperty("Name", out JsonElement nameEl) && nameEl.ValueKind == JsonValueKind.String)
+                {
+                    _Name = nameEl.GetString();
+                }
+
+                if (root.TryGetProperty("Labels", out JsonElement labelsEl) && labelsEl.ValueKind == JsonValueKind.Array)
+                {
+                    _Labels = new List<string>();
+                    foreach (JsonElement el in labelsEl.EnumerateArray())
                     {
-                        _Labels = new List<string>();
-                        foreach (JsonElement el in labelsEl.EnumerateArray())
-                            if (el.ValueKind == JsonValueKind.String) _Labels.Add(el.GetString()!);
-                    }
-
-                    if (root.TryGetProperty("Tags", out JsonElement tagsEl) && tagsEl.ValueKind == JsonValueKind.Object)
-                    {
-                        _Tags = new Dictionary<string, object>();
-                        foreach (JsonProperty prop in tagsEl.EnumerateObject())
+                        if (el.ValueKind == JsonValueKind.String)
                         {
-                            _Tags[prop.Name] = prop.Value.ValueKind switch
-                            {
-                                JsonValueKind.String => prop.Value.GetString()!,
-                                JsonValueKind.Number => prop.Value.TryGetInt64(out long l) ? (object)l : prop.Value.GetDouble(),
-                                JsonValueKind.True => true,
-                                JsonValueKind.False => false,
-                                _ => prop.Value.GetRawText(),
-                            };
+                            _Labels.Add(el.GetString()!);
                         }
                     }
                 }
+
+                if (root.TryGetProperty("Tags", out JsonElement tagsEl) && tagsEl.ValueKind == JsonValueKind.Object)
+                {
+                    _Tags = new Dictionary<string, object>();
+                    foreach (JsonProperty prop in tagsEl.EnumerateObject())
+                    {
+                        _Tags[prop.Name] = prop.Value.ValueKind switch
+                        {
+                            JsonValueKind.String => prop.Value.GetString()!,
+                            JsonValueKind.Number => prop.Value.TryGetInt64(out long l) ? (object)l : prop.Value.GetDouble(),
+                            JsonValueKind.True => true,
+                            JsonValueKind.False => false,
+                            _ => prop.Value.GetRawText(),
+                        };
+                    }
+                }
             }
-            catch
+            finally
             {
-                // Metadata is optional; swallow read errors gracefully.
+                _DatabaseLock.Release();
             }
         }
 
-        private void SaveMetadataToDatabase()
+        private async Task SaveMetadataToDatabaseAsync(CancellationToken cancellationToken)
         {
             if (string.IsNullOrEmpty(_NodesTableName)) return;
-            if (_Name == null && _Labels == null && _Tags == null)
+
+            await _DatabaseLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                // All null → persist NULL to clear any prior metadata.
-                using SqliteCommand cmd = _Connection.CreateCommand();
-                cmd.CommandText = $"UPDATE {_NodesTableName} SET metadata_json = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = @id";
-                cmd.Parameters.AddWithValue("@id", _Id.ToByteArray());
-                cmd.ExecuteNonQuery();
-                return;
+                if (_Name == null && _Labels == null && _Tags == null)
+                {
+                    using SqliteCommand cmd = _Connection.CreateCommand();
+                    cmd.CommandText = $"UPDATE {_NodesTableName} SET metadata_json = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = @id";
+                    cmd.Parameters.AddWithValue("@id", _Id.ToByteArray());
+                    await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+
+                Dictionary<string, object?> obj = new Dictionary<string, object?>();
+                if (_Name != null) obj["Name"] = _Name;
+                if (_Labels != null) obj["Labels"] = _Labels;
+                if (_Tags != null) obj["Tags"] = _Tags;
+
+                string json = JsonSerializer.Serialize(obj);
+
+                using SqliteCommand update = _Connection.CreateCommand();
+                update.CommandText = $"UPDATE {_NodesTableName} SET metadata_json = @json, updated_at = CURRENT_TIMESTAMP WHERE id = @id";
+                update.Parameters.AddWithValue("@json", json);
+                update.Parameters.AddWithValue("@id", _Id.ToByteArray());
+                await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
-
-            Dictionary<string, object?> obj = new Dictionary<string, object?>();
-            if (_Name != null) obj["Name"] = _Name;
-            if (_Labels != null) obj["Labels"] = _Labels;
-            if (_Tags != null) obj["Tags"] = _Tags;
-
-            string json = JsonSerializer.Serialize(obj);
-
-            using SqliteCommand update = _Connection.CreateCommand();
-            update.CommandText = $"UPDATE {_NodesTableName} SET metadata_json = @json, updated_at = CURRENT_TIMESTAMP WHERE id = @id";
-            update.Parameters.AddWithValue("@json", json);
-            update.Parameters.AddWithValue("@id", _Id.ToByteArray());
-            update.ExecuteNonQuery();
+            finally
+            {
+                _DatabaseLock.Release();
+            }
         }
 
-        #endregion
+        private static byte[] SerializeNeighbors(Dictionary<int, HashSet<Guid>> neighbors)
+        {
+            using MemoryStream ms = new MemoryStream();
+            using BinaryWriter writer = new BinaryWriter(ms);
+
+            writer.Write(neighbors.Count);
+            foreach (KeyValuePair<int, HashSet<Guid>> kvp in neighbors)
+            {
+                writer.Write(kvp.Key);
+                writer.Write(kvp.Value.Count);
+                foreach (Guid neighborGuid in kvp.Value)
+                {
+                    writer.Write(neighborGuid.ToByteArray());
+                }
+            }
+
+            return ms.ToArray();
+        }
+
+        private static Dictionary<int, HashSet<Guid>> DeserializeNeighbors(byte[] bytes)
+        {
+            if (bytes.Length == 0)
+            {
+                return new Dictionary<int, HashSet<Guid>>();
+            }
+
+            using MemoryStream ms = new MemoryStream(bytes);
+            using BinaryReader reader = new BinaryReader(ms);
+
+            Dictionary<int, HashSet<Guid>> neighbors = new Dictionary<int, HashSet<Guid>>();
+            int layerCount = reader.ReadInt32();
+
+            for (int i = 0; i < layerCount; i++)
+            {
+                int layer = reader.ReadInt32();
+                int neighborCount = reader.ReadInt32();
+                HashSet<Guid> layerNeighbors = new HashSet<Guid>();
+
+                for (int j = 0; j < neighborCount; j++)
+                {
+                    byte[] guidBytes = reader.ReadBytes(16);
+                    layerNeighbors.Add(new Guid(guidBytes));
+                }
+
+                neighbors[layer] = layerNeighbors;
+            }
+
+            return neighbors;
+        }
     }
 }

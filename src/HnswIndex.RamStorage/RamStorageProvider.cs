@@ -15,15 +15,6 @@ namespace Hnsw.RamStorage
         #region Public-Members
 
         /// <summary>
-        /// Gets or sets the entry point node ID.
-        /// </summary>
-        public Guid? EntryPoint
-        {
-            get { return _Storage.EntryPoint; }
-            set { _Storage.EntryPoint = value; }
-        }
-
-        /// <summary>
         /// Number of nodes with layer assignments.
         /// </summary>
         public int Count => _LayerStorage.Count;
@@ -108,61 +99,85 @@ namespace Hnsw.RamStorage
         }
 
         /// <inheritdoc />
-        public int GetNodeLayer(Guid nodeId)
+        public Task<Guid?> GetEntryPointAsync(CancellationToken cancellationToken = default)
         {
-            return _LayerStorage.GetNodeLayer(nodeId);
+            return _Storage.GetEntryPointAsync(cancellationToken);
         }
 
         /// <inheritdoc />
-        public void SetNodeLayer(Guid nodeId, int layer)
+        public Task SetEntryPointAsync(Guid? entryPoint, CancellationToken cancellationToken = default)
         {
-            _LayerStorage.SetNodeLayer(nodeId, layer);
+            return _Storage.SetEntryPointAsync(entryPoint, cancellationToken);
         }
 
         /// <inheritdoc />
-        public void RemoveNodeLayer(Guid nodeId)
+        public Task<int> GetNodeLayerAsync(Guid nodeId, CancellationToken cancellationToken = default)
         {
-            _LayerStorage.RemoveNodeLayer(nodeId);
+            return _LayerStorage.GetNodeLayerAsync(nodeId, cancellationToken);
         }
 
         /// <inheritdoc />
-        public Dictionary<Guid, int> GetAllNodeLayers()
+        public Task SetNodeLayerAsync(Guid nodeId, int layer, CancellationToken cancellationToken = default)
         {
-            return _LayerStorage.GetAllNodeLayers();
+            return _LayerStorage.SetNodeLayerAsync(nodeId, layer, cancellationToken);
         }
 
         /// <inheritdoc />
-        public void Clear()
+        public Task RemoveNodeLayerAsync(Guid nodeId, CancellationToken cancellationToken = default)
         {
-            _Storage.Clear();
-            _LayerStorage.Clear();
+            return _LayerStorage.RemoveNodeLayerAsync(nodeId, cancellationToken);
         }
 
-        /// <summary>
-        /// Disposes both the node storage and layer storage.
-        /// </summary>
-        public void Dispose()
+        /// <inheritdoc />
+        public Task<Dictionary<Guid, int>> GetAllNodeLayersAsync(CancellationToken cancellationToken = default)
         {
-            Dispose(true);
+            return _LayerStorage.GetAllNodeLayersAsync(cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public Task ClearLayersAsync(CancellationToken cancellationToken = default)
+        {
+            return _LayerStorage.ClearLayersAsync(cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public Task<int> GetLayerCountAsync(CancellationToken cancellationToken = default)
+        {
+            return _LayerStorage.GetLayerCountAsync(cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public Task<IHnswStorageTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<IHnswStorageTransaction>(new NoOpHnswStorageTransaction());
+        }
+
+        /// <inheritdoc />
+        public Task FlushAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        /// <inheritdoc />
+        public ValueTask DisposeAsync()
+        {
+            DisposeCore();
             GC.SuppressFinalize(this);
+            return ValueTask.CompletedTask;
         }
 
         #endregion
 
         #region Private-Methods
 
-        /// <summary>
-        /// Disposes managed resources.
-        /// </summary>
-        /// <param name="disposing">True when called from Dispose().</param>
-        protected virtual void Dispose(bool disposing)
+        // Synchronous helper behind DisposeAsync.
+        private void DisposeCore()
         {
             if (_Disposed) return;
-            if (disposing)
-            {
-                _Storage.Dispose();
-                _LayerStorage.Dispose();
-            }
+            _Storage.Dispose();
+            _LayerStorage.Dispose();
             _Disposed = true;
         }
 

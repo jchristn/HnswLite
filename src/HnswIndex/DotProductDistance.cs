@@ -31,7 +31,7 @@ namespace Hnsw
         /// <returns>The negative dot product between the vectors.</returns>
         /// <exception cref="ArgumentNullException">Thrown when a or b is null.</exception>
         /// <exception cref="ArgumentException">Thrown when vectors have different dimensions.</exception>
-        public float Distance(List<float> a, List<float> b)
+        public float Distance(IReadOnlyList<float> a, IReadOnlyList<float> b)
         {
             ArgumentNullException.ThrowIfNull(a, nameof(a));
             ArgumentNullException.ThrowIfNull(b, nameof(b));
@@ -41,8 +41,18 @@ namespace Hnsw
                 throw new ArgumentException($"Vectors must have the same dimension. Vector a has {a.Count} dimensions, vector b has {b.Count} dimensions.", nameof(b));
             }
 
-            ReadOnlySpan<float> spanA = CollectionsMarshal.AsSpan(a);
-            ReadOnlySpan<float> spanB = CollectionsMarshal.AsSpan(b);
+            if (a is not List<float> listA || b is not List<float> listB)
+            {
+                float fallbackDot = 0f;
+                for (int j = 0; j < a.Count; j++)
+                {
+                    fallbackDot += a[j] * b[j];
+                }
+                return -fallbackDot;
+            }
+
+            ReadOnlySpan<float> spanA = CollectionsMarshal.AsSpan(listA);
+            ReadOnlySpan<float> spanB = CollectionsMarshal.AsSpan(listB);
 
             float dotProduct = 0f;
             int i = 0;

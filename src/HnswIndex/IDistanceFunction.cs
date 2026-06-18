@@ -20,6 +20,6 @@ namespace Hnsw
         /// <returns>Distance between the vectors.</returns>
         /// <exception cref="System.ArgumentNullException">Thrown when a or b is null.</exception>
         /// <exception cref="System.ArgumentException">Thrown when vectors have different dimensions.</exception>
-        float Distance(List<float> a, List<float> b);
+        float Distance(IReadOnlyList<float> a, IReadOnlyList<float> b);
     }
 }

@@ -10,7 +10,7 @@ export interface IndexResponse {
   guid: string;
   name: string;
   dimension: number;
-  storageType: string;
+  storageType: StorageType;
   distanceFunction: string;
   m: number;
   maxM: number;
@@ -22,12 +22,14 @@ export interface IndexResponse {
 export interface CreateIndexRequest {
   name: string;
   dimension: number;
-  storageType?: string;
+  storageType?: StorageType;
   distanceFunction?: string;
   m?: number;
   maxM?: number;
   efConstruction?: number;
 }
+
+export type StorageType = "PostgreSQL" | "SQLite" | "RAM";
 
 // ── Vectors ──────────────────────────────────────────────────────────
 

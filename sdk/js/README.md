@@ -20,7 +20,7 @@ npm run build
 ```typescript
 import { HnswLiteClient } from "hnswlite-sdk";
 
-const client = new HnswLiteClient("http://localhost:8321", "my-api-key");
+const client = new HnswLiteClient("http://localhost:8080", "my-api-key");
 ```
 
 ## API reference
@@ -31,7 +31,7 @@ const client = new HnswLiteClient("http://localhost:8321", "my-api-key");
 new HnswLiteClient(baseUrl: string, apiKey: string, apiKeyHeader?: string)
 ```
 
-- `baseUrl` — Server base URL (e.g. `http://localhost:8321`).
+- `baseUrl` - Server base URL (e.g. `http://localhost:8080`).
 - `apiKey` — Value sent in the authentication header.
 - `apiKeyHeader` — Header name for the API key (default: `x-api-key`).
 
@@ -80,8 +80,8 @@ Create a new index.
 const index = await client.createIndex({
   name: "my-index",
   dimension: 128,
-  storageType: "InMemory",
-  distanceFunction: "CosineDistance",
+  storageType: "PostgreSQL",
+  distanceFunction: "Cosine",
 });
 console.log(index.guid, index.createdUtc);
 ```
@@ -234,8 +234,13 @@ try {
 ## Running integration tests
 
 ```bash
-BASE_URL=http://localhost:8321 API_KEY=mykey npm test
+npm test
 ```
+
+The harness defaults to Docker Compose settings:
+`http://localhost:8080`, API key `b6b6f6b0-c251-4733-93c8-5587370baa42`, and
+`PostgreSQL` storage. Override them with positional arguments or
+`HNSWLITE_BASE_URL`, `HNSWLITE_API_KEY`, and `HNSWLITE_STORAGE_TYPE`.
 
 ## License
 

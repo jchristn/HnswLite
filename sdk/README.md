@@ -4,6 +4,9 @@ Client libraries for the HnswLite REST API. Each SDK provides 100% endpoint
 coverage, typed models, pagination via `EnumerationQuery` / `EnumerationResult`,
 and a test harness that exercises every method against a live server.
 
+V2 server and Docker deployments default new indexes to PostgreSQL. SDK create
+requests accept `PostgreSQL`, `SQLite`, and `RAM`.
+
 ## Available SDKs
 
 | Language   | Directory          | Package name      | Runtime requirements              |
@@ -28,7 +31,7 @@ with `RequireAuthentication: true` and the API key from `hnswindex.json`.
 
 ```bash
 cd sdk/csharp
-dotnet run --project HnswLite.Sdk.Test -- http://localhost:8080 YOUR_API_KEY
+dotnet run --project HnswLite.Sdk.Test -- http://localhost:8080 b6b6f6b0-c251-4733-93c8-5587370baa42 PostgreSQL
 ```
 
 ### Python
@@ -36,7 +39,7 @@ dotnet run --project HnswLite.Sdk.Test -- http://localhost:8080 YOUR_API_KEY
 ```bash
 cd sdk/python
 pip install -e .
-python tests/test_integration.py --base-url http://localhost:8080 --api-key YOUR_API_KEY
+python tests/test_integration.py
 ```
 
 ### JavaScript / TypeScript
@@ -44,7 +47,7 @@ python tests/test_integration.py --base-url http://localhost:8080 --api-key YOUR
 ```bash
 cd sdk/js
 npm install && npm run build
-BASE_URL=http://localhost:8080 API_KEY=YOUR_API_KEY node dist/tests/integration.js
+npm test
 ```
 
 ## API coverage matrix

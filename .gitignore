@@ -293,6 +293,9 @@ UpgradeLog*.htm
 *.mdf
 *.ldf
 
+# Docker runtime database files
+docker/postgres/data/
+
 # Business Intelligence projects
 *.rdl.data
 *.bim.layout

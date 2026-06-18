@@ -1,7 +1,9 @@
-﻿namespace Hnsw
+namespace Hnsw
 {
     using System;
     using System.Collections.Generic;
+    using System.Threading;
+    using System.Threading.Tasks;
 
     /// <summary>
     /// Interface for HNSW graph nodes.
@@ -16,36 +18,45 @@
         /// <summary>
         /// Gets the vector associated with the node.
         /// </summary>
-        List<float> Vector { get; }
+        IReadOnlyList<float> Vector { get; }
 
         /// <summary>
         /// Optional human-readable name for this vector.
         /// </summary>
-        string? Name { get; set; }
+        string? Name { get; }
 
         /// <summary>
         /// Optional classification labels.
         /// </summary>
-        List<string>? Labels { get; set; }
+        IReadOnlyList<string>? Labels { get; }
 
         /// <summary>
         /// Optional arbitrary key/value tags.
         /// </summary>
-        Dictionary<string, object>? Tags { get; set; }
+        IReadOnlyDictionary<string, object>? Tags { get; }
 
         /// <summary>
         /// Gets a copy of the node's neighbors organized by layer.
         /// </summary>
-        Dictionary<int, HashSet<Guid>> GetNeighbors();
+        Task<Dictionary<int, HashSet<Guid>>> GetNeighborsAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Adds a neighbor connection at the specified layer.
         /// </summary>
-        void AddNeighbor(int layer, Guid NeighborGUID);
+        Task AddNeighborAsync(int layer, Guid neighborGuid, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Removes a neighbor connection at the specified layer.
         /// </summary>
-        void RemoveNeighbor(int layer, Guid NeighborGUID);
+        Task RemoveNeighborAsync(int layer, Guid neighborGuid, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Sets the optional metadata for this vector.
+        /// </summary>
+        Task SetMetadataAsync(
+            string? name,
+            List<string>? labels,
+            Dictionary<string, object>? tags,
+            CancellationToken cancellationToken = default);
     }
 }

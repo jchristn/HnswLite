@@ -12,7 +12,7 @@ class HnswLiteClient:
     """Synchronous client for the HnswLite REST API.
 
     Args:
-        base_url: Base URL of the HnswLite server (e.g. ``http://localhost:8321``).
+        base_url: Base URL of the HnswLite server (e.g. ``http://localhost:8080``).
         api_key: API key sent via the authentication header.
         api_key_header: Name of the header used for authentication.
             Defaults to ``x-api-key``.
@@ -118,7 +118,7 @@ class HnswLiteClient:
         self,
         name: str,
         dimension: int,
-        storage_type: str = "RAM",
+        storage_type: str = "PostgreSQL",
         distance_function: str = "Cosine",
         m: int = 16,
         max_m: int = 32,

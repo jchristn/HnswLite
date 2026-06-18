@@ -314,7 +314,7 @@ namespace HnswIndex.Server.API.REST
         {
             try
             {
-                bool deleted = _IndexManager.DeleteIndex(indexName);
+                bool deleted = await _IndexManager.DeleteIndexAsync(indexName).ConfigureAwait(false);
 
                 if (!deleted)
                 {

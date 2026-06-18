@@ -21,7 +21,7 @@ pip install .
 from hnswlite import HnswLiteClient
 
 client = HnswLiteClient(
-    base_url="http://localhost:8321",
+    base_url="http://localhost:8080",
     api_key="your-api-key",
 )
 ```
@@ -45,7 +45,7 @@ client.head_ping()  # returns True
 index = client.create_index(
     name="my-index",
     dimension=128,
-    storage_type="RAM",           # "RAM" or "SQLite"
+    storage_type="PostgreSQL",    # "PostgreSQL", "SQLite", or "RAM"
     distance_function="Cosine",   # "Cosine", "Euclidean", or "DotProduct"
     m=16,
     max_m=32,
@@ -178,8 +178,14 @@ except HnswLiteApiError as e:
 
 ```bash
 cd sdk/python
-python tests/test_integration.py --base-url http://localhost:8321 --api-key your-key
+python tests/test_integration.py
 ```
+
+The harness defaults to Docker Compose settings:
+`http://localhost:8080`, API key `b6b6f6b0-c251-4733-93c8-5587370baa42`, and
+`PostgreSQL` storage. Override them with `--base-url`, `--api-key`,
+`--storage-type`, or the `HNSWLITE_BASE_URL`, `HNSWLITE_API_KEY`, and
+`HNSWLITE_STORAGE_TYPE` environment variables.
 
 ## License
 

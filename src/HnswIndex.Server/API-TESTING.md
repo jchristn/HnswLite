@@ -135,7 +135,7 @@ POST /v1.0/indexes
 {
   "Name": "test-index",
   "Dimension": 3,
-  "StorageType": "Sqlite",
+  "StorageType": "PostgreSQL",
   "DistanceFunction": "Euclidean",
   "M": 16,
   "MaxM": 32,

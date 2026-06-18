@@ -2,6 +2,7 @@
 	"info": {
 		"_postman_id": "a9db5f9a-e77b-4386-892f-ae44f5e9d5e3",
 		"name": "HNSW Index",
+		"description": "HnswLite REST API collection for v2.0.0. New indexes default to PostgreSQL when StorageType is omitted, and examples use PostgreSQL explicitly.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
 		"_exporter_id": "720438"
 	},
@@ -64,7 +65,7 @@
 				],
 				"body": {
 					"mode": "raw",
-					"raw": "{\r\n  \"Name\": \"my-index\",\r\n  \"Dimension\": 3,\r\n  \"StorageType\": \"Sqlite\",\r\n  \"DistanceFunction\": \"Euclidean\",\r\n  \"M\": 16,\r\n  \"MaxM\": 32,\r\n  \"EfConstruction\": 200\r\n}",
+					"raw": "{\r\n  \"Name\": \"my-index\",\r\n  \"Dimension\": 3,\r\n  \"StorageType\": \"PostgreSQL\",\r\n  \"DistanceFunction\": \"Euclidean\",\r\n  \"M\": 16,\r\n  \"MaxM\": 32,\r\n  \"EfConstruction\": 200\r\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -190,7 +191,7 @@
 				],
 				"body": {
 					"mode": "raw",
-					"raw": "{\r\n  \"Name\": \"my-index\",\r\n  \"Dimension\": 3,\r\n  \"StorageType\": \"Sqlite\",\r\n  \"DistanceFunction\": \"Euclidean\",\r\n  \"M\": 16,\r\n  \"MaxM\": 32,\r\n  \"EfConstruction\": 200\r\n}",
+					"raw": "{\r\n  \"Name\": \"my-index\",\r\n  \"Dimension\": 3,\r\n  \"StorageType\": \"PostgreSQL\",\r\n  \"DistanceFunction\": \"Euclidean\",\r\n  \"M\": 16,\r\n  \"MaxM\": 32,\r\n  \"EfConstruction\": 200\r\n}",
 					"options": {
 						"raw": {
 							"language": "json"
