@@ -8,14 +8,16 @@ namespace HnswIndex.Server.Services
     using Hnsw;
     using Hnsw.RamStorage;
     using Hnsw.SqliteStorage;
+    using HnswIndex.PostgresqlStorage;
     using HnswIndex.SqliteStorage;
     using HnswIndex.Server.Classes;
+    using Npgsql;
     using SyslogLogging;
 
     /// <summary>
     /// Service for managing HNSW indexes.
     /// </summary>
-    public class IndexManager : IDisposable
+    public class IndexManager : IAsyncDisposable
     {
         #region Public-Members
 
@@ -25,8 +27,10 @@ namespace HnswIndex.Server.Services
 
         private static readonly string _Header = "[IndexManager] ";
         private readonly ConcurrentDictionary<string, IndexMetadata> _Indexes = new ConcurrentDictionary<string, IndexMetadata>();
+        private readonly StorageSettings _StorageSettings;
         private readonly string _SqliteDirectory = string.Empty;
         private readonly LoggingModule? _Logging;
+        private NpgsqlDataSource? _PostgresqlDataSource;
         private bool _Disposed = false;
 
         #endregion
@@ -39,9 +43,26 @@ namespace HnswIndex.Server.Services
         /// <param name="sqliteDirectory">Directory for SQLite index storage.</param>
         /// <param name="logging">Logging module.</param>
         public IndexManager(string sqliteDirectory, LoggingModule? logging = null)
+            : this(new StorageSettings
+            {
+                DefaultStorageType = "PostgreSQL",
+                SqliteDirectory = sqliteDirectory,
+                PostgresqlConnectionString = "Host=localhost;Port=5432;Database=hnswlite;Username=hnswlite;Password=hnswlite",
+                PostgresqlAutoProvision = true
+            }, logging)
         {
-            ArgumentNullException.ThrowIfNull(sqliteDirectory);
-            _SqliteDirectory = sqliteDirectory;
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the IndexManager class.
+        /// </summary>
+        /// <param name="storageSettings">Storage settings.</param>
+        /// <param name="logging">Logging module.</param>
+        public IndexManager(StorageSettings storageSettings, LoggingModule? logging = null)
+        {
+            ArgumentNullException.ThrowIfNull(storageSettings);
+            _StorageSettings = storageSettings;
+            _SqliteDirectory = storageSettings.SqliteDirectory;
             _Logging = logging;
 
             if (!Directory.Exists(_SqliteDirectory))
@@ -49,9 +70,8 @@ namespace HnswIndex.Server.Services
                 Directory.CreateDirectory(_SqliteDirectory);
             }
 
-            _Logging?.Info(_Header + $"initialized with SQLite directory: {_SqliteDirectory}");
-
-            ReloadPersistedIndexes();
+            _Logging?.Info(_Header + $"initialized with default storage: {_StorageSettings.DefaultStorageType}");
+            _Logging?.Info(_Header + $"SQLite directory: {_SqliteDirectory}");
         }
 
         #endregion
@@ -85,7 +105,7 @@ namespace HnswIndex.Server.Services
                 GUID = System.Guid.NewGuid(),
                 Name = request.Name,
                 Dimension = request.Dimension,
-                StorageType = request.StorageType,
+                StorageType = string.IsNullOrWhiteSpace(request.StorageType) ? _StorageSettings.DefaultStorageType : request.StorageType,
                 DistanceFunction = request.DistanceFunction,
                 M = request.M,
                 MaxM = request.MaxM,
@@ -97,7 +117,7 @@ namespace HnswIndex.Server.Services
             metadata.Index = index;
 
             _Indexes.TryAdd(request.Name, metadata);
-            _Logging?.Info(_Header + $"created index '{request.Name}' with {request.Dimension}D vectors using {request.StorageType} storage");
+            _Logging?.Info(_Header + $"created index '{request.Name}' with {request.Dimension}D vectors using {metadata.StorageType} storage");
 
             return new IndexResponse
             {
@@ -210,7 +230,7 @@ namespace HnswIndex.Server.Services
         /// <param name="indexName">Index name.</param>
         /// <returns>True if deleted, false if not found.</returns>
         /// <exception cref="ArgumentNullException">Thrown when indexName is null.</exception>
-        public bool DeleteIndex(string indexName)
+        public async Task<bool> DeleteIndexAsync(string indexName)
         {
             ArgumentNullException.ThrowIfNull(indexName);
 
@@ -220,7 +240,7 @@ namespace HnswIndex.Server.Services
                 return false;
             }
 
-            metadata.Dispose();
+            await metadata.DisposeAsync().ConfigureAwait(false);
             _Logging?.Info(_Header + $"deleted index '{indexName}'");
             return true;
         }
@@ -254,14 +274,7 @@ namespace HnswIndex.Server.Services
                 throw new InvalidOperationException($"Index '{indexName}' not found.");
             }
 
-            IStorageProvider? provider = null;
-            if (metadata.StorageObjects != null)
-            {
-                foreach (IDisposable obj in metadata.StorageObjects)
-                {
-                    if (obj is IStorageProvider sp) { provider = sp; break; }
-                }
-            }
+            IStorageProvider? provider = GetProvider(metadata);
             if (provider == null)
             {
                 throw new InvalidOperationException($"Index '{indexName}' has no accessible storage provider.");
@@ -287,14 +300,7 @@ namespace HnswIndex.Server.Services
                 throw new InvalidOperationException($"Index '{indexName}' not found.");
             }
 
-            IStorageProvider? provider = null;
-            if (metadata.StorageObjects != null)
-            {
-                foreach (IDisposable obj in metadata.StorageObjects)
-                {
-                    if (obj is IStorageProvider sp) { provider = sp; break; }
-                }
-            }
+            IStorageProvider? provider = GetProvider(metadata);
             if (provider == null)
             {
                 throw new InvalidOperationException($"Index '{indexName}' has no accessible storage provider.");
@@ -413,9 +419,7 @@ namespace HnswIndex.Server.Services
                 if (provider != null)
                 {
                     IHnswNode node = await provider.GetNodeAsync(vectorGuid, cancellationToken).ConfigureAwait(false);
-                    node.Name = request.Name;
-                    node.Labels = request.Labels;
-                    node.Tags = request.Tags;
+                    await node.SetMetadataAsync(request.Name, request.Labels, request.Tags, cancellationToken).ConfigureAwait(false);
                 }
             }
 
@@ -468,9 +472,7 @@ namespace HnswIndex.Server.Services
                     if (vr.Name != null || vr.Labels != null || vr.Tags != null)
                     {
                         IHnswNode node = await batchProvider.GetNodeAsync(vr.GUID, cancellationToken).ConfigureAwait(false);
-                        node.Name = vr.Name;
-                        node.Labels = vr.Labels;
-                        node.Tags = vr.Tags;
+                        await node.SetMetadataAsync(vr.Name, vr.Labels, vr.Tags, cancellationToken).ConfigureAwait(false);
                     }
                 }
             }
@@ -567,8 +569,8 @@ namespace HnswIndex.Server.Services
                 if (n != null)
                 {
                     sr.Name = n.Name;
-                    sr.Labels = n.Labels;
-                    sr.Tags = n.Tags;
+                    sr.Labels = n.Labels != null ? new List<string>(n.Labels) : null;
+                    sr.Tags = n.Tags != null ? new Dictionary<string, object>(n.Tags) : null;
                 }
                 searchResults.Add(sr);
             }
@@ -584,9 +586,23 @@ namespace HnswIndex.Server.Services
         /// <summary>
         /// Dispose of the index manager.
         /// </summary>
-        public void Dispose()
+        public async ValueTask DisposeAsync()
         {
-            Dispose(true);
+            if (_Disposed) return;
+
+            foreach (IndexMetadata metadata in _Indexes.Values)
+            {
+                await metadata.DisposeAsync().ConfigureAwait(false);
+            }
+            _Indexes.Clear();
+
+            if (_PostgresqlDataSource != null)
+            {
+                await _PostgresqlDataSource.DisposeAsync().ConfigureAwait(false);
+                _PostgresqlDataSource = null;
+            }
+
+            _Disposed = true;
             GC.SuppressFinalize(this);
         }
 
@@ -604,19 +620,39 @@ namespace HnswIndex.Server.Services
             {
                 RamStorageProvider provider = new RamStorageProvider();
                 index = new HnswIndex(metadata.Dimension, provider);
-                metadata.StorageObjects = new List<IDisposable> { provider };
+                metadata.StorageObjects = new List<IAsyncDisposable> { provider };
             }
             else if (string.Equals(metadata.StorageType, "SQLite", StringComparison.OrdinalIgnoreCase))
             {
                 string dbPath = Path.Combine(_SqliteDirectory, $"{metadata.Name}.db");
-                SqliteStorageProvider provider = new SqliteStorageProvider(dbPath);
+                SqliteStorageProvider provider = await SqliteStorageProvider.CreateAsync(
+                    dbPath,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
                 index = new HnswIndex(metadata.Dimension, provider);
-                metadata.StorageObjects = new List<IDisposable> { provider };
+                metadata.StorageObjects = new List<IAsyncDisposable> { provider };
 
                 // Persist server-level metadata into the index's SQLite file so the index
                 // self-describes across restarts. The library uses hnsw_metadata as a
                 // key/value table; the server writes its own namespaced keys alongside.
-                WriteServerMetadata(provider.Connection, metadata);
+                await WriteServerMetadataAsync(provider.Connection, metadata, cancellationToken).ConfigureAwait(false);
+            }
+            else if (string.Equals(metadata.StorageType, "PostgreSQL", StringComparison.OrdinalIgnoreCase)
+                     || string.Equals(metadata.StorageType, "Postgres", StringComparison.OrdinalIgnoreCase))
+            {
+                PostgresqlStorageProvider provider = await PostgresqlStorageProvider.CreateAsync(
+                    GetPostgresqlDataSource(),
+                    metadata.Name,
+                    metadata.Dimension,
+                    metadata.DistanceFunction,
+                    metadata.M,
+                    metadata.MaxM,
+                    metadata.EfConstruction,
+                    createIfNotExists: true,
+                    cancellationToken).ConfigureAwait(false);
+                metadata.GUID = provider.IndexId;
+                metadata.StorageType = "PostgreSQL";
+                index = new HnswIndex(metadata.Dimension, provider);
+                metadata.StorageObjects = new List<IAsyncDisposable> { provider };
             }
             else
             {
@@ -646,6 +682,29 @@ namespace HnswIndex.Server.Services
             return await Task.FromResult(index).ConfigureAwait(false);
         }
 
+        private static void ConfigureIndex(HnswIndex index, IndexMetadata metadata)
+        {
+            index.M = metadata.M;
+            index.MaxM = metadata.MaxM;
+            index.EfConstruction = metadata.EfConstruction;
+
+            switch (metadata.DistanceFunction.ToLowerInvariant())
+            {
+                case "euclidean":
+                    index.DistanceFunction = new EuclideanDistance();
+                    break;
+                case "cosine":
+                    index.DistanceFunction = new CosineDistance();
+                    break;
+                case "dotproduct":
+                    index.DistanceFunction = new DotProductDistance();
+                    break;
+                default:
+                    index.DistanceFunction = new EuclideanDistance();
+                    break;
+            }
+        }
+
         private const string _MetaKeyGuid = "server.guid";
         private const string _MetaKeyDimension = "server.dimension";
         private const string _MetaKeyStorageType = "server.storage_type";
@@ -655,7 +714,10 @@ namespace HnswIndex.Server.Services
         private const string _MetaKeyEfC = "server.ef_construction";
         private const string _MetaKeyCreatedUtc = "server.created_utc";
 
-        private static void WriteServerMetadata(Microsoft.Data.Sqlite.SqliteConnection conn, IndexMetadata m)
+        private static async Task WriteServerMetadataAsync(
+            Microsoft.Data.Sqlite.SqliteConnection conn,
+            IndexMetadata m,
+            CancellationToken cancellationToken)
         {
             Dictionary<string, string> kv = new Dictionary<string, string>
             {
@@ -675,25 +737,99 @@ namespace HnswIndex.Server.Services
                 cmd.CommandText = "INSERT OR REPLACE INTO hnsw_metadata (key, value, updated_at) VALUES ($k, $v, CURRENT_TIMESTAMP)";
                 cmd.Parameters.AddWithValue("$k", pair.Key);
                 cmd.Parameters.AddWithValue("$v", pair.Value);
-                cmd.ExecuteNonQuery();
+                await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
         }
 
-        private static Dictionary<string, string>? ReadServerMetadata(Microsoft.Data.Sqlite.SqliteConnection conn)
+        private static async Task<Dictionary<string, string>?> ReadServerMetadataAsync(
+            Microsoft.Data.Sqlite.SqliteConnection conn,
+            CancellationToken cancellationToken)
         {
             Dictionary<string, string> result = new Dictionary<string, string>();
             using Microsoft.Data.Sqlite.SqliteCommand cmd = conn.CreateCommand();
             cmd.CommandText = "SELECT key, value FROM hnsw_metadata WHERE key LIKE 'server.%'";
-            using Microsoft.Data.Sqlite.SqliteDataReader reader = cmd.ExecuteReader();
-            while (reader.Read())
+            using Microsoft.Data.Sqlite.SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
                 result[reader.GetString(0)] = reader.GetString(1);
             }
             return result.Count == 0 ? null : result;
         }
 
-        private void ReloadPersistedIndexes()
+        /// <summary>
+        /// Reloads persisted PostgreSQL indexes.
+        /// </summary>
+        public async Task ReloadPostgresqlIndexesAsync(CancellationToken cancellationToken = default)
         {
+            if (string.IsNullOrWhiteSpace(_StorageSettings.PostgresqlConnectionString))
+            {
+                return;
+            }
+
+            try
+            {
+                List<PostgresqlIndexMetadata> persisted = await PostgresqlStorageProvider.ListIndexesAsync(
+                    GetPostgresqlDataSource(),
+                    cancellationToken).ConfigureAwait(false);
+
+                int loaded = 0;
+                foreach (PostgresqlIndexMetadata pg in persisted)
+                {
+                    if (_Indexes.ContainsKey(pg.Name)) continue;
+                    if (pg.Dimension < 1)
+                    {
+                        _Logging?.Warn(_Header + $"skipping PostgreSQL index '{pg.Name}': invalid persisted dimension");
+                        continue;
+                    }
+
+                    PostgresqlStorageProvider provider = await PostgresqlStorageProvider.CreateAsync(
+                        GetPostgresqlDataSource(),
+                        pg.Name,
+                        pg.Dimension,
+                        pg.DistanceFunction,
+                        pg.M,
+                        pg.MaxM,
+                        pg.EfConstruction,
+                        createIfNotExists: false,
+                        cancellationToken).ConfigureAwait(false);
+
+                    IndexMetadata im = new IndexMetadata
+                    {
+                        Name = pg.Name,
+                        GUID = pg.Id,
+                        Dimension = pg.Dimension,
+                        StorageType = "PostgreSQL",
+                        DistanceFunction = pg.DistanceFunction,
+                        M = pg.M,
+                        MaxM = pg.MaxM,
+                        EfConstruction = pg.EfConstruction,
+                        CreatedUtc = pg.CreatedUtc,
+                        VectorCount = pg.VectorCount,
+                    };
+
+                    HnswIndex index = new HnswIndex(im.Dimension, provider);
+                    ConfigureIndex(index, im);
+
+                    im.Index = index;
+                    im.StorageObjects = new List<IAsyncDisposable> { provider };
+
+                    _Indexes.TryAdd(im.Name, im);
+                    loaded++;
+                    _Logging?.Info(_Header + $"reloaded PostgreSQL index '{im.Name}' ({im.Dimension}-d, {im.VectorCount} vectors)");
+                }
+
+                if (loaded > 0) _Logging?.Info(_Header + $"reloaded {loaded} PostgreSQL persisted index(es)");
+            }
+            catch (Exception ex)
+            {
+                _Logging?.Warn(_Header + $"failed to reload PostgreSQL indexes: {ex.Message}");
+            }
+        }
+
+        public async Task ReloadSqlitePersistedIndexesAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
             string[] dbFiles;
             try
             {
@@ -708,20 +844,26 @@ namespace HnswIndex.Server.Services
             int loaded = 0;
             foreach (string dbPath in dbFiles)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 string name = Path.GetFileNameWithoutExtension(dbPath);
                 if (string.IsNullOrWhiteSpace(name)) continue;
 
                 try
                 {
-                    SqliteStorageProvider provider = new SqliteStorageProvider(dbPath, createIfNotExists: false);
+                    SqliteStorageProvider provider = await SqliteStorageProvider.CreateAsync(
+                        dbPath,
+                        createIfNotExists: false,
+                        cancellationToken: cancellationToken).ConfigureAwait(false);
 
-                    Dictionary<string, string>? meta = ReadServerMetadata(provider.Connection);
+                    Dictionary<string, string>? meta = await ReadServerMetadataAsync(
+                        provider.Connection,
+                        cancellationToken).ConfigureAwait(false);
                     if (meta == null)
                     {
                         // No server-written metadata (e.g., a db created before this fix). Skip
                         // rather than guess — the index can be rebuilt explicitly by the user.
                         _Logging?.Warn(_Header + $"skipping '{name}': no server metadata in {Path.GetFileName(dbPath)}");
-                        provider.Dispose();
+                        await provider.DisposeAsync().ConfigureAwait(false);
                         continue;
                     }
 
@@ -741,7 +883,7 @@ namespace HnswIndex.Server.Services
                     if (im.Dimension < 1)
                     {
                         _Logging?.Warn(_Header + $"skipping '{name}': invalid persisted dimension");
-                        provider.Dispose();
+                        await provider.DisposeAsync().ConfigureAwait(false);
                         continue;
                     }
 
@@ -757,8 +899,8 @@ namespace HnswIndex.Server.Services
                     };
 
                     im.Index = index;
-                    im.StorageObjects = new List<IDisposable> { provider };
-                    im.VectorCount = CountVectorsBestEffort(provider);
+                    im.StorageObjects = new List<IAsyncDisposable> { provider };
+                    im.VectorCount = await CountVectorsBestEffortAsync(provider, cancellationToken).ConfigureAwait(false);
 
                     _Indexes.TryAdd(name, im);
                     loaded++;
@@ -776,11 +918,27 @@ namespace HnswIndex.Server.Services
         private static IStorageProvider? GetProvider(IndexMetadata metadata)
         {
             if (metadata.StorageObjects == null) return null;
-            foreach (IDisposable obj in metadata.StorageObjects)
+            foreach (IAsyncDisposable obj in metadata.StorageObjects)
             {
                 if (obj is IStorageProvider sp) return sp;
             }
             return null;
+        }
+
+        private NpgsqlDataSource GetPostgresqlDataSource()
+        {
+            if (_PostgresqlDataSource != null)
+            {
+                return _PostgresqlDataSource;
+            }
+
+            if (string.IsNullOrWhiteSpace(_StorageSettings.PostgresqlConnectionString))
+            {
+                throw new InvalidOperationException("PostgreSQL connection string is not configured.");
+            }
+
+            _PostgresqlDataSource = NpgsqlDataSource.Create(_StorageSettings.PostgresqlConnectionString);
+            return _PostgresqlDataSource;
         }
 
         private static VectorEntryResponse NodeToEntry(IHnswNode node, bool includeVector)
@@ -795,32 +953,16 @@ namespace HnswIndex.Server.Services
             };
         }
 
-        private static int CountVectorsBestEffort(SqliteStorageProvider provider)
+        private static async Task<int> CountVectorsBestEffortAsync(SqliteStorageProvider provider, CancellationToken cancellationToken = default)
         {
             try
             {
-                return provider.GetAllNodeLayers().Count;
+                Dictionary<Guid, int> layers = await provider.GetAllNodeLayersAsync(cancellationToken).ConfigureAwait(false);
+                return layers.Count;
             }
             catch
             {
                 return 0;
-            }
-        }
-
-        protected virtual void Dispose(bool disposing)
-        {
-            if (!_Disposed)
-            {
-                if (disposing)
-                {
-                    foreach (IndexMetadata metadata in _Indexes.Values)
-                    {
-                        metadata.Dispose();
-                    }
-                    _Indexes.Clear();
-                }
-
-                _Disposed = true;
             }
         }
 
@@ -831,7 +973,7 @@ namespace HnswIndex.Server.Services
         /// <summary>
         /// Metadata for an HNSW index.
         /// </summary>
-        private class IndexMetadata : IDisposable
+        private class IndexMetadata : IAsyncDisposable
         {
             public Guid GUID { get; set; }
             public string Name { get; set; } = string.Empty;
@@ -844,15 +986,15 @@ namespace HnswIndex.Server.Services
             public int VectorCount { get; set; } = 0;
             public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
             public HnswIndex Index { get; set; } = null!;
-            public List<IDisposable>? StorageObjects { get; set; } = null;
+            public List<IAsyncDisposable>? StorageObjects { get; set; } = null;
 
-            public void Dispose()
+            public async ValueTask DisposeAsync()
             {
                 if (StorageObjects != null)
                 {
-                    foreach (IDisposable obj in StorageObjects)
+                    foreach (IAsyncDisposable obj in StorageObjects)
                     {
-                        obj.Dispose();
+                        await obj.DisposeAsync().ConfigureAwait(false);
                     }
                 }
             }

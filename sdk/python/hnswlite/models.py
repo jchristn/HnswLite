@@ -15,7 +15,7 @@ class CreateIndexRequest:
     """Request body for POST /v1.0/indexes."""
     Name: str
     Dimension: int
-    StorageType: str = "RAM"  # "RAM" or "SQLite"
+    StorageType: str = "PostgreSQL"  # "PostgreSQL", "SQLite", or "RAM"
     DistanceFunction: str = "Cosine"  # "Euclidean", "Cosine", or "DotProduct"
     M: int = 16
     MaxM: int = 32

@@ -2,10 +2,10 @@
  * HnswLite SDK integration tests.
  *
  * Usage:
- *   BASE_URL=http://localhost:8321 API_KEY=mykey npx tsx tests/integration.ts
+ *   HNSWLITE_BASE_URL=http://localhost:8080 HNSWLITE_API_KEY=mykey npx tsx tests/integration.ts
  *
  * Or pass as positional args:
- *   npx tsx tests/integration.ts http://localhost:8321 mykey
+ *   npx tsx tests/integration.ts http://localhost:8080 mykey PostgreSQL
  */
 
 import { HnswLiteClient, HnswLiteApiError } from "../src/index.js";
@@ -16,12 +16,14 @@ import type {
   AddVectorRequest,
   AddVectorsRequest,
   VectorEntry,
+  StorageType,
 } from "../src/index.js";
 
 // ── Config ───────────────────────────────────────────────────────────
 
-const BASE_URL = process.argv[2] || process.env.BASE_URL || "http://localhost:8321";
-const API_KEY = process.argv[3] || process.env.API_KEY || "default";
+const BASE_URL = process.argv[2] || process.env.HNSWLITE_BASE_URL || process.env.BASE_URL || "http://localhost:8080";
+const API_KEY = process.argv[3] || process.env.HNSWLITE_API_KEY || process.env.API_KEY || "b6b6f6b0-c251-4733-93c8-5587370baa42";
+const STORAGE_TYPE = (process.argv[4] || process.env.HNSWLITE_STORAGE_TYPE || process.env.STORAGE_TYPE || "PostgreSQL") as StorageType;
 
 const client = new HnswLiteClient(BASE_URL, API_KEY);
 
@@ -61,8 +63,9 @@ let vectorGuid: string = "";
 
 async function main(): Promise<void> {
   console.log(`\nHnswLite SDK Integration Tests`);
-  console.log(`  Server : ${BASE_URL}`);
-  console.log(`  Index  : ${TEST_INDEX}\n`);
+  console.log(`  Server      : ${BASE_URL}`);
+  console.log(`  Index       : ${TEST_INDEX}`);
+  console.log(`  StorageType : ${STORAGE_TYPE}\n`);
 
   // 1. Ping
   await run("ping (GET /)", async () => {
@@ -81,6 +84,7 @@ async function main(): Promise<void> {
     const idx: IndexResponse = await client.createIndex({
       name: TEST_INDEX,
       dimension: DIMENSION,
+      storageType: STORAGE_TYPE,
     });
     assert(idx.name === TEST_INDEX, `expected name '${TEST_INDEX}', got '${idx.name}'`);
     assert(idx.dimension === DIMENSION, `expected dimension ${DIMENSION}`);

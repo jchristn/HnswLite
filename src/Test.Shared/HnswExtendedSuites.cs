@@ -9,6 +9,7 @@ namespace HnswLite.Test.Shared
 
     using Hnsw;
     using Hnsw.RamStorage;
+    using HnswIndex.PostgresqlStorage;
     using HnswIndex.SqliteStorage;
     using Hsnw;
     using Microsoft.Data.Sqlite;
@@ -29,7 +30,7 @@ namespace HnswLite.Test.Shared
         {
             get
             {
-                return new List<TestSuiteDescriptor>
+                List<TestSuiteDescriptor> suites = new List<TestSuiteDescriptor>
                 {
                     EdgeCasesSuite(),
                     LargeDatasetSuite(),
@@ -44,6 +45,15 @@ namespace HnswLite.Test.Shared
                     SqliteStateSuite(),
                     MetadataSuite(),
                 };
+
+                if (HasPostgresqlConnection())
+                {
+                    suites.Add(PostgresqlBasicSuite());
+                    suites.Add(PostgresqlPersistenceSuite());
+                    suites.Add(PostgresqlParitySuite());
+                }
+
+                return suites;
             }
         }
 
@@ -55,7 +65,6 @@ namespace HnswLite.Test.Shared
         private const int _Dimension64 = 64;
         private const int _Dimension384 = 384;
         private const int _Dimension768 = 768;
-
         #endregion
 
         #region Public-Methods
@@ -192,12 +201,12 @@ namespace HnswLite.Test.Shared
                 cases: new List<TestCaseDescriptor>
                 {
                     Case("Ram.LargeDataset", "ThousandClustered",
-                        "1000 clustered vectors return cluster members for clustered query",
+                        "Clustered vectors return cluster members for clustered query",
                         async ct =>
                         {
                             HnswIndex index = NewRam(_Dimension64, seed: 42);
                             Random rng = new Random(42);
-                            const int total = 1000;
+                            int total = SizedForStorageOverride(250, 40);
 
                             Dictionary<Guid, List<float>> vectors = new Dictionary<Guid, List<float>>(total);
                             // Two clusters: one centered at 0, one centered at 100.
@@ -221,12 +230,12 @@ namespace HnswLite.Test.Shared
                         }),
 
                     Case("Ram.LargeDataset", "TenClustersDistinct",
-                        "10 well-separated clusters: nearest results match the queried cluster",
+                        "Well-separated clusters return results from the queried cluster",
                         async ct =>
                         {
                             HnswIndex index = NewRam(_Dimension2D, seed: 7);
                             Random rng = new Random(7);
-                            int perCluster = 50;
+                            int perCluster = SizedForStorageOverride(20, 5);
 
                             Dictionary<Guid, List<float>> vectors = new Dictionary<Guid, List<float>>();
                             for (int c = 0; c < 10; c++)
@@ -291,7 +300,7 @@ namespace HnswLite.Test.Shared
                             HnswIndex index = NewRam(_Dimension2D, seed: 1);
                             index.M = 64;
                             index.MaxM = 100;
-                            await index.AddNodesAsync(MakeGrid(side: 8), ct).ConfigureAwait(false);
+                            await index.AddNodesAsync(MakeGrid(side: SizedForStorageOverride(8, 4)), ct).ConfigureAwait(false);
 
                             List<VectorResult> results = (await index.GetTopKAsync(
                                 new List<float> { 3f, 3f }, 5, cancellationToken: ct).ConfigureAwait(false)).ToList();
@@ -303,7 +312,7 @@ namespace HnswLite.Test.Shared
                         async ct =>
                         {
                             HnswIndex index = NewRam(_Dimension2D, seed: 1);
-                            await index.AddNodesAsync(MakeGrid(side: 6), ct).ConfigureAwait(false);
+                            await index.AddNodesAsync(MakeGrid(side: SizedForStorageOverride(6, 4)), ct).ConfigureAwait(false);
 
                             // Both calls succeed; we don't assert recall difference (small dataset),
                             // only that the ef parameter is honored end-to-end without error.
@@ -344,7 +353,7 @@ namespace HnswLite.Test.Shared
                         {
                             HnswIndex index = NewRam(_Dimension2D, seed: 5);
                             index.ExtendCandidates = true;
-                            await index.AddNodesAsync(MakeGrid(side: 6), ct).ConfigureAwait(false);
+                            await index.AddNodesAsync(MakeGrid(side: SizedForStorageOverride(6, 4)), ct).ConfigureAwait(false);
 
                             List<VectorResult> results = (await index.GetTopKAsync(
                                 new List<float> { 2f, 2f }, 3, cancellationToken: ct).ConfigureAwait(false)).ToList();
@@ -448,18 +457,20 @@ namespace HnswLite.Test.Shared
                 cases: new List<TestCaseDescriptor>
                 {
                     Case("Ram.Concurrency", "ParallelReads",
-                        "100 concurrent searches all return results without error",
+                        "Concurrent searches all return results without error",
                         async ct =>
                         {
                             HnswIndex index = NewRam(_Dimension64, seed: 1);
                             Random rng = new Random(1);
                             Dictionary<Guid, List<float>> vectors = new Dictionary<Guid, List<float>>();
-                            for (int i = 0; i < 200; i++)
+                            int vectorCount = SizedForStorageOverride(200, 20);
+                            int searchCount = SizedForStorageOverride(100, 10);
+                            for (int i = 0; i < vectorCount; i++)
                                 vectors[Guid.NewGuid()] = RandomVector(_Dimension64, rng);
                             await index.AddNodesAsync(vectors, ct).ConfigureAwait(false);
 
                             List<Task<List<VectorResult>>> tasks = new List<Task<List<VectorResult>>>();
-                            for (int i = 0; i < 100; i++)
+                            for (int i = 0; i < searchCount; i++)
                             {
                                 List<float> q = RandomVector(_Dimension64, rng);
                                 tasks.Add(Task.Run(async () =>
@@ -467,7 +478,7 @@ namespace HnswLite.Test.Shared
                             }
                             List<VectorResult>[] results = await Task.WhenAll(tasks).ConfigureAwait(false);
 
-                            TestAssert.Equal(100, results.Length, "All concurrent searches completed");
+                            TestAssert.Equal(searchCount, results.Length, "All concurrent searches completed");
                             foreach (List<VectorResult> r in results)
                                 TestAssert.True(r.Count > 0, "Each concurrent search returned results");
                         }),
@@ -480,7 +491,9 @@ namespace HnswLite.Test.Shared
                             await index.AddAsync(Guid.NewGuid(), new List<float> { 0f, 0f }, ct).ConfigureAwait(false);
 
                             List<Task> tasks = new List<Task>();
-                            for (int i = 0; i < 50; i++)
+                            int addCount = SizedForStorageOverride(50, 10);
+                            int queryCount = SizedForStorageOverride(50, 10);
+                            for (int i = 0; i < addCount; i++)
                             {
                                 int local = i;
                                 tasks.Add(Task.Run(async () =>
@@ -488,7 +501,7 @@ namespace HnswLite.Test.Shared
                                     await index.AddAsync(Guid.NewGuid(), new List<float> { local, local }, ct).ConfigureAwait(false);
                                 }, ct));
                             }
-                            for (int i = 0; i < 50; i++)
+                            for (int i = 0; i < queryCount; i++)
                             {
                                 tasks.Add(Task.Run(async () =>
                                 {
@@ -524,7 +537,7 @@ namespace HnswLite.Test.Shared
                                 HnswIndex ram = NewRam(_Dimension2D, seed: 12345);
                                 await ram.AddNodesAsync(vectors, ct).ConfigureAwait(false);
 
-                                SqliteStorageProvider sqlProv = new SqliteStorageProvider(path);
+                                SqliteStorageProvider sqlProv = await SqliteStorageProvider.CreateAsync(path, cancellationToken: ct).ConfigureAwait(false);
                                 try
                                 {
                                     HnswIndex sql = new HnswIndex(_Dimension2D, sqlProv, seed: 12345);
@@ -538,7 +551,7 @@ namespace HnswLite.Test.Shared
                                     TestAssert.True(overlap >= 4,
                                         $"At least 4/5 of top-5 should match between RAM and SQLite (got {overlap})");
                                 }
-                                finally { sqlProv.Dispose(); }
+                                finally { await sqlProv.DisposeAsync().ConfigureAwait(false); }
                             }
                             finally
                             {
@@ -624,7 +637,8 @@ namespace HnswLite.Test.Shared
                             HnswIndex index = NewRam(_Dimension384, seed: 1);
                             Random rng = new Random(1);
                             Dictionary<Guid, List<float>> vectors = new Dictionary<Guid, List<float>>();
-                            for (int i = 0; i < 50; i++)
+                            int vectorCount = SizedForStorageOverride(50, 15);
+                            for (int i = 0; i < vectorCount; i++)
                                 vectors[Guid.NewGuid()] = RandomVector(_Dimension384, rng);
                             await index.AddNodesAsync(vectors, ct).ConfigureAwait(false);
 
@@ -640,7 +654,8 @@ namespace HnswLite.Test.Shared
                             HnswIndex index = NewRam(_Dimension768, seed: 1);
                             Random rng = new Random(1);
                             Dictionary<Guid, List<float>> vectors = new Dictionary<Guid, List<float>>();
-                            for (int i = 0; i < 30; i++)
+                            int vectorCount = SizedForStorageOverride(30, 10);
+                            for (int i = 0; i < vectorCount; i++)
                                 vectors[Guid.NewGuid()] = RandomVector(_Dimension768, rng);
                             await index.AddNodesAsync(vectors, ct).ConfigureAwait(false);
 
@@ -714,106 +729,68 @@ namespace HnswLite.Test.Shared
                 cases: new List<TestCaseDescriptor>
                 {
                     Case("Sqlite.Advanced", "BatchAdd100",
-                        "Batch-add of 100 vectors then search returns results",
+                        "Batch-add vectors then search returns results",
                         async ct =>
                         {
-                            string path = NewTempDb();
-                            try
-                            {
-                                SqliteStorageProvider provider = new SqliteStorageProvider(path);
-                                try
-                                {
-                                    HnswIndex index = new HnswIndex(_Dimension2D, provider, seed: 1);
-                                    Random rng = new Random(1);
+                            await using TestIndexScope scope = await NewIndexAsync(_Dimension2D, ct, TestStorageKind.Sqlite, seed: 1).ConfigureAwait(false);
+                            HnswIndex index = scope.Index;
+                            Random rng = new Random(1);
 
-                                    Dictionary<Guid, List<float>> vectors = new Dictionary<Guid, List<float>>();
-                                    for (int i = 0; i < 100; i++)
-                                        vectors[Guid.NewGuid()] = new List<float> { (float)rng.NextDouble() * 100f, (float)rng.NextDouble() * 100f };
-                                    await index.AddNodesAsync(vectors, ct).ConfigureAwait(false);
+                            Dictionary<Guid, List<float>> vectors = new Dictionary<Guid, List<float>>();
+                            int vectorCount = SizedForStorageOverride(50, 25);
+                            for (int i = 0; i < vectorCount; i++)
+                                vectors[Guid.NewGuid()] = new List<float> { (float)rng.NextDouble() * 100f, (float)rng.NextDouble() * 100f };
+                            await index.AddNodesAsync(vectors, ct).ConfigureAwait(false);
 
-                                    List<VectorResult> results = (await index.GetTopKAsync(
-                                        new List<float> { 50f, 50f }, 10, cancellationToken: ct).ConfigureAwait(false)).ToList();
-                                    TestAssert.Equal(10, results.Count, "Top-10 from 100 vectors");
-                                }
-                                finally { provider.Dispose(); }
-                            }
-                            finally
-                            {
-                                SqliteConnection.ClearAllPools();
-                                TryDelete(path);
-                            }
+                            List<VectorResult> results = (await index.GetTopKAsync(
+                                new List<float> { 50f, 50f }, 10, cancellationToken: ct).ConfigureAwait(false)).ToList();
+                            TestAssert.Equal(10, results.Count, "Top-10 from batch vectors");
                         }),
 
                     Case("Sqlite.Advanced", "CosineDistance",
                         "SQLite + CosineDistance: nearest unit vector is by cosine angle",
                         async ct =>
                         {
-                            string path = NewTempDb();
-                            try
-                            {
-                                SqliteStorageProvider provider = new SqliteStorageProvider(path);
-                                try
-                                {
-                                    HnswIndex index = new HnswIndex(_Dimension2D, provider);
-                                    index.DistanceFunction = new CosineDistance();
+                            await using TestIndexScope scope = await NewIndexAsync(_Dimension2D, ct, TestStorageKind.Sqlite).ConfigureAwait(false);
+                            HnswIndex index = scope.Index;
+                            index.DistanceFunction = new CosineDistance();
 
-                                    Guid east = Guid.NewGuid();
-                                    await index.AddNodesAsync(new Dictionary<Guid, List<float>>
-                                    {
-                                        { east, new List<float> { 1f, 0f } },
-                                        { Guid.NewGuid(), new List<float> { 0f, 1f } },
-                                    }, ct).ConfigureAwait(false);
-
-                                    List<VectorResult> results = (await index.GetTopKAsync(
-                                        new List<float> { 0.99f, 0.01f }, 1, cancellationToken: ct).ConfigureAwait(false)).ToList();
-                                    TestAssert.Equal(east, results[0].GUID, "Cosine picks east");
-                                }
-                                finally { provider.Dispose(); }
-                            }
-                            finally
+                            Guid east = Guid.NewGuid();
+                            await index.AddNodesAsync(new Dictionary<Guid, List<float>>
                             {
-                                SqliteConnection.ClearAllPools();
-                                TryDelete(path);
-                            }
+                                { east, new List<float> { 1f, 0f } },
+                                { Guid.NewGuid(), new List<float> { 0f, 1f } },
+                            }, ct).ConfigureAwait(false);
+
+                            List<VectorResult> results = (await index.GetTopKAsync(
+                                new List<float> { 0.99f, 0.01f }, 1, cancellationToken: ct).ConfigureAwait(false)).ToList();
+                            TestAssert.Equal(east, results[0].GUID, "Cosine picks east");
                         }),
 
                     Case("Sqlite.Advanced", "RemoveBatch",
                         "RemoveNodesAsync over SQLite excludes every removed GUID",
                         async ct =>
                         {
-                            string path = NewTempDb();
-                            try
+                            await using TestIndexScope scope = await NewIndexAsync(_Dimension2D, ct, TestStorageKind.Sqlite, seed: 1).ConfigureAwait(false);
+                            HnswIndex index = scope.Index;
+                            List<Guid> ids = new List<Guid>();
+                            Dictionary<Guid, List<float>> vectors = new Dictionary<Guid, List<float>>();
+                            for (int i = 0; i < 20; i++)
                             {
-                                SqliteStorageProvider provider = new SqliteStorageProvider(path);
-                                try
-                                {
-                                    HnswIndex index = new HnswIndex(_Dimension2D, provider, seed: 1);
-                                    List<Guid> ids = new List<Guid>();
-                                    Dictionary<Guid, List<float>> vectors = new Dictionary<Guid, List<float>>();
-                                    for (int i = 0; i < 20; i++)
-                                    {
-                                        Guid id = Guid.NewGuid();
-                                        ids.Add(id);
-                                        vectors[id] = new List<float> { (float)i, (float)i };
-                                    }
-                                    await index.AddNodesAsync(vectors, ct).ConfigureAwait(false);
-
-                                    List<Guid> toRemove = ids.Take(7).ToList();
-                                    await index.RemoveNodesAsync(toRemove, ct).ConfigureAwait(false);
-
-                                    List<VectorResult> results = (await index.GetTopKAsync(
-                                        new List<float> { 5f, 5f }, 20, cancellationToken: ct).ConfigureAwait(false)).ToList();
-                                    HashSet<Guid> removedSet = new HashSet<Guid>(toRemove);
-                                    foreach (VectorResult r in results)
-                                        TestAssert.False(removedSet.Contains(r.GUID), $"Removed id {r.GUID}");
-                                }
-                                finally { provider.Dispose(); }
+                                Guid id = Guid.NewGuid();
+                                ids.Add(id);
+                                vectors[id] = new List<float> { (float)i, (float)i };
                             }
-                            finally
-                            {
-                                SqliteConnection.ClearAllPools();
-                                TryDelete(path);
-                            }
+                            await index.AddNodesAsync(vectors, ct).ConfigureAwait(false);
+
+                            List<Guid> toRemove = ids.Take(7).ToList();
+                            await index.RemoveNodesAsync(toRemove, ct).ConfigureAwait(false);
+
+                            List<VectorResult> results = (await index.GetTopKAsync(
+                                new List<float> { 5f, 5f }, 20, cancellationToken: ct).ConfigureAwait(false)).ToList();
+                            HashSet<Guid> removedSet = new HashSet<Guid>(toRemove);
+                            foreach (VectorResult r in results)
+                                TestAssert.False(removedSet.Contains(r.GUID), $"Removed id {r.GUID}");
                         }),
                 });
         }
@@ -833,39 +810,212 @@ namespace HnswLite.Test.Shared
                         "State exported from SQLite imports cleanly into a RAM index",
                         async ct =>
                         {
-                            string path = NewTempDb();
-                            try
-                            {
-                                HnswState state;
-                                Guid markerId = Guid.NewGuid();
+                            HnswState state;
+                            Guid markerId = Guid.NewGuid();
 
-                                SqliteStorageProvider sqlProv = new SqliteStorageProvider(path);
-                                try
+                            await using TestIndexScope source = await NewIndexAsync(_Dimension2D, ct, TestStorageKind.Sqlite).ConfigureAwait(false);
+                            HnswIndex sourceIndex = source.Index;
+                            await sourceIndex.AddNodesAsync(new Dictionary<Guid, List<float>>
+                            {
+                                { markerId, new List<float> { 1f, 1f } },
+                                { Guid.NewGuid(), new List<float> { 9f, 9f } },
+                            }, ct).ConfigureAwait(false);
+
+                            state = await sourceIndex.ExportStateAsync(ct).ConfigureAwait(false);
+
+                            await using RamStorageProvider ramProvider = new RamStorageProvider();
+                            HnswIndex ram = new HnswIndex(_Dimension2D, ramProvider);
+                            await ram.ImportStateAsync(state, ct).ConfigureAwait(false);
+
+                            List<VectorResult> results = (await ram.GetTopKAsync(
+                                new List<float> { 1f, 1f }, 1, cancellationToken: ct).ConfigureAwait(false)).ToList();
+                            TestAssert.Equal(1, results.Count, "Top-1 imported into RAM");
+                            TestAssert.Equal(markerId, results[0].GUID, "Imported GUID");
+                        }),
+                });
+        }
+
+        /// <summary>
+        /// PostgreSQL basic operations suite. Included when PostgreSQL test connection configuration is available.
+        /// </summary>
+        public static TestSuiteDescriptor PostgresqlBasicSuite()
+        {
+            return new TestSuiteDescriptor(
+                suiteId: "Postgresql.Basic",
+                displayName: "PostgreSQL Storage - Basic Operations",
+                cases: new List<TestCaseDescriptor>
+                {
+                    Case("Postgresql.Basic", "AddAndSearch",
+                        "PostgreSQL index returns nearest neighbors",
+                        async ct =>
+                        {
+                            string indexName = NewPostgresqlIndexName("basic");
+                            await using PostgresqlStorageProvider provider = await NewPostgresqlProviderAsync(indexName, ct).ConfigureAwait(false);
+                            HnswIndex index = new HnswIndex(_Dimension2D, provider, seed: 1);
+
+                            Guid expected = Guid.NewGuid();
+                            await index.AddNodesAsync(new Dictionary<Guid, List<float>>
+                            {
+                                { expected, new List<float> { 1f, 1f } },
+                                { Guid.NewGuid(), new List<float> { 10f, 10f } },
+                                { Guid.NewGuid(), new List<float> { 20f, 20f } },
+                            }, ct).ConfigureAwait(false);
+
+                            List<VectorResult> results = (await index.GetTopKAsync(
+                                new List<float> { 1f, 1f }, 1, cancellationToken: ct).ConfigureAwait(false)).ToList();
+
+                            TestAssert.Equal(1, results.Count, "PostgreSQL top-1 count");
+                            TestAssert.Equal(expected, results[0].GUID, "PostgreSQL nearest GUID");
+                        }),
+
+                    Case("Postgresql.Basic", "RemoveVector",
+                        "PostgreSQL remove excludes the removed GUID from results",
+                        async ct =>
+                        {
+                            string indexName = NewPostgresqlIndexName("remove");
+                            await using PostgresqlStorageProvider provider = await NewPostgresqlProviderAsync(indexName, ct).ConfigureAwait(false);
+                            HnswIndex index = new HnswIndex(_Dimension2D, provider, seed: 1);
+                            Guid keep = Guid.NewGuid();
+                            Guid drop = Guid.NewGuid();
+                            await index.AddNodesAsync(new Dictionary<Guid, List<float>>
+                            {
+                                { keep, new List<float> { 1f, 1f } },
+                                { drop, new List<float> { 2f, 2f } },
+                                { Guid.NewGuid(), new List<float> { 9f, 9f } },
+                            }, ct).ConfigureAwait(false);
+
+                            await index.RemoveAsync(drop, ct).ConfigureAwait(false);
+
+                            TestAssert.False((await provider.TryGetNodeAsync(drop, ct).ConfigureAwait(false)).Success, "Removed GUID absent from storage");
+                            TestAssert.True((await provider.TryGetNodeAsync(keep, ct).ConfigureAwait(false)).Success, "Kept GUID present in storage");
+                            TestAssert.Equal(2, await provider.GetCountAsync(ct).ConfigureAwait(false), "PostgreSQL count after remove");
+
+                            List<VectorResult> results = (await index.GetTopKAsync(
+                                new List<float> { 2f, 2f }, 10, cancellationToken: ct).ConfigureAwait(false)).ToList();
+                            TestAssert.True(results.Count > 0, "PostgreSQL results after remove");
+                            TestAssert.False(results.Any(r => r.GUID == drop), "Removed GUID absent");
+                        }),
+
+                    Case("Postgresql.Basic", "TransactionRollback",
+                        "PostgreSQL transaction rollback removes partial graph mutations",
+                        async ct =>
+                        {
+                            string indexName = NewPostgresqlIndexName("rollback");
+                            Guid nodeA = Guid.NewGuid();
+                            Guid nodeB = Guid.NewGuid();
+
+                            await using PostgresqlStorageProvider provider = await NewPostgresqlProviderAsync(indexName, ct).ConfigureAwait(false);
+                            await using (IHnswStorageTransaction transaction = await provider.BeginTransactionAsync(ct).ConfigureAwait(false))
+                            {
+                                await provider.AddNodeAsync(nodeA, new List<float> { 1f, 1f }, ct).ConfigureAwait(false);
+                                await provider.AddNodeAsync(nodeB, new List<float> { 2f, 2f }, ct).ConfigureAwait(false);
+                                await provider.SetNodeLayerAsync(nodeA, 0, ct).ConfigureAwait(false);
+                                await provider.SetNodeLayerAsync(nodeB, 0, ct).ConfigureAwait(false);
+
+                                IHnswNode a = await provider.GetNodeAsync(nodeA, ct).ConfigureAwait(false);
+                                await a.AddNeighborAsync(0, nodeB, ct).ConfigureAwait(false);
+
+                                await transaction.RollbackAsync(ct).ConfigureAwait(false);
+                            }
+
+                            TestAssert.Equal(0, await provider.GetCountAsync(ct).ConfigureAwait(false), "PostgreSQL count after rollback");
+                            TestAssert.False((await provider.TryGetNodeAsync(nodeA, ct).ConfigureAwait(false)).Success, "Rolled-back node A absent");
+                            TestAssert.False((await provider.TryGetNodeAsync(nodeB, ct).ConfigureAwait(false)).Success, "Rolled-back node B absent");
+
+                            Dictionary<Guid, int> layers = await provider.GetAllNodeLayersAsync(ct).ConfigureAwait(false);
+                            TestAssert.Equal(0, layers.Count, "Rolled-back layers absent");
+                        }),
+                });
+        }
+
+        /// <summary>
+        /// PostgreSQL persistence suite. Included when PostgreSQL test connection configuration is available.
+        /// </summary>
+        public static TestSuiteDescriptor PostgresqlPersistenceSuite()
+        {
+            return new TestSuiteDescriptor(
+                suiteId: "Postgresql.Persistence",
+                displayName: "PostgreSQL Storage - Persistence",
+                cases: new List<TestCaseDescriptor>
+                {
+                    Case("Postgresql.Persistence", "DataAndMetadataSurviveReopen",
+                        "PostgreSQL data, graph, and metadata persist across provider reopen",
+                        async ct =>
+                        {
+                            string indexName = NewPostgresqlIndexName("persist");
+                            Guid expected = Guid.NewGuid();
+
+                            await using (PostgresqlStorageProvider writer = await NewPostgresqlProviderAsync(indexName, ct).ConfigureAwait(false))
+                            {
+                                HnswIndex index = new HnswIndex(_Dimension2D, writer, seed: 1);
+                                await index.AddNodesAsync(new Dictionary<Guid, List<float>>
                                 {
-                                    HnswIndex sql = new HnswIndex(_Dimension2D, sqlProv);
-                                    await sql.AddNodesAsync(new Dictionary<Guid, List<float>>
-                                    {
-                                        { markerId, new List<float> { 1f, 1f } },
-                                        { Guid.NewGuid(), new List<float> { 9f, 9f } },
-                                    }, ct).ConfigureAwait(false);
+                                    { expected, new List<float> { 3f, 4f } },
+                                    { Guid.NewGuid(), new List<float> { 9f, 9f } },
+                                }, ct).ConfigureAwait(false);
 
-                                    state = await sql.ExportStateAsync(ct).ConfigureAwait(false);
-                                }
-                                finally { sqlProv.Dispose(); }
-
-                                HnswIndex ram = NewRam(_Dimension2D);
-                                await ram.ImportStateAsync(state, ct).ConfigureAwait(false);
-
-                                List<VectorResult> results = (await ram.GetTopKAsync(
-                                    new List<float> { 1f, 1f }, 1, cancellationToken: ct).ConfigureAwait(false)).ToList();
-                                TestAssert.Equal(1, results.Count, "Top-1 imported into RAM");
-                                TestAssert.Equal(markerId, results[0].GUID, "Imported GUID");
+                                IHnswNode node = await writer.GetNodeAsync(expected, ct).ConfigureAwait(false);
+                                await node.SetMetadataAsync(
+                                    "pg-vector",
+                                    new List<string> { "pg", "persisted" },
+                                    new Dictionary<string, object> { { "source", "postgres" }, { "active", true } },
+                                    ct).ConfigureAwait(false);
                             }
-                            finally
+
+                            await using (PostgresqlStorageProvider reader = await NewPostgresqlProviderAsync(indexName, ct, createIfNotExists: false).ConfigureAwait(false))
                             {
-                                SqliteConnection.ClearAllPools();
-                                TryDelete(path);
+                                HnswIndex index = new HnswIndex(_Dimension2D, reader, seed: 1);
+                                List<VectorResult> results = (await index.GetTopKAsync(
+                                    new List<float> { 3f, 4f }, 1, cancellationToken: ct).ConfigureAwait(false)).ToList();
+                                TestAssert.Equal(expected, results[0].GUID, "PostgreSQL persisted nearest GUID");
+
+                                IHnswNode node = await reader.GetNodeAsync(expected, ct).ConfigureAwait(false);
+                                TestAssert.Equal("pg-vector", node.Name, "PostgreSQL metadata name");
+                                TestAssert.True(node.Labels!.Contains("persisted"), "PostgreSQL metadata label");
+                                TestAssert.Equal("postgres", (string)node.Tags!["source"], "PostgreSQL metadata tag");
                             }
+                        }),
+                });
+        }
+
+        /// <summary>
+        /// PostgreSQL parity suite. Included when PostgreSQL test connection configuration is available.
+        /// </summary>
+        public static TestSuiteDescriptor PostgresqlParitySuite()
+        {
+            return new TestSuiteDescriptor(
+                suiteId: "Postgresql.Parity",
+                displayName: "PostgreSQL Storage - Cross Storage Parity",
+                cases: new List<TestCaseDescriptor>
+                {
+                    Case("Postgresql.Parity", "RamOverlap",
+                        "PostgreSQL and RAM return overlapping results for deterministic data",
+                        async ct =>
+                        {
+                            Dictionary<Guid, List<float>> vectors = new Dictionary<Guid, List<float>>();
+                            Random rng = new Random(7);
+                            for (int i = 0; i < 50; i++)
+                            {
+                                vectors[Guid.NewGuid()] = new List<float>
+                                {
+                                    (float)rng.NextDouble() * 100f,
+                                    (float)rng.NextDouble() * 100f,
+                                };
+                            }
+
+                            HnswIndex ram = NewRam(_Dimension2D, seed: 99);
+                            await ram.AddNodesAsync(vectors, ct).ConfigureAwait(false);
+
+                            string indexName = NewPostgresqlIndexName("parity");
+                            await using PostgresqlStorageProvider pgProvider = await NewPostgresqlProviderAsync(indexName, ct).ConfigureAwait(false);
+                            HnswIndex pg = new HnswIndex(_Dimension2D, pgProvider, seed: 99);
+                            await pg.AddNodesAsync(vectors, ct).ConfigureAwait(false);
+
+                            List<float> query = new List<float> { 50f, 50f };
+                            HashSet<Guid> ramSet = new HashSet<Guid>((await ram.GetTopKAsync(query, 5, cancellationToken: ct).ConfigureAwait(false)).Select(r => r.GUID));
+                            HashSet<Guid> pgSet = new HashSet<Guid>((await pg.GetTopKAsync(query, 5, cancellationToken: ct).ConfigureAwait(false)).Select(r => r.GUID));
+
+                            TestAssert.True(ramSet.Intersect(pgSet).Count() >= 3, "PostgreSQL/RAM top-5 overlap >= 3");
                         }),
                 });
         }
@@ -891,9 +1041,11 @@ namespace HnswLite.Test.Shared
                             await index.AddAsync(id, new List<float> { 1f, 2f }, ct).ConfigureAwait(false);
 
                             IHnswNode node = await provider.GetNodeAsync(id, ct).ConfigureAwait(false);
-                            node.Name = "test-vector";
-                            node.Labels = new List<string> { "alpha", "beta" };
-                            node.Tags = new Dictionary<string, object> { { "source", "unit-test" }, { "score", 42L } };
+                            await node.SetMetadataAsync(
+                                "test-vector",
+                                new List<string> { "alpha", "beta" },
+                                new Dictionary<string, object> { { "source", "unit-test" }, { "score", 42L } },
+                                ct).ConfigureAwait(false);
 
                             IHnswNode reread = await provider.GetNodeAsync(id, ct).ConfigureAwait(false);
                             TestAssert.Equal("test-vector", reread.Name, "RAM Name");
@@ -913,28 +1065,30 @@ namespace HnswLite.Test.Shared
                             try
                             {
                                 // Write metadata.
-                                SqliteStorageProvider w = new SqliteStorageProvider(path);
+                                SqliteStorageProvider w = await SqliteStorageProvider.CreateAsync(path, cancellationToken: ct).ConfigureAwait(false);
                                 try
                                 {
                                     HnswIndex index = new HnswIndex(_Dimension2D, w);
                                     await index.AddAsync(id, new List<float> { 3f, 4f }, ct).ConfigureAwait(false);
 
                                     IHnswNode node = await w.GetNodeAsync(id, ct).ConfigureAwait(false);
-                                    node.Name = "persisted";
-                                    node.Labels = new List<string> { "x", "y", "z" };
-                                    node.Tags = new Dictionary<string, object>
-                                    {
-                                        { "model", "text-embedding-3-small" },
-                                        { "dim", 2L },
-                                        { "active", true },
-                                    };
+                                    await node.SetMetadataAsync(
+                                        "persisted",
+                                        new List<string> { "x", "y", "z" },
+                                        new Dictionary<string, object>
+                                        {
+                                            { "model", "text-embedding-3-small" },
+                                            { "dim", 2L },
+                                            { "active", true },
+                                        },
+                                        ct).ConfigureAwait(false);
                                 }
-                                finally { w.Dispose(); }
+                                finally { await w.DisposeAsync().ConfigureAwait(false); }
 
                                 SqliteConnection.ClearAllPools();
 
                                 // Reopen and verify.
-                                SqliteStorageProvider r = new SqliteStorageProvider(path, createIfNotExists: false);
+                                SqliteStorageProvider r = await SqliteStorageProvider.CreateAsync(path, createIfNotExists: false, cancellationToken: ct).ConfigureAwait(false);
                                 try
                                 {
                                     IHnswNode node = await r.GetNodeAsync(id, ct).ConfigureAwait(false);
@@ -945,7 +1099,7 @@ namespace HnswLite.Test.Shared
                                     TestAssert.Equal(2L, (long)node.Tags!["dim"], "SQLite Tags dim");
                                     TestAssert.Equal(true, (bool)node.Tags!["active"], "SQLite Tags active");
                                 }
-                                finally { r.Dispose(); }
+                                finally { await r.DisposeAsync().ConfigureAwait(false); }
                             }
                             finally
                             {
@@ -979,13 +1133,17 @@ namespace HnswLite.Test.Shared
                             await index.AddAsync(id, new List<float> { 1f, 1f }, ct).ConfigureAwait(false);
 
                             IHnswNode node = await provider.GetNodeAsync(id, ct).ConfigureAwait(false);
-                            node.Name = "first";
-                            node.Labels = new List<string> { "a" };
-                            node.Tags = new Dictionary<string, object> { { "k", "v1" } };
+                            await node.SetMetadataAsync(
+                                "first",
+                                new List<string> { "a" },
+                                new Dictionary<string, object> { { "k", "v1" } },
+                                ct).ConfigureAwait(false);
 
-                            node.Name = "second";
-                            node.Labels = new List<string> { "b", "c" };
-                            node.Tags = new Dictionary<string, object> { { "k", "v2" }, { "extra", 99L } };
+                            await node.SetMetadataAsync(
+                                "second",
+                                new List<string> { "b", "c" },
+                                new Dictionary<string, object> { { "k", "v2" }, { "extra", 99L } },
+                                ct).ConfigureAwait(false);
 
                             TestAssert.Equal("second", node.Name, "Overwritten Name");
                             TestAssert.Equal(2, node.Labels!.Count, "Overwritten Labels count");
@@ -1000,7 +1158,7 @@ namespace HnswLite.Test.Shared
                             string path = NewTempDb();
                             try
                             {
-                                SqliteStorageProvider provider = new SqliteStorageProvider(path);
+                                SqliteStorageProvider provider = await SqliteStorageProvider.CreateAsync(path, cancellationToken: ct).ConfigureAwait(false);
                                 try
                                 {
                                     HnswIndex index = new HnswIndex(_Dimension2D, provider);
@@ -1013,18 +1171,16 @@ namespace HnswLite.Test.Shared
                                     }, ct).ConfigureAwait(false);
 
                                     IHnswNode na = await provider.GetNodeAsync(a, ct).ConfigureAwait(false);
-                                    na.Name = "vec-a";
-                                    na.Labels = new List<string> { "batch" };
+                                    await na.SetMetadataAsync("vec-a", new List<string> { "batch" }, null, ct).ConfigureAwait(false);
 
                                     IHnswNode nb = await provider.GetNodeAsync(b, ct).ConfigureAwait(false);
-                                    nb.Name = "vec-b";
-                                    nb.Tags = new Dictionary<string, object> { { "order", 2L } };
+                                    await nb.SetMetadataAsync("vec-b", null, new Dictionary<string, object> { { "order", 2L } }, ct).ConfigureAwait(false);
                                 }
-                                finally { provider.Dispose(); }
+                                finally { await provider.DisposeAsync().ConfigureAwait(false); }
 
                                 SqliteConnection.ClearAllPools();
 
-                                SqliteStorageProvider reader = new SqliteStorageProvider(path, createIfNotExists: false);
+                                SqliteStorageProvider reader = await SqliteStorageProvider.CreateAsync(path, createIfNotExists: false, cancellationToken: ct).ConfigureAwait(false);
                                 try
                                 {
                                     // Both nodes should retain metadata after flush + reopen.
@@ -1038,7 +1194,7 @@ namespace HnswLite.Test.Shared
                                     }
                                     TestAssert.Equal(2, withName, "Both nodes have Name after reopen");
                                 }
-                                finally { reader.Dispose(); }
+                                finally { await reader.DisposeAsync().ConfigureAwait(false); }
                             }
                             finally
                             {
@@ -1058,12 +1214,77 @@ namespace HnswLite.Test.Shared
             return new TestCaseDescriptor(suiteId: suiteId, caseId: caseId, displayName: display, executeAsync: exec);
         }
 
+        private static bool HasPostgresqlConnection()
+        {
+            TestStorageConfiguration configuration = TestStorageConfiguration.FromEnvironment();
+            if (configuration.Storage.HasValue && configuration.Storage.Value != TestStorageKind.Postgresql)
+            {
+                return false;
+            }
+
+            return !string.IsNullOrWhiteSpace(configuration.GetPostgresqlConnectionStringOrNull());
+        }
+
+        private static string GetPostgresqlConnectionString()
+        {
+            return TestStorageConfiguration.FromEnvironment().GetRequiredPostgresqlConnectionString();
+        }
+
+        private static string NewPostgresqlIndexName(string suffix)
+        {
+            return "test_" + suffix + "_" + Guid.NewGuid().ToString("N");
+        }
+
+        private static int SizedForStorageOverride(int defaultCount, int overrideCount)
+        {
+            return TestStorageConfiguration.FromEnvironment().HasStorageOverride
+                ? overrideCount
+                : defaultCount;
+        }
+
+        private static Task<PostgresqlStorageProvider> NewPostgresqlProviderAsync(
+            string indexName,
+            CancellationToken cancellationToken,
+            bool createIfNotExists = true)
+        {
+            return PostgresqlStorageProvider.CreateAsync(
+                GetPostgresqlConnectionString(),
+                indexName,
+                _Dimension2D,
+                "Euclidean",
+                16,
+                32,
+                200,
+                createIfNotExists,
+                cancellationToken);
+        }
+
         private static HnswIndex NewRam(int dimension, int? seed = null)
         {
+            if (TestStorageConfiguration.FromEnvironment().HasStorageOverride)
+            {
+                return TestIndexScope.CreateDetachedIndex(dimension, seed);
+            }
+
             RamStorageProvider provider = new RamStorageProvider();
             HnswIndex idx = new HnswIndex(dimension, provider);
             if (seed.HasValue) idx.Seed = seed.Value;
             return idx;
+        }
+
+        private static Task<TestIndexScope> NewIndexAsync(
+            int dimension,
+            CancellationToken cancellationToken,
+            TestStorageKind defaultKind = TestStorageKind.Ram,
+            int? seed = null,
+            bool cleanupLocationOnDispose = true)
+        {
+            return TestIndexScope.CreateAsync(
+                dimension,
+                cancellationToken,
+                seed,
+                defaultKind,
+                cleanupLocationOnDispose);
         }
 
         private static List<float> RandomVector(int dimension, Random rng, float center = 0f, float scale = 1f)

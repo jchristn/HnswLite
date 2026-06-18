@@ -4,6 +4,7 @@
     using System.Collections.Generic;
     using System.Linq;
     using System.Threading;
+    using System.Threading.Tasks;
 
     /// <summary>
     /// In-memory implementation of HNSW node with thread-safe operations.
@@ -34,7 +35,7 @@
         /// Never null. Vector dimension typically ranges from 1 to 4096.
         /// All values must be finite (not NaN or Infinity).
         /// </summary>
-        public List<float> Vector => _vector;
+        public IReadOnlyList<float> Vector => _vector;
 
         /// <summary>
         /// Gets whether this node has been disposed.
@@ -49,12 +50,15 @@
         /// <summary>
         /// Optional classification labels.
         /// </summary>
-        public List<string>? Labels { get; set; }
+        public IReadOnlyList<string>? Labels => _labels;
 
         /// <summary>
         /// Optional arbitrary key/value tags.
         /// </summary>
-        public Dictionary<string, object>? Tags { get; set; }
+        public IReadOnlyDictionary<string, object>? Tags => _tags;
+
+        private List<string>? _labels;
+        private Dictionary<string, object>? _tags;
 
         // Constructors
         /// <summary>
@@ -93,9 +97,10 @@
         /// </summary>
         /// <returns>A copy of the neighbors dictionary.</returns>
         /// <exception cref="ObjectDisposedException">Thrown when the node has been disposed.</exception>
-        public Dictionary<int, HashSet<Guid>> GetNeighbors()
+        public Task<Dictionary<int, HashSet<Guid>>> GetNeighborsAsync(CancellationToken cancellationToken = default)
         {
             ThrowIfDisposed();
+            cancellationToken.ThrowIfCancellationRequested();
 
             _nodeLock.EnterReadLock();
             try
@@ -109,7 +114,7 @@
                         result[layer] = new HashSet<Guid>(set);
                     }
                 }
-                return result;
+                return Task.FromResult(result);
             }
             finally
             {
@@ -122,22 +127,24 @@
         /// Thread-safe operation. Idempotent - adding the same neighbor multiple times has no additional effect.
         /// </summary>
         /// <param name="layer">The layer number. Minimum: 0, Maximum: 63.</param>
-        /// <param name="NeighborGUID">The ID of the neighbor to add. Cannot be Guid.Empty or equal to this node's ID.</param>
+        /// <param name="neighborGuid">The ID of the neighbor to add. Cannot be Guid.Empty or equal to this node's ID.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
         /// <exception cref="ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
-        /// <exception cref="ArgumentException">Thrown when NeighborGUID is invalid.</exception>
+        /// <exception cref="ArgumentException">Thrown when neighborGuid is invalid.</exception>
         /// <exception cref="ObjectDisposedException">Thrown when the node has been disposed.</exception>
-        public void AddNeighbor(int layer, Guid NeighborGUID)
+        public Task AddNeighborAsync(int layer, Guid neighborGuid, CancellationToken cancellationToken = default)
         {
             ThrowIfDisposed();
+            cancellationToken.ThrowIfCancellationRequested();
 
             if (layer < 0)
                 throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot be negative.");
             if (layer > 63)
                 throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot exceed 63.");
-            if (NeighborGUID == Guid.Empty)
-                throw new ArgumentException("NeighborId cannot be Guid.Empty.", nameof(NeighborGUID));
-            if (NeighborGUID == _id)
-                throw new ArgumentException("Node cannot be its own neighbor.", nameof(NeighborGUID));
+            if (neighborGuid == Guid.Empty)
+                throw new ArgumentException("NeighborId cannot be Guid.Empty.", nameof(neighborGuid));
+            if (neighborGuid == _id)
+                throw new ArgumentException("Node cannot be its own neighbor.", nameof(neighborGuid));
 
             _nodeLock.EnterWriteLock();
             try
@@ -149,12 +156,14 @@
                     _neighbors[layer] = set;
                     _LayerCount++;
                 }
-                set.Add(NeighborGUID);
+                set.Add(neighborGuid);
             }
             finally
             {
                 _nodeLock.ExitWriteLock();
             }
+
+            return Task.CompletedTask;
         }
 
         /// <summary>
@@ -163,12 +172,14 @@
         /// Removes the layer entry if it becomes empty after neighbor removal.
         /// </summary>
         /// <param name="layer">The layer number. Minimum: 0, Maximum: 63.</param>
-        /// <param name="NeighborGUID">The ID of the neighbor to remove.</param>
+        /// <param name="neighborGuid">The ID of the neighbor to remove.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
         /// <exception cref="ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
         /// <exception cref="ObjectDisposedException">Thrown when the node has been disposed.</exception>
-        public void RemoveNeighbor(int layer, Guid NeighborGUID)
+        public Task RemoveNeighborAsync(int layer, Guid neighborGuid, CancellationToken cancellationToken = default)
         {
             ThrowIfDisposed();
+            cancellationToken.ThrowIfCancellationRequested();
 
             if (layer < 0)
                 throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot be negative.");
@@ -181,7 +192,7 @@
                 HashSet<Guid>? set = _neighbors[layer];
                 if (set != null)
                 {
-                    set.Remove(NeighborGUID);
+                    set.Remove(neighborGuid);
                     if (set.Count == 0)
                     {
                         _neighbors[layer] = null;
@@ -193,6 +204,20 @@
             {
                 _nodeLock.ExitWriteLock();
             }
+
+            return Task.CompletedTask;
+        }
+
+        /// <inheritdoc />
+        public Task SetMetadataAsync(string? name, List<string>? labels, Dictionary<string, object>? tags, CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+            cancellationToken.ThrowIfCancellationRequested();
+
+            Name = name;
+            _labels = labels == null ? null : new List<string>(labels);
+            _tags = tags == null ? null : new Dictionary<string, object>(tags);
+            return Task.CompletedTask;
         }
 
         /// <summary>

@@ -195,7 +195,7 @@ namespace HnswLite.Test.Shared
                         "Search: Labels filter requires ALL labels to be present",
                         async ct =>
                         {
-                            using ServerFixture f = await ServerFixture.CreateAsync("lbl-all", ct).ConfigureAwait(false);
+                            await using ServerFixture f = await ServerFixture.CreateAsync("lbl-all", ct).ConfigureAwait(false);
                             await f.PopulateAsync(10, ct).ConfigureAwait(false);
 
                             // Only indices 0,2,4 have both "even" and "small".
@@ -214,7 +214,7 @@ namespace HnswLite.Test.Shared
                         "Search: Tags filter uses AND across all key/value pairs",
                         async ct =>
                         {
-                            using ServerFixture f = await ServerFixture.CreateAsync("tag-all", ct).ConfigureAwait(false);
+                            await using ServerFixture f = await ServerFixture.CreateAsync("tag-all", ct).ConfigureAwait(false);
                             await f.PopulateAsync(10, ct).ConfigureAwait(false);
 
                             SearchResponse r = await f.Manager.SearchAsync(f.IndexName, new SearchRequest
@@ -232,7 +232,7 @@ namespace HnswLite.Test.Shared
                         "Search: Labels AND Tags must both pass",
                         async ct =>
                         {
-                            using ServerFixture f = await ServerFixture.CreateAsync("combo", ct).ConfigureAwait(false);
+                            await using ServerFixture f = await ServerFixture.CreateAsync("combo", ct).ConfigureAwait(false);
                             await f.PopulateAsync(10, ct).ConfigureAwait(false);
 
                             SearchResponse r = await f.Manager.SearchAsync(f.IndexName, new SearchRequest
@@ -251,7 +251,7 @@ namespace HnswLite.Test.Shared
                         "Search: CaseInsensitive=true matches mixed-case labels and tag values",
                         async ct =>
                         {
-                            using ServerFixture f = await ServerFixture.CreateAsync("ci", ct).ConfigureAwait(false);
+                            await using ServerFixture f = await ServerFixture.CreateAsync("ci", ct).ConfigureAwait(false);
                             await f.PopulateAsync(10, ct).ConfigureAwait(false);
 
                             // Case-sensitive miss.
@@ -281,7 +281,7 @@ namespace HnswLite.Test.Shared
                         "Search: restrictive filter returns fewer than K results and FilteredCount sums to K",
                         async ct =>
                         {
-                            using ServerFixture f = await ServerFixture.CreateAsync("restrictive", ct).ConfigureAwait(false);
+                            await using ServerFixture f = await ServerFixture.CreateAsync("restrictive", ct).ConfigureAwait(false);
                             await f.PopulateAsync(10, ct).ConfigureAwait(false);
 
                             SearchResponse r = await f.Manager.SearchAsync(f.IndexName, new SearchRequest
@@ -301,7 +301,7 @@ namespace HnswLite.Test.Shared
                         "Search: no matches returns empty results with FilteredCount equal to candidate count",
                         async ct =>
                         {
-                            using ServerFixture f = await ServerFixture.CreateAsync("nomatch", ct).ConfigureAwait(false);
+                            await using ServerFixture f = await ServerFixture.CreateAsync("nomatch", ct).ConfigureAwait(false);
                             await f.PopulateAsync(10, ct).ConfigureAwait(false);
 
                             SearchResponse r = await f.Manager.SearchAsync(f.IndexName, new SearchRequest
@@ -319,7 +319,7 @@ namespace HnswLite.Test.Shared
                         "Search: with no filter, FilteredCount is always 0",
                         async ct =>
                         {
-                            using ServerFixture f = await ServerFixture.CreateAsync("nofilter", ct).ConfigureAwait(false);
+                            await using ServerFixture f = await ServerFixture.CreateAsync("nofilter", ct).ConfigureAwait(false);
                             await f.PopulateAsync(10, ct).ConfigureAwait(false);
 
                             SearchResponse r = await f.Manager.SearchAsync(f.IndexName, new SearchRequest
@@ -349,7 +349,7 @@ namespace HnswLite.Test.Shared
                         "Enumerate: label filter applied before pagination; TotalRecords/FilteredCount accurate",
                         async ct =>
                         {
-                            using ServerFixture f = await ServerFixture.CreateAsync("enum-lbl", ct).ConfigureAwait(false);
+                            await using ServerFixture f = await ServerFixture.CreateAsync("enum-lbl", ct).ConfigureAwait(false);
                             await f.PopulateAsync(10, ct).ConfigureAwait(false);
 
                             EnumerationResult<VectorEntryResponse> r = await f.Manager.EnumerateVectorsAsync(
@@ -373,7 +373,7 @@ namespace HnswLite.Test.Shared
                         "Enumerate: tag filter reduces TotalRecords and populates FilteredCount",
                         async ct =>
                         {
-                            using ServerFixture f = await ServerFixture.CreateAsync("enum-tag", ct).ConfigureAwait(false);
+                            await using ServerFixture f = await ServerFixture.CreateAsync("enum-tag", ct).ConfigureAwait(false);
                             await f.PopulateAsync(10, ct).ConfigureAwait(false);
 
                             EnumerationResult<VectorEntryResponse> r = await f.Manager.EnumerateVectorsAsync(
@@ -396,7 +396,7 @@ namespace HnswLite.Test.Shared
                         "Enumerate: CaseInsensitive=true matches regardless of case",
                         async ct =>
                         {
-                            using ServerFixture f = await ServerFixture.CreateAsync("enum-ci", ct).ConfigureAwait(false);
+                            await using ServerFixture f = await ServerFixture.CreateAsync("enum-ci", ct).ConfigureAwait(false);
                             await f.PopulateAsync(10, ct).ConfigureAwait(false);
 
                             EnumerationResult<VectorEntryResponse> r = await f.Manager.EnumerateVectorsAsync(
@@ -418,7 +418,7 @@ namespace HnswLite.Test.Shared
                         "Enumerate: with no metadata filter, FilteredCount is 0",
                         async ct =>
                         {
-                            using ServerFixture f = await ServerFixture.CreateAsync("enum-nofilter", ct).ConfigureAwait(false);
+                            await using ServerFixture f = await ServerFixture.CreateAsync("enum-nofilter", ct).ConfigureAwait(false);
                             await f.PopulateAsync(10, ct).ConfigureAwait(false);
 
                             EnumerationResult<VectorEntryResponse> r = await f.Manager.EnumerateVectorsAsync(
@@ -558,17 +558,40 @@ namespace HnswLite.Test.Shared
             }
 
             public Guid Id { get; }
-            public List<float> Vector { get; }
-            public string? Name { get; set; }
-            public List<string>? Labels { get; set; }
-            public Dictionary<string, object>? Tags { get; set; }
+            public IReadOnlyList<float> Vector { get; }
+            public string? Name { get; private set; }
+            public IReadOnlyList<string>? Labels { get; private set; }
+            public IReadOnlyDictionary<string, object>? Tags { get; private set; }
 
-            public Dictionary<int, HashSet<Guid>> GetNeighbors() => _Neighbors;
-            public void AddNeighbor(int layer, Guid neighborGuid) { }
-            public void RemoveNeighbor(int layer, Guid neighborGuid) { }
+            public Task<Dictionary<int, HashSet<Guid>>> GetNeighborsAsync(CancellationToken cancellationToken = default)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return Task.FromResult(_Neighbors);
+            }
+
+            public Task AddNeighborAsync(int layer, Guid neighborGuid, CancellationToken cancellationToken = default)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return Task.CompletedTask;
+            }
+
+            public Task RemoveNeighborAsync(int layer, Guid neighborGuid, CancellationToken cancellationToken = default)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return Task.CompletedTask;
+            }
+
+            public Task SetMetadataAsync(string? name, List<string>? labels, Dictionary<string, object>? tags, CancellationToken cancellationToken = default)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                Name = name;
+                Labels = labels;
+                Tags = tags;
+                return Task.CompletedTask;
+            }
         }
 
-        private sealed class ServerFixture : IDisposable
+        private sealed class ServerFixture : IAsyncDisposable
         {
             public IndexManager Manager { get; }
             public string IndexName { get; }
@@ -622,9 +645,9 @@ namespace HnswLite.Test.Shared
                 }
             }
 
-            public void Dispose()
+            public async ValueTask DisposeAsync()
             {
-                try { Manager.Dispose(); } catch { }
+                try { await Manager.DisposeAsync().ConfigureAwait(false); } catch { }
                 try { if (Directory.Exists(_TempDir)) Directory.Delete(_TempDir, recursive: true); } catch { }
             }
         }

@@ -2,6 +2,9 @@
 
 I've successfully updated all three test scripts to require the API key as a command-line parameter. Here's what I changed:
 
+V2 update: the scripts now create test indexes with `StorageType` set to
+`PostgreSQL`, matching the Docker/default server configuration.
+
 ## ✅ Updated API Test Scripts - Parameter-Based API Keys
 
 ### **1. `test-api.sh` (Bash Script)**

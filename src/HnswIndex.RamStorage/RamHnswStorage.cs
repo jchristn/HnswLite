@@ -21,14 +21,8 @@
         private bool _disposed = false;
 
         // Public properties
-        /// <summary>
-        /// Gets or sets the entry point node ID.
-        /// Can be null when storage is empty.
-        /// When setting, the value must either be null or correspond to an existing node ID.
-        /// Thread-safe property.
-        /// Default: null.
-        /// </summary>
-        public Guid? EntryPoint
+        // Synchronous helper behind the async public API.
+        private Guid? EntryPoint
         {
             get
             {
@@ -60,6 +54,21 @@
                     _storageLock.ExitWriteLock();
                 }
             }
+        }
+
+        /// <inheritdoc />
+        public Task<Guid?> GetEntryPointAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(EntryPoint);
+        }
+
+        /// <inheritdoc />
+        public Task SetEntryPointAsync(Guid? entryPoint, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            EntryPoint = entryPoint;
+            return Task.CompletedTask;
         }
 
         /// <summary>
@@ -493,13 +502,8 @@
             }
         }
 
-        /// <summary>
-        /// Clears all nodes from storage.
-        /// Thread-safe operation.
-        /// Also clears the entry point.
-        /// </summary>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public void Clear()
+        // Synchronous helper behind the async public API.
+        private void Clear()
         {
             ThrowIfDisposed();
 

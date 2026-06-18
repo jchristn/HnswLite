@@ -25,9 +25,9 @@ namespace HnswLite.Sdk.Models
         public int Dimension { get; set; } = 0;
 
         /// <summary>
-        /// Storage backend type. One of "RAM" or "SQLite".
+        /// Storage backend type. One of "PostgreSQL", "SQLite", or "RAM".
         /// </summary>
-        public string StorageType { get; set; } = "RAM";
+        public string StorageType { get; set; } = "PostgreSQL";
 
         /// <summary>
         /// Distance function used for similarity. One of "Euclidean", "Cosine", or "DotProduct".

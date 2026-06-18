@@ -14,7 +14,7 @@ export interface IndexSummary {
 export interface CreateIndexRequest {
   Name: string;
   Dimension: number;
-  StorageType: 'RAM' | 'SQLite';
+  StorageType: 'PostgreSQL' | 'SQLite' | 'RAM';
   DistanceFunction: 'Euclidean' | 'Cosine' | 'DotProduct';
   M: number;
   MaxM: number;

@@ -64,7 +64,7 @@ function Test-ApiEndpoint {
 # Test 1: GET / (Root endpoint)
 try {
     Write-Host "1. Testing GET / (Root endpoint)" -ForegroundColor Green
-    $response = Invoke-WebRequest -Uri "$BaseUrl/" -Method GET -ErrorAction Stop
+    $response = Invoke-WebRequest -UseBasicParsing -Uri "$BaseUrl/" -Method GET -ErrorAction Stop
     Write-Host "Response:"
     Write-Host "Status: $($response.StatusCode)" -ForegroundColor Yellow
     Write-Host "Content-Type: $($response.Headers['Content-Type'])" -ForegroundColor Yellow
@@ -79,12 +79,12 @@ catch {
 # Test 2: HEAD / (Root endpoint)
 try {
     Write-Host "2. Testing HEAD / (Root endpoint)" -ForegroundColor Green
-    $response = Invoke-WebRequest -Uri "$BaseUrl/" -Method HEAD -ErrorAction Stop
+    $response = Invoke-WebRequest -UseBasicParsing -Uri "$BaseUrl/" -Method HEAD -ErrorAction Stop
     Write-Host "Response:"
     Write-Host "Status: $($response.StatusCode)" -ForegroundColor Yellow
     Write-Host "Headers:" -ForegroundColor Yellow
     $response.Headers.Keys | ForEach-Object {
-        Write-Host "  $_: $($response.Headers[$_])" -ForegroundColor White
+        Write-Host "  ${_}: $($response.Headers[$_])" -ForegroundColor White
     }
     Write-Host ""
     Write-Host ""
@@ -96,12 +96,12 @@ catch {
 # Test 3: OPTIONS / (CORS preflight)
 try {
     Write-Host "3. Testing OPTIONS / (CORS preflight)" -ForegroundColor Green
-    $response = Invoke-WebRequest -Uri "$BaseUrl/" -Method OPTIONS -ErrorAction Stop
+    $response = Invoke-WebRequest -UseBasicParsing -Uri "$BaseUrl/" -Method OPTIONS -ErrorAction Stop
     Write-Host "Response:"
     Write-Host "Status: $($response.StatusCode)" -ForegroundColor Yellow
     Write-Host "CORS Headers:" -ForegroundColor Yellow
     $response.Headers.Keys | Where-Object { $_ -like "*Access-Control*" } | ForEach-Object {
-        Write-Host "  $_: $($response.Headers[$_])" -ForegroundColor White
+        Write-Host "  ${_}: $($response.Headers[$_])" -ForegroundColor White
     }
     Write-Host ""
     Write-Host ""
@@ -114,11 +114,11 @@ catch {
 $indexes = Test-ApiEndpoint -TestName "4. GET /v1.0/indexes (List all indexes)" -Url "$BaseUrl/v1.0/indexes" -Headers $Headers
 
 # Test 5: POST /v1.0/indexes (Create new index)
-$indexName = "test-index-ps-$(Get-Date -Format 'yyyyMMddHHmmss')"
+$indexName = "test-index-ps-$([Guid]::NewGuid().ToString('N').Substring(0, 12))"
 $createIndexBody = @{
     Name = $indexName
     Dimension = 3
-    StorageType = "Sqlite"
+    StorageType = "PostgreSQL"
     DistanceFunction = "Euclidean"
     M = 16
     MaxM = 32
@@ -136,7 +136,7 @@ if ($createdIndex) {
         Vector = @(1.0, 2.0, 3.0)
     } | ConvertTo-Json
 
-    Test-ApiEndpoint -TestName "7. POST /v1.0/indexes/$indexName/vectors (Add single vector)" -Url "$BaseUrl/v1.0/indexes/$indexName/vectors" -Method "POST" -Headers $Headers -Body $addVectorBody
+    $singleVector = Test-ApiEndpoint -TestName "7. POST /v1.0/indexes/$indexName/vectors (Add single vector)" -Url "$BaseUrl/v1.0/indexes/$indexName/vectors" -Method "POST" -Headers $Headers -Body $addVectorBody
 
     # Test 8: POST /v1.0/indexes/{name}/vectors/batch (Add multiple vectors)
     $addVectorsBody = @{
@@ -150,7 +150,7 @@ if ($createdIndex) {
         )
     } | ConvertTo-Json -Depth 10
 
-    Test-ApiEndpoint -TestName "8. POST /v1.0/indexes/$indexName/vectors/batch (Add multiple vectors)" -Url "$BaseUrl/v1.0/indexes/$indexName/vectors/batch" -Method "POST" -Headers $Headers -Body $addVectorsBody
+    $batchVectors = Test-ApiEndpoint -TestName "8. POST /v1.0/indexes/$indexName/vectors/batch (Add multiple vectors)" -Url "$BaseUrl/v1.0/indexes/$indexName/vectors/batch" -Method "POST" -Headers $Headers -Body $addVectorsBody
 
     # Test 9: POST /v1.0/indexes/{name}/search (Search vectors)
     $searchBody = @{
@@ -164,33 +164,44 @@ if ($createdIndex) {
     # Test 10: GET /v1.0/indexes (List all indexes - after creation)
     Test-ApiEndpoint -TestName "10. GET /v1.0/indexes (List indexes after creation)" -Url "$BaseUrl/v1.0/indexes" -Headers $Headers
 
-    # Test 11: DELETE /v1.0/indexes/{name}/vectors/{guid} (Remove specific vector - SKIPPED)
-    Write-Host "11. DELETE /v1.0/indexes/$indexName/vectors/{guid} (Remove specific vector - SKIPPED)" -ForegroundColor Green
-    Write-Host "Skipped: GUIDs are now auto-generated, cannot predict GUID for deletion" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host ""
+    $vectorGuid = $singleVector.GUID
+    if ($vectorGuid) {
+        # Test 11: GET /v1.0/indexes/{name}/vectors/{guid} (Fetch single vector)
+        Test-ApiEndpoint -TestName "11. GET /v1.0/indexes/$indexName/vectors/$vectorGuid (Get vector)" -Url "$BaseUrl/v1.0/indexes/$indexName/vectors/$vectorGuid" -Headers $Headers
 
-    # Test 12: Search again to verify vector was removed
+        # Test 12: GET /v1.0/indexes/{name}/vectors (Enumerate vectors)
+        Test-ApiEndpoint -TestName "12. GET /v1.0/indexes/$indexName/vectors?includeVectors=true (Enumerate vectors)" -Url "$BaseUrl/v1.0/indexes/$indexName/vectors?includeVectors=true" -Headers $Headers
+
+        # Test 13: DELETE /v1.0/indexes/{name}/vectors/{guid} (Remove specific vector)
+        Test-ApiEndpoint -TestName "13. DELETE /v1.0/indexes/$indexName/vectors/$vectorGuid (Remove specific vector)" -Url "$BaseUrl/v1.0/indexes/$indexName/vectors/$vectorGuid" -Method "DELETE" -Headers $Headers
+    }
+    else {
+        Write-Host "11-13. Vector get/enumerate/delete tests skipped because add-vector did not return a GUID." -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host ""
+    }
+
+    # Test 14: Search again to verify vector was removed
     $searchAfterRemovalBody = @{
         Vector = @(1.0, 2.0, 3.0)
         K = 5
         Ef = 50
     } | ConvertTo-Json
 
-    Test-ApiEndpoint -TestName "12. POST search after vector removal" -Url "$BaseUrl/v1.0/indexes/$indexName/search" -Method "POST" -Headers $Headers -Body $searchAfterRemovalBody
+    Test-ApiEndpoint -TestName "14. POST search after vector removal" -Url "$BaseUrl/v1.0/indexes/$indexName/search" -Method "POST" -Headers $Headers -Body $searchAfterRemovalBody
 
-    # Test 13: DELETE /v1.0/indexes/{name} (Delete entire index)
-    Test-ApiEndpoint -TestName "13. DELETE /v1.0/indexes/$indexName (Delete index)" -Url "$BaseUrl/v1.0/indexes/$indexName" -Method "DELETE" -Headers $Headers
+    # Test 15: DELETE /v1.0/indexes/{name} (Delete entire index)
+    Test-ApiEndpoint -TestName "15. DELETE /v1.0/indexes/$indexName (Delete index)" -Url "$BaseUrl/v1.0/indexes/$indexName" -Method "DELETE" -Headers $Headers
 
-    # Test 14: GET /v1.0/indexes (Verify index was deleted)
-    Test-ApiEndpoint -TestName "14. GET /v1.0/indexes (Verify deletion)" -Url "$BaseUrl/v1.0/indexes" -Headers $Headers
+    # Test 16: GET /v1.0/indexes (Verify index was deleted)
+    Test-ApiEndpoint -TestName "16. GET /v1.0/indexes (Verify deletion)" -Url "$BaseUrl/v1.0/indexes" -Headers $Headers
 }
 
 Write-Host "=== Error Handling Tests ===" -ForegroundColor Cyan
 
-# Test 15: Try to access non-existent index
+# Test 17: Try to access non-existent index
 try {
-    Write-Host "15. Testing GET non-existent index" -ForegroundColor Green
+    Write-Host "17. Testing GET non-existent index" -ForegroundColor Green
     Write-Host "Expect: HTTP status 404"
     $response = Invoke-RestMethod -Uri "$BaseUrl/v1.0/indexes/non-existent-index" -Headers $Headers -ErrorAction Stop
     Write-Host "Response:"
@@ -205,9 +216,9 @@ catch {
 Write-Host ""
 Write-Host ""
 
-# Test 16: Invalid API endpoint
+# Test 18: Invalid API endpoint
 try {
-    Write-Host "16. Testing invalid endpoint" -ForegroundColor Green
+    Write-Host "18. Testing invalid endpoint" -ForegroundColor Green
     Write-Host "Expect: HTTP status 404"
     $response = Invoke-RestMethod -Uri "$BaseUrl/v1.0/invalid-endpoint" -Headers $Headers -ErrorAction Stop
     Write-Host "Response:"
@@ -222,9 +233,9 @@ catch {
 Write-Host ""
 Write-Host ""
 
-# Test 17: Unauthorized request (no API key)
+# Test 19: Unauthorized request (no API key)
 try {
-    Write-Host "17. Testing unauthorized request" -ForegroundColor Green
+    Write-Host "19. Testing unauthorized request" -ForegroundColor Green
     Write-Host "Expect: HTTP status 401"
     $response = Invoke-RestMethod -Uri "$BaseUrl/v1.0/indexes" -Headers @{"Content-Type" = "application/json"} -ErrorAction Stop
     Write-Host "Response:"
@@ -239,9 +250,9 @@ catch {
 Write-Host ""
 Write-Host ""
 
-# Test 18: Invalid JSON body
+# Test 20: Invalid JSON body
 try {
-    Write-Host "18. Testing invalid JSON body" -ForegroundColor Green
+    Write-Host "20. Testing invalid JSON body" -ForegroundColor Green
     Write-Host "Expect: HTTP status 400"
     $response = Invoke-RestMethod -Uri "$BaseUrl/v1.0/indexes" -Method POST -Headers $Headers -Body "invalid json" -ErrorAction Stop
     Write-Host "Response:"

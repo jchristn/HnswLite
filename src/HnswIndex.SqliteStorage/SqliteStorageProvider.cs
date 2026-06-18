@@ -9,28 +9,24 @@ namespace HnswIndex.SqliteStorage
     using Microsoft.Data.Sqlite;
 
     /// <summary>
-    /// Unified SQLite storage provider that combines vector node storage and
-    /// layer assignment storage into a single <see cref="IStorageProvider"/>.
-    /// Thread-safe. Uses a single database file and connection.
-    /// Disposes both backing stores on disposal.
+    /// Unified SQLite storage provider that combines vector node storage and layer assignment storage.
     /// </summary>
-    public class SqliteStorageProvider : IStorageProvider
+    public sealed class SqliteStorageProvider : IStorageProvider
     {
-        #region Public-Members
+        private readonly SqliteHnswStorage _Storage;
+        private readonly SqliteHnswLayerStorage _LayerStorage;
+        private readonly SemaphoreSlim _DatabaseLock;
+        private bool _Disposed;
 
-        /// <summary>
-        /// Gets or sets the entry point node ID.
-        /// </summary>
-        public Guid? EntryPoint
+        private SqliteStorageProvider(
+            SqliteHnswStorage storage,
+            SqliteHnswLayerStorage layerStorage,
+            SemaphoreSlim databaseLock)
         {
-            get { return _Storage.EntryPoint; }
-            set { _Storage.EntryPoint = value; }
+            _Storage = storage;
+            _LayerStorage = layerStorage;
+            _DatabaseLock = databaseLock;
         }
-
-        /// <summary>
-        /// Number of nodes with layer assignments.
-        /// </summary>
-        public int Count => _LayerStorage.Count;
 
         /// <summary>
         /// Path to the SQLite database file.
@@ -38,57 +34,92 @@ namespace HnswIndex.SqliteStorage
         public string DatabasePath => _Storage.DatabasePath;
 
         /// <summary>
-        /// The underlying SQLite connection (shared between node and layer storage).
+        /// The underlying SQLite connection shared between node and layer storage.
         /// </summary>
         public SqliteConnection Connection => _Storage.Connection;
 
-        #endregion
-
-        #region Private-Members
-
-        private readonly SqliteHnswStorage _Storage;
-        private readonly SqliteHnswLayerStorage _LayerStorage;
-        private bool _Disposed;
-
-        #endregion
-
-        #region Constructors-and-Factories
-
         /// <summary>
-        /// Initializes a new SQLite storage provider with default table names.
+        /// Creates a SQLite storage provider with default table names.
         /// </summary>
-        /// <param name="databasePath">Path to the SQLite database file.</param>
-        /// <param name="createIfNotExists">Create the database and tables if they don't exist. Default: true.</param>
-        public SqliteStorageProvider(string databasePath, bool createIfNotExists = true)
+        public static async Task<SqliteStorageProvider> CreateAsync(
+            string databasePath,
+            bool createIfNotExists = true,
+            CancellationToken cancellationToken = default)
         {
-            _Storage = new SqliteHnswStorage(databasePath, createIfNotExists);
-            _LayerStorage = new SqliteHnswLayerStorage(_Storage.Connection);
+            SemaphoreSlim databaseLock = new SemaphoreSlim(1, 1);
+            SqliteHnswStorage? storage = null;
+            try
+            {
+                storage = await SqliteHnswStorage.CreateAsync(
+                    databasePath,
+                    createIfNotExists,
+                    databaseLock,
+                    cancellationToken).ConfigureAwait(false);
+
+                SqliteHnswLayerStorage layerStorage = await SqliteHnswLayerStorage.CreateAsync(
+                    storage.Connection,
+                    databaseLock,
+                    "hnsw_node_layers",
+                    cancellationToken).ConfigureAwait(false);
+
+                return new SqliteStorageProvider(storage, layerStorage, databaseLock);
+            }
+            catch
+            {
+                if (storage != null)
+                {
+                    await storage.DisposeAsync().ConfigureAwait(false);
+                }
+
+                databaseLock.Dispose();
+                throw;
+            }
         }
 
         /// <summary>
-        /// Initializes a new SQLite storage provider with custom table names.
+        /// Creates a SQLite storage provider with custom table names.
         /// </summary>
-        /// <param name="databasePath">Path to the SQLite database file.</param>
-        /// <param name="nodesTableName">Table name for vector nodes.</param>
-        /// <param name="neighborsTableName">Table name for neighbor relationships.</param>
-        /// <param name="metadataTableName">Table name for metadata.</param>
-        /// <param name="layersTableName">Table name for layer assignments.</param>
-        /// <param name="createIfNotExists">Create the database and tables if they don't exist. Default: true.</param>
-        public SqliteStorageProvider(
+        public static async Task<SqliteStorageProvider> CreateAsync(
             string databasePath,
             string nodesTableName,
             string neighborsTableName,
             string metadataTableName,
             string layersTableName = "hnsw_node_layers",
-            bool createIfNotExists = true)
+            bool createIfNotExists = true,
+            CancellationToken cancellationToken = default)
         {
-            _Storage = new SqliteHnswStorage(databasePath, nodesTableName, neighborsTableName, metadataTableName, createIfNotExists);
-            _LayerStorage = new SqliteHnswLayerStorage(_Storage.Connection, layersTableName);
+            SemaphoreSlim databaseLock = new SemaphoreSlim(1, 1);
+            SqliteHnswStorage? storage = null;
+            try
+            {
+                storage = await SqliteHnswStorage.CreateAsync(
+                    databasePath,
+                    nodesTableName,
+                    neighborsTableName,
+                    metadataTableName,
+                    createIfNotExists,
+                    databaseLock,
+                    cancellationToken).ConfigureAwait(false);
+
+                SqliteHnswLayerStorage layerStorage = await SqliteHnswLayerStorage.CreateAsync(
+                    storage.Connection,
+                    databaseLock,
+                    layersTableName,
+                    cancellationToken).ConfigureAwait(false);
+
+                return new SqliteStorageProvider(storage, layerStorage, databaseLock);
+            }
+            catch
+            {
+                if (storage != null)
+                {
+                    await storage.DisposeAsync().ConfigureAwait(false);
+                }
+
+                databaseLock.Dispose();
+                throw;
+            }
         }
-
-        #endregion
-
-        #region Public-Methods
 
         /// <inheritdoc />
         public Task AddNodeAsync(Guid id, List<float> vector, CancellationToken cancellationToken = default)
@@ -145,64 +176,83 @@ namespace HnswIndex.SqliteStorage
         }
 
         /// <inheritdoc />
-        public int GetNodeLayer(Guid nodeId)
+        public Task<Guid?> GetEntryPointAsync(CancellationToken cancellationToken = default)
         {
-            return _LayerStorage.GetNodeLayer(nodeId);
+            return _Storage.GetEntryPointAsync(cancellationToken);
         }
 
         /// <inheritdoc />
-        public void SetNodeLayer(Guid nodeId, int layer)
+        public Task SetEntryPointAsync(Guid? entryPoint, CancellationToken cancellationToken = default)
         {
-            _LayerStorage.SetNodeLayer(nodeId, layer);
+            return _Storage.SetEntryPointAsync(entryPoint, cancellationToken);
         }
 
         /// <inheritdoc />
-        public void RemoveNodeLayer(Guid nodeId)
+        public Task<int> GetNodeLayerAsync(Guid nodeId, CancellationToken cancellationToken = default)
         {
-            _LayerStorage.RemoveNodeLayer(nodeId);
+            return _LayerStorage.GetNodeLayerAsync(nodeId, cancellationToken);
         }
 
         /// <inheritdoc />
-        public Dictionary<Guid, int> GetAllNodeLayers()
+        public Task SetNodeLayerAsync(Guid nodeId, int layer, CancellationToken cancellationToken = default)
         {
-            return _LayerStorage.GetAllNodeLayers();
+            return _LayerStorage.SetNodeLayerAsync(nodeId, layer, cancellationToken);
         }
 
         /// <inheritdoc />
-        public void Clear()
+        public Task RemoveNodeLayerAsync(Guid nodeId, CancellationToken cancellationToken = default)
         {
-            _Storage.Clear();
-            _LayerStorage.Clear();
+            return _LayerStorage.RemoveNodeLayerAsync(nodeId, cancellationToken);
         }
 
-        /// <summary>
-        /// Disposes both the node storage and layer storage.
-        /// </summary>
-        public void Dispose()
+        /// <inheritdoc />
+        public Task<Dictionary<Guid, int>> GetAllNodeLayersAsync(CancellationToken cancellationToken = default)
         {
-            Dispose(true);
-            GC.SuppressFinalize(this);
+            return _LayerStorage.GetAllNodeLayersAsync(cancellationToken);
         }
 
-        #endregion
+        /// <inheritdoc />
+        public Task ClearLayersAsync(CancellationToken cancellationToken = default)
+        {
+            return _LayerStorage.ClearLayersAsync(cancellationToken);
+        }
 
-        #region Private-Methods
+        /// <inheritdoc />
+        public Task<int> GetLayerCountAsync(CancellationToken cancellationToken = default)
+        {
+            return _LayerStorage.GetLayerCountAsync(cancellationToken);
+        }
 
-        /// <summary>
-        /// Disposes managed resources.
-        /// </summary>
-        /// <param name="disposing">True when called from Dispose().</param>
-        protected virtual void Dispose(bool disposing)
+        /// <inheritdoc />
+        public Task<IHnswStorageTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<IHnswStorageTransaction>(new NoOpHnswStorageTransaction());
+        }
+
+        /// <inheritdoc />
+        public Task FlushAsync(CancellationToken cancellationToken = default)
+        {
+            return _Storage.FlushAsync(cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public async ValueTask DisposeAsync()
         {
             if (_Disposed) return;
-            if (disposing)
+
+            try
+            {
+                await FlushAsync().ConfigureAwait(false);
+            }
+            finally
             {
                 _LayerStorage.Dispose();
-                _Storage.Dispose();
+                await _Storage.DisposeAsync().ConfigureAwait(false);
+                _DatabaseLock.Dispose();
+                _Disposed = true;
+                GC.SuppressFinalize(this);
             }
-            _Disposed = true;
         }
-
-        #endregion
     }
 }

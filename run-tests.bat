@@ -6,7 +6,7 @@ PUSHD %~dp0src
 ECHO ============================================================================
 ECHO   Test.Automated (console runner)
 ECHO ============================================================================
-dotnet run --project Test.Automated\Test.Automated.csproj -c Release
+dotnet run --framework net8.0 --project Test.Automated\Test.Automated.csproj -c Release
 IF ERRORLEVEL 1 SET FAILED=1
 
 ECHO.

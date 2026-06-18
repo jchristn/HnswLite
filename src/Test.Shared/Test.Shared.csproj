@@ -3,6 +3,7 @@
   <PropertyGroup>
     <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <Nullable>enable</Nullable>
+    <Version>2.0.1</Version>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
@@ -10,6 +11,7 @@
     <ProjectReference Include="..\HnswIndex\HnswIndex.csproj" />
     <ProjectReference Include="..\HnswIndex.RamStorage\HnswIndex.RamStorage.csproj" />
     <ProjectReference Include="..\HnswIndex.SqliteStorage\HnswIndex.SqliteStorage.csproj" />
+    <ProjectReference Include="..\HnswIndex.PostgresqlStorage\HnswIndex.PostgresqlStorage.csproj" />
     <ProjectReference Include="..\HnswIndex.Server\HnswIndex.Server.csproj" />
   </ItemGroup>
 

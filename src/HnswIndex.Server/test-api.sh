@@ -62,7 +62,7 @@ curl -s -X POST "${HEADERS[@]}" \
   -d "{
     \"Name\": \"$INDEX_NAME\",
     \"Dimension\": 3,
-    \"StorageType\": \"Sqlite\",
+    \"StorageType\": \"PostgreSQL\",
     \"DistanceFunction\": \"Euclidean\",
     \"M\": 16,
     \"MaxM\": 32,

@@ -10,6 +10,7 @@ export type {
   EnumerationQuery,
   EnumerationResult,
   VectorEntry,
+  StorageType,
 } from "./types.js";
 
 import { HnswLiteApiError } from "./errors.js";
@@ -32,6 +33,7 @@ function toPascalCase(str: string): string {
 }
 
 function toCamelCase(str: string): string {
+  if (/^[A-Z0-9]+$/.test(str)) return str.toLowerCase();
   return str.charAt(0).toLowerCase() + str.slice(1);
 }
 
@@ -84,7 +86,7 @@ export class HnswLiteClient {
   /**
    * Create a new HnswLite SDK client.
    *
-   * @param baseUrl   Base URL of the HnswLite server (e.g. `http://localhost:8321`).
+   * @param baseUrl   Base URL of the HnswLite server (e.g. `http://localhost:8080`).
    * @param apiKey    API key value sent via the auth header.
    * @param apiKeyHeader  Name of the header used for authentication (default `x-api-key`).
    */

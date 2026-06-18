@@ -2,10 +2,11 @@
 """Integration tests for the HnswLite Python SDK.
 
 Usage:
-    python test_integration.py --base-url http://localhost:8321 --api-key mykey
+    python test_integration.py --base-url http://localhost:8080 --api-key mykey
 """
 
 import argparse
+import os
 import sys
 import time
 import uuid
@@ -57,7 +58,7 @@ def run_test(name: str):
 # Tests
 # ---------------------------------------------------------------------------
 
-def run_all(base_url: str, api_key: str):
+def run_all(base_url: str, api_key: str, storage_type: str):
     client = HnswLiteClient(base_url=base_url, api_key=api_key)
     index_name = f"test-{uuid.uuid4().hex[:8]}"
     dimension = 4
@@ -83,7 +84,7 @@ def run_all(base_url: str, api_key: str):
         resp = client.create_index(
             name=index_name,
             dimension=dimension,
-            storage_type="RAM",
+            storage_type=storage_type,
             distance_function="Cosine",
         )
         assert resp["Name"] == index_name
@@ -389,12 +390,14 @@ def run_all(base_url: str, api_key: str):
 
 def main():
     parser = argparse.ArgumentParser(description="HnswLite SDK integration tests")
-    parser.add_argument("--base-url", required=True, help="Base URL of the HnswLite server")
-    parser.add_argument("--api-key", required=True, help="API key for authentication")
+    parser.add_argument("--base-url", default=os.getenv("HNSWLITE_BASE_URL", "http://localhost:8080"), help="Base URL of the HnswLite server")
+    parser.add_argument("--api-key", default=os.getenv("HNSWLITE_API_KEY", "b6b6f6b0-c251-4733-93c8-5587370baa42"), help="API key for authentication")
+    parser.add_argument("--storage-type", default=os.getenv("HNSWLITE_STORAGE_TYPE", "PostgreSQL"), help="Storage type for the test index")
     args = parser.parse_args()
 
-    print(f"Running integration tests against {args.base_url}\n")
-    ok = run_all(args.base_url, args.api_key)
+    print(f"Running integration tests against {args.base_url}")
+    print(f"Storage type: {args.storage_type}\n")
+    ok = run_all(args.base_url, args.api_key, args.storage_type)
     sys.exit(0 if ok else 1)
 
 

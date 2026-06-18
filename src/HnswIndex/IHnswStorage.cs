@@ -68,8 +68,13 @@
         Task<int> GetCountAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Gets or sets the entry point node ID.
+        /// Gets the entry point node ID.
         /// </summary>
-        Guid? EntryPoint { get; set; }
+        Task<Guid?> GetEntryPointAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Sets the entry point node ID.
+        /// </summary>
+        Task SetEntryPointAsync(Guid? entryPoint, CancellationToken cancellationToken = default);
     }
 }

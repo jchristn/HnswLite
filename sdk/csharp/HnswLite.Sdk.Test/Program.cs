@@ -10,8 +10,9 @@ namespace HnswLite.Sdk.Test
     {
         #region Private-Members
 
-        private static string _BaseUrl = "http://localhost:8080";
-        private static string _ApiKey = "default";
+        private static string _BaseUrl = Environment.GetEnvironmentVariable("HNSWLITE_BASE_URL") ?? "http://localhost:8080";
+        private static string _ApiKey = Environment.GetEnvironmentVariable("HNSWLITE_API_KEY") ?? "b6b6f6b0-c251-4733-93c8-5587370baa42";
+        private static string _StorageType = Environment.GetEnvironmentVariable("HNSWLITE_STORAGE_TYPE") ?? "PostgreSQL";
         private static int _PassCount = 0;
         private static int _FailCount = 0;
 
@@ -23,10 +24,12 @@ namespace HnswLite.Sdk.Test
         {
             if (args.Length >= 1) _BaseUrl = args[0];
             if (args.Length >= 2) _ApiKey = args[1];
+            if (args.Length >= 3) _StorageType = args[2];
 
             Console.WriteLine("HnswLite SDK Test Harness");
-            Console.WriteLine("  Base URL : " + _BaseUrl);
-            Console.WriteLine("  API Key  : " + _ApiKey);
+            Console.WriteLine("  Base URL    : " + _BaseUrl);
+            Console.WriteLine("  API Key     : " + _ApiKey);
+            Console.WriteLine("  StorageType : " + _StorageType);
             Console.WriteLine();
 
             using HnswLiteClient client = new HnswLiteClient(_BaseUrl, _ApiKey);
@@ -58,7 +61,7 @@ namespace HnswLite.Sdk.Test
                 {
                     Name = indexName,
                     Dimension = dimension,
-                    StorageType = "RAM",
+                    StorageType = _StorageType,
                     DistanceFunction = "Cosine",
                     M = 16,
                     MaxM = 32,

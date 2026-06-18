@@ -1,397 +1,274 @@
-﻿namespace Hnsw.SqliteStorage
+namespace Hnsw.SqliteStorage
 {
     using System;
     using System.Collections.Generic;
-    using System.Linq;
     using System.Threading;
+    using System.Threading.Tasks;
     using Hnsw;
     using Microsoft.Data.Sqlite;
 
     /// <summary>
-    /// SQLite-based implementation of HNSW layer storage with thread-safe operations.
-    /// Provides persistent layer assignment storage in a SQLite database.
+    /// SQLite-backed implementation of HNSW layer storage.
     /// </summary>
-    public class SqliteHnswLayerStorage : IHnswLayerStorage, IDisposable
+    public sealed class SqliteHnswLayerStorage : IHnswLayerStorage, IDisposable
     {
-        // Private members
-        private readonly SqliteConnection _connection;
-        private readonly Dictionary<Guid, int> _layerCache = new Dictionary<Guid, int>();
-        private readonly ReaderWriterLockSlim _layersLock = new ReaderWriterLockSlim();
-        private readonly string _tableName;
-        private bool _disposed = false;
-        private bool _cacheLoaded = false;
+        private readonly SqliteConnection _Connection;
+        private readonly SemaphoreSlim _DatabaseLock;
+        private readonly SemaphoreSlim _LayersLock = new SemaphoreSlim(1, 1);
+        private readonly Dictionary<Guid, int> _LayerCache = new Dictionary<Guid, int>();
+        private readonly string _TableName;
+        private bool _Disposed;
+        private bool _CacheLoaded;
 
-        // Public properties
-        /// <summary>
-        /// Gets the number of nodes with layer assignments.
-        /// Thread-safe operation.
-        /// </summary>
-        public int Count
+        private SqliteHnswLayerStorage(SqliteConnection connection, SemaphoreSlim databaseLock, string tableName)
         {
-            get
-            {
-                ThrowIfDisposed();
-                EnsureCacheLoaded();
-
-                _layersLock.EnterReadLock();
-                try
-                {
-                    return _layerCache.Count;
-                }
-                finally
-                {
-                    _layersLock.ExitReadLock();
-                }
-            }
+            _Connection = connection;
+            _DatabaseLock = databaseLock;
+            _TableName = tableName;
         }
 
         /// <summary>
         /// Gets whether the storage has been disposed.
         /// </summary>
-        public bool IsDisposed => _disposed;
+        public bool IsDisposed => _Disposed;
 
         /// <summary>
         /// Gets the database table name used for layer storage.
         /// </summary>
-        public string TableName => _tableName;
+        public string TableName => _TableName;
 
-        // Constructors
         /// <summary>
-        /// Initializes a new instance of the SqliteHnswLayerStorage class.
+        /// Creates layer storage and initializes the backing table asynchronously.
         /// </summary>
-        /// <param name="connection">SQLite database connection. Cannot be null.</param>
-        /// <param name="tableName">Table name for storing layer assignments. Cannot be null or empty.</param>
-        /// <exception cref="ArgumentNullException">Thrown when connection or tableName is null.</exception>
-        /// <exception cref="ArgumentException">Thrown when tableName is empty or whitespace.</exception>
-        public SqliteHnswLayerStorage(SqliteConnection connection, string tableName = "hnsw_node_layers")
+        public static async Task<SqliteHnswLayerStorage> CreateAsync(
+            SqliteConnection connection,
+            SemaphoreSlim databaseLock,
+            string tableName = "hnsw_node_layers",
+            CancellationToken cancellationToken = default)
         {
-            if (connection == null)
-                throw new ArgumentNullException(nameof(connection));
+            ArgumentNullException.ThrowIfNull(connection, nameof(connection));
+            ArgumentNullException.ThrowIfNull(databaseLock, nameof(databaseLock));
             if (string.IsNullOrWhiteSpace(tableName))
+            {
                 throw new ArgumentException("Table name cannot be null or empty.", nameof(tableName));
+            }
 
-            _connection = connection;
-            _tableName = tableName;
-
-            InitializeTable();
+            SqliteHnswLayerStorage storage = new SqliteHnswLayerStorage(connection, databaseLock, tableName);
+            await storage.InitializeTableAsync(cancellationToken).ConfigureAwait(false);
+            return storage;
         }
 
-        // Public methods
-        /// <summary>
-        /// Gets the layer assignment for a specific node.
-        /// Thread-safe operation.
-        /// Uses caching for improved performance.
-        /// </summary>
-        /// <param name="nodeId">Node identifier.</param>
-        /// <returns>The layer number for the node, or 0 if not found.</returns>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public int GetNodeLayer(Guid nodeId)
-        {
-            ThrowIfDisposed();
-            EnsureCacheLoaded();
-
-            _layersLock.EnterReadLock();
-            try
-            {
-                return _layerCache.TryGetValue(nodeId, out int layer) ? layer : 0;
-            }
-            finally
-            {
-                _layersLock.ExitReadLock();
-            }
-        }
-
-        /// <summary>
-        /// Sets the layer assignment for a specific node.
-        /// Thread-safe operation.
-        /// Immediately persists to database and updates cache.
-        /// </summary>
-        /// <param name="nodeId">Node identifier. Cannot be Guid.Empty.</param>
-        /// <param name="layer">Layer number. Minimum: 0, Maximum: 63.</param>
-        /// <exception cref="ArgumentException">Thrown when nodeId is Guid.Empty.</exception>
-        /// <exception cref="ArgumentOutOfRangeException">Thrown when layer is outside valid range.</exception>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public void SetNodeLayer(Guid nodeId, int layer)
+        /// <inheritdoc />
+        public async Task<int> GetNodeLayerAsync(Guid nodeId, CancellationToken cancellationToken = default)
         {
             ThrowIfDisposed();
 
-            if (nodeId == Guid.Empty)
-                throw new ArgumentException("NodeId cannot be Guid.Empty.", nameof(nodeId));
-            if (layer < 0)
-                throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot be negative.");
-            if (layer > 63)
-                throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot exceed 63.");
-
-            _layersLock.EnterWriteLock();
+            await _LayersLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                // Update database
-                SqliteCommand command = _connection.CreateCommand();
-                command.CommandText = $@"
-                    INSERT OR REPLACE INTO {_tableName} (node_id, layer, updated_at) 
-                    VALUES (@nodeId, @layer, CURRENT_TIMESTAMP)";
-                command.Parameters.AddWithValue("@nodeId", nodeId.ToString());
-                command.Parameters.AddWithValue("@layer", layer);
-                command.ExecuteNonQuery();
-
-                // Update cache
-                EnsureCacheLoadedUnsafe();
-                _layerCache[nodeId] = layer;
+                await EnsureCacheLoadedUnsafeAsync(cancellationToken).ConfigureAwait(false);
+                return _LayerCache.TryGetValue(nodeId, out int layer) ? layer : 0;
             }
             finally
             {
-                _layersLock.ExitWriteLock();
+                _LayersLock.Release();
             }
         }
 
-        /// <summary>
-        /// Removes the layer assignment for a specific node.
-        /// Thread-safe operation.
-        /// Immediately removes from database and cache.
-        /// No effect if the node doesn't exist.
-        /// </summary>
-        /// <param name="nodeId">Node identifier.</param>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public void RemoveNodeLayer(Guid nodeId)
+        /// <inheritdoc />
+        public async Task SetNodeLayerAsync(Guid nodeId, int layer, CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+            if (nodeId == Guid.Empty) throw new ArgumentException("NodeId cannot be Guid.Empty.", nameof(nodeId));
+            if (layer < 0) throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot be negative.");
+            if (layer > 63) throw new ArgumentOutOfRangeException(nameof(layer), "Layer cannot exceed 63.");
+
+            await _LayersLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await _DatabaseLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    using SqliteCommand command = _Connection.CreateCommand();
+                    command.CommandText = $@"
+                        INSERT OR REPLACE INTO {_TableName} (node_id, layer, updated_at)
+                        VALUES (@nodeId, @layer, CURRENT_TIMESTAMP)";
+                    command.Parameters.AddWithValue("@nodeId", nodeId.ToString());
+                    command.Parameters.AddWithValue("@layer", layer);
+                    await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    _DatabaseLock.Release();
+                }
+
+                if (_CacheLoaded)
+                {
+                    _LayerCache[nodeId] = layer;
+                }
+            }
+            finally
+            {
+                _LayersLock.Release();
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task RemoveNodeLayerAsync(Guid nodeId, CancellationToken cancellationToken = default)
         {
             ThrowIfDisposed();
 
-            _layersLock.EnterWriteLock();
+            await _LayersLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                // Remove from database
-                SqliteCommand command = _connection.CreateCommand();
-                command.CommandText = $"DELETE FROM {_tableName} WHERE node_id = @nodeId";
-                command.Parameters.AddWithValue("@nodeId", nodeId.ToString());
-                command.ExecuteNonQuery();
+                await _DatabaseLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    using SqliteCommand command = _Connection.CreateCommand();
+                    command.CommandText = $"DELETE FROM {_TableName} WHERE node_id = @nodeId";
+                    command.Parameters.AddWithValue("@nodeId", nodeId.ToString());
+                    await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    _DatabaseLock.Release();
+                }
 
-                // Remove from cache
-                EnsureCacheLoadedUnsafe();
-                _layerCache.Remove(nodeId);
+                if (_CacheLoaded)
+                {
+                    _LayerCache.Remove(nodeId);
+                }
             }
             finally
             {
-                _layersLock.ExitWriteLock();
+                _LayersLock.Release();
             }
         }
 
-        /// <summary>
-        /// Gets all node layer assignments.
-        /// Thread-safe operation.
-        /// Returns a copy to prevent external modification.
-        /// </summary>
-        /// <returns>Dictionary mapping node IDs to layer numbers.</returns>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public Dictionary<Guid, int> GetAllNodeLayers()
-        {
-            ThrowIfDisposed();
-            EnsureCacheLoaded();
-
-            _layersLock.EnterReadLock();
-            try
-            {
-                return new Dictionary<Guid, int>(_layerCache);
-            }
-            finally
-            {
-                _layersLock.ExitReadLock();
-            }
-        }
-
-        /// <summary>
-        /// Removes all layer assignments.
-        /// Thread-safe operation.
-        /// Clears both database and cache.
-        /// </summary>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public void Clear()
+        /// <inheritdoc />
+        public async Task<Dictionary<Guid, int>> GetAllNodeLayersAsync(CancellationToken cancellationToken = default)
         {
             ThrowIfDisposed();
 
-            _layersLock.EnterWriteLock();
+            await _LayersLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                // Clear database
-                SqliteCommand command = _connection.CreateCommand();
-                command.CommandText = $"DELETE FROM {_tableName}";
-                command.ExecuteNonQuery();
-
-                // Clear cache
-                _layerCache.Clear();
-                _cacheLoaded = true; // Cache is now in sync (empty)
+                await EnsureCacheLoadedUnsafeAsync(cancellationToken).ConfigureAwait(false);
+                return new Dictionary<Guid, int>(_LayerCache);
             }
             finally
             {
-                _layersLock.ExitWriteLock();
+                _LayersLock.Release();
             }
         }
 
-        /// <summary>
-        /// Checks if a layer assignment exists for the specified node.
-        /// Thread-safe operation.
-        /// </summary>
-        /// <param name="nodeId">Node identifier to check.</param>
-        /// <returns>true if a layer assignment exists; otherwise, false.</returns>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public bool ContainsNode(Guid nodeId)
-        {
-            ThrowIfDisposed();
-            EnsureCacheLoaded();
-
-            _layersLock.EnterReadLock();
-            try
-            {
-                return _layerCache.ContainsKey(nodeId);
-            }
-            finally
-            {
-                _layersLock.ExitReadLock();
-            }
-        }
-
-        /// <summary>
-        /// Gets all node IDs that have layer assignments.
-        /// Thread-safe operation.
-        /// Returns a copy to prevent external modification.
-        /// </summary>
-        /// <returns>Collection of node IDs with layer assignments.</returns>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public IEnumerable<Guid> GetAllNodeIds()
-        {
-            ThrowIfDisposed();
-            EnsureCacheLoaded();
-
-            _layersLock.EnterReadLock();
-            try
-            {
-                return _layerCache.Keys.ToList();
-            }
-            finally
-            {
-                _layersLock.ExitReadLock();
-            }
-        }
-
-        /// <summary>
-        /// Forces a reload of the cache from the database.
-        /// Thread-safe operation.
-        /// Useful for synchronizing with external database changes.
-        /// </summary>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public void RefreshCache()
+        /// <inheritdoc />
+        public async Task ClearLayersAsync(CancellationToken cancellationToken = default)
         {
             ThrowIfDisposed();
 
-            _layersLock.EnterWriteLock();
+            await _LayersLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                _cacheLoaded = false;
-                EnsureCacheLoadedUnsafe();
+                await _DatabaseLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    using SqliteCommand command = _Connection.CreateCommand();
+                    command.CommandText = $"DELETE FROM {_TableName}";
+                    await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    _DatabaseLock.Release();
+                }
+
+                _LayerCache.Clear();
+                _CacheLoaded = true;
             }
             finally
             {
-                _layersLock.ExitWriteLock();
+                _LayersLock.Release();
             }
         }
 
-        /// <summary>
-        /// Disposes of the storage resources.
-        /// </summary>
+        /// <inheritdoc />
+        public async Task<int> GetLayerCountAsync(CancellationToken cancellationToken = default)
+        {
+            Dictionary<Guid, int> layers = await GetAllNodeLayersAsync(cancellationToken).ConfigureAwait(false);
+            return layers.Count;
+        }
+
+        /// <inheritdoc />
         public void Dispose()
         {
-            Dispose(true);
-            GC.SuppressFinalize(this);
+            if (_Disposed) return;
+            _Disposed = true;
+            _LayerCache.Clear();
+            _LayersLock.Dispose();
         }
 
-        // Protected methods
-        /// <summary>
-        /// Disposes of the storage resources.
-        /// </summary>
-        /// <param name="disposing">true if disposing managed resources; otherwise, false.</param>
-        protected virtual void Dispose(bool disposing)
+        private void ThrowIfDisposed()
         {
-            if (!_disposed)
+            if (_Disposed)
             {
-                if (disposing)
-                {
-                    _layersLock.EnterWriteLock();
-                    try
-                    {
-                        _layerCache.Clear();
-                    }
-                    finally
-                    {
-                        _layersLock.ExitWriteLock();
-                    }
-
-                    _layersLock?.Dispose();
-                    // Note: We don't dispose the connection as it's owned by the caller
-                }
-                _disposed = true;
+                throw new ObjectDisposedException(nameof(SqliteHnswLayerStorage));
             }
         }
 
-        // Private methods
-        private void ThrowIfDisposed()
+        private async Task InitializeTableAsync(CancellationToken cancellationToken)
         {
-            if (_disposed)
-                throw new ObjectDisposedException(nameof(SqliteHnswLayerStorage));
-        }
-
-        private void InitializeTable()
-        {
-            SqliteCommand command = _connection.CreateCommand();
-            command.CommandText = $@"
-                CREATE TABLE IF NOT EXISTS {_tableName} (
-                    node_id TEXT PRIMARY KEY,
-                    layer INTEGER NOT NULL,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )";
-            command.ExecuteNonQuery();
-
-            // Create index for performance
-            SqliteCommand indexCommand = _connection.CreateCommand();
-            indexCommand.CommandText = $"CREATE INDEX IF NOT EXISTS idx_{_tableName}_node_id ON {_tableName}(node_id)";
-            indexCommand.ExecuteNonQuery();
-        }
-
-        private void EnsureCacheLoaded()
-        {
-            if (_cacheLoaded)
-                return;
-
-            _layersLock.EnterWriteLock();
+            await _DatabaseLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                EnsureCacheLoadedUnsafe();
+                using SqliteCommand command = _Connection.CreateCommand();
+                command.CommandText = $@"
+                    CREATE TABLE IF NOT EXISTS {_TableName} (
+                        node_id TEXT PRIMARY KEY,
+                        layer INTEGER NOT NULL,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )";
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+                using SqliteCommand indexCommand = _Connection.CreateCommand();
+                indexCommand.CommandText = $"CREATE INDEX IF NOT EXISTS idx_{_TableName}_node_id ON {_TableName}(node_id)";
+                await indexCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
             finally
             {
-                _layersLock.ExitWriteLock();
+                _DatabaseLock.Release();
             }
         }
 
-        private void EnsureCacheLoadedUnsafe()
+        private async Task EnsureCacheLoadedUnsafeAsync(CancellationToken cancellationToken)
         {
-            if (_cacheLoaded)
-                return;
-
-            _layerCache.Clear();
-
-            SqliteCommand command = _connection.CreateCommand();
-            command.CommandText = $"SELECT node_id, layer FROM {_tableName}";
-
-            using SqliteDataReader reader = command.ExecuteReader();
-            while (reader.Read())
+            if (_CacheLoaded)
             {
-                if (Guid.TryParse(reader.GetString(0), out Guid nodeId))
-                {
-                    int layer = reader.GetInt32(1);
-                    _layerCache[nodeId] = layer;
-                }
+                return;
             }
 
-            _cacheLoaded = true;
+            _LayerCache.Clear();
+
+            await _DatabaseLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                using SqliteCommand command = _Connection.CreateCommand();
+                command.CommandText = $"SELECT node_id, layer FROM {_TableName}";
+
+                using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    if (Guid.TryParse(reader.GetString(0), out Guid nodeId))
+                    {
+                        _LayerCache[nodeId] = reader.GetInt32(1);
+                    }
+                }
+            }
+            finally
+            {
+                _DatabaseLock.Release();
+            }
+
+            _CacheLoaded = true;
         }
     }
 }

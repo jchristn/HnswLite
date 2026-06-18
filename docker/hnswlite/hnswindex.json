@@ -29,7 +29,10 @@
     "TokenExpirySeconds": 3600
   },
   "Storage": {
-    "SqliteDirectory": "./data/indexes/"
+    "DefaultStorageType": "PostgreSQL",
+    "SqliteDirectory": "./data/indexes/",
+    "PostgresqlConnectionString": "Host=hnswlite-postgres;Port=5432;Database=hnswlite;Username=hnswlite;Password=hnswlite",
+    "PostgresqlAutoProvision": true
   },
   "Cors": {
     "Enable": true,

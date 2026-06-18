@@ -26,50 +26,23 @@
             Initializes a new instance of the RamHnswLayerStorage class.
             </summary>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswLayerStorage.GetNodeLayer(System.Guid)">
-            <summary>
-            Gets the layer assignment for a specific node.
-            Thread-safe operation.
-            </summary>
-            <param name="nodeId">Node identifier.</param>
-            <returns>The layer number for the node, or 0 if not found.</returns>
-            <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        <member name="M:Hnsw.RamStorage.RamHnswLayerStorage.GetNodeLayerAsync(System.Guid,System.Threading.CancellationToken)">
+            <inheritdoc />
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswLayerStorage.SetNodeLayer(System.Guid,System.Int32)">
-            <summary>
-            Sets the layer assignment for a specific node.
-            Thread-safe operation.
-            </summary>
-            <param name="nodeId">Node identifier. Cannot be Guid.Empty.</param>
-            <param name="layer">Layer number. Minimum: 0, Maximum: 63.</param>
-            <exception cref="T:System.ArgumentException">Thrown when nodeId is Guid.Empty.</exception>
-            <exception cref="T:System.ArgumentOutOfRangeException">Thrown when layer is outside valid range.</exception>
-            <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        <member name="M:Hnsw.RamStorage.RamHnswLayerStorage.SetNodeLayerAsync(System.Guid,System.Int32,System.Threading.CancellationToken)">
+            <inheritdoc />
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswLayerStorage.RemoveNodeLayer(System.Guid)">
-            <summary>
-            Removes the layer assignment for a specific node.
-            Thread-safe operation.
-            No effect if the node doesn't exist.
-            </summary>
-            <param name="nodeId">Node identifier.</param>
-            <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        <member name="M:Hnsw.RamStorage.RamHnswLayerStorage.RemoveNodeLayerAsync(System.Guid,System.Threading.CancellationToken)">
+            <inheritdoc />
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswLayerStorage.GetAllNodeLayers">
-            <summary>
-            Gets all node layer assignments.
-            Thread-safe operation.
-            Returns a copy to prevent external modification.
-            </summary>
-            <returns>Dictionary mapping node IDs to layer numbers.</returns>
-            <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        <member name="M:Hnsw.RamStorage.RamHnswLayerStorage.GetAllNodeLayersAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswLayerStorage.Clear">
-            <summary>
-            Removes all layer assignments.
-            Thread-safe operation.
-            </summary>
-            <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
+        <member name="M:Hnsw.RamStorage.RamHnswLayerStorage.ClearLayersAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswLayerStorage.GetLayerCountAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
         </member>
         <member name="M:Hnsw.RamStorage.RamHnswLayerStorage.ContainsNode(System.Guid)">
             <summary>
@@ -147,7 +120,7 @@
             <exception cref="T:System.ArgumentException">Thrown when id is Guid.Empty or vector contains invalid values.</exception>
             <exception cref="T:System.ArgumentNullException">Thrown when vector is null.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswNode.GetNeighbors">
+        <member name="M:Hnsw.RamStorage.RamHnswNode.GetNeighborsAsync(System.Threading.CancellationToken)">
             <summary>
             Gets a copy of the node's neighbors organized by layer.
             Thread-safe operation.
@@ -157,27 +130,32 @@
             <returns>A copy of the neighbors dictionary.</returns>
             <exception cref="T:System.ObjectDisposedException">Thrown when the node has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswNode.AddNeighbor(System.Int32,System.Guid)">
+        <member name="M:Hnsw.RamStorage.RamHnswNode.AddNeighborAsync(System.Int32,System.Guid,System.Threading.CancellationToken)">
             <summary>
             Adds a neighbor connection at the specified layer.
             Thread-safe operation. Idempotent - adding the same neighbor multiple times has no additional effect.
             </summary>
             <param name="layer">The layer number. Minimum: 0, Maximum: 63.</param>
-            <param name="NeighborGUID">The ID of the neighbor to add. Cannot be Guid.Empty or equal to this node's ID.</param>
+            <param name="neighborGuid">The ID of the neighbor to add. Cannot be Guid.Empty or equal to this node's ID.</param>
+            <param name="cancellationToken">Cancellation token.</param>
             <exception cref="T:System.ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
-            <exception cref="T:System.ArgumentException">Thrown when NeighborGUID is invalid.</exception>
+            <exception cref="T:System.ArgumentException">Thrown when neighborGuid is invalid.</exception>
             <exception cref="T:System.ObjectDisposedException">Thrown when the node has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswNode.RemoveNeighbor(System.Int32,System.Guid)">
+        <member name="M:Hnsw.RamStorage.RamHnswNode.RemoveNeighborAsync(System.Int32,System.Guid,System.Threading.CancellationToken)">
             <summary>
             Removes a neighbor connection at the specified layer.
             Thread-safe operation. No effect if the neighbor doesn't exist.
             Removes the layer entry if it becomes empty after neighbor removal.
             </summary>
             <param name="layer">The layer number. Minimum: 0, Maximum: 63.</param>
-            <param name="NeighborGUID">The ID of the neighbor to remove.</param>
+            <param name="neighborGuid">The ID of the neighbor to remove.</param>
+            <param name="cancellationToken">Cancellation token.</param>
             <exception cref="T:System.ArgumentOutOfRangeException">Thrown when layer is negative or exceeds maximum.</exception>
             <exception cref="T:System.ObjectDisposedException">Thrown when the node has been disposed.</exception>
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswNode.SetMetadataAsync(System.String,System.Collections.Generic.List{System.String},System.Collections.Generic.Dictionary{System.String,System.Object},System.Threading.CancellationToken)">
+            <inheritdoc />
         </member>
         <member name="M:Hnsw.RamStorage.RamHnswNode.GetNeighborCount(System.Int32)">
             <summary>
@@ -225,14 +203,11 @@
             Provides high-performance storage for HNSW nodes in RAM.
             </summary>
         </member>
-        <member name="P:Hnsw.RamStorage.RamHnswStorage.EntryPoint">
-            <summary>
-            Gets or sets the entry point node ID.
-            Can be null when storage is empty.
-            When setting, the value must either be null or correspond to an existing node ID.
-            Thread-safe property.
-            Default: null.
-            </summary>
+        <member name="M:Hnsw.RamStorage.RamHnswStorage.GetEntryPointAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Hnsw.RamStorage.RamHnswStorage.SetEntryPointAsync(System.Nullable{System.Guid},System.Threading.CancellationToken)">
+            <inheritdoc />
         </member>
         <member name="P:Hnsw.RamStorage.RamHnswStorage.IsEmpty">
             <summary>
@@ -362,14 +337,6 @@
             <returns>true if the node exists; otherwise, false.</returns>
             <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
         </member>
-        <member name="M:Hnsw.RamStorage.RamHnswStorage.Clear">
-            <summary>
-            Clears all nodes from storage.
-            Thread-safe operation.
-            Also clears the entry point.
-            </summary>
-            <exception cref="T:System.ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        </member>
         <member name="M:Hnsw.RamStorage.RamHnswStorage.Dispose">
             <summary>
             Disposes of the storage and all contained nodes.
@@ -386,11 +353,6 @@
             Unified in-memory storage provider that combines vector node storage and
             layer assignment storage into a single <see cref="T:Hnsw.IStorageProvider"/>.
             Thread-safe. Disposes both backing stores on disposal.
-            </summary>
-        </member>
-        <member name="P:Hnsw.RamStorage.RamStorageProvider.EntryPoint">
-            <summary>
-            Gets or sets the entry point node ID.
             </summary>
         </member>
         <member name="P:Hnsw.RamStorage.RamStorageProvider.Count">
@@ -430,31 +392,38 @@
         <member name="M:Hnsw.RamStorage.RamStorageProvider.GetCountAsync(System.Threading.CancellationToken)">
             <inheritdoc />
         </member>
-        <member name="M:Hnsw.RamStorage.RamStorageProvider.GetNodeLayer(System.Guid)">
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.GetEntryPointAsync(System.Threading.CancellationToken)">
             <inheritdoc />
         </member>
-        <member name="M:Hnsw.RamStorage.RamStorageProvider.SetNodeLayer(System.Guid,System.Int32)">
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.SetEntryPointAsync(System.Nullable{System.Guid},System.Threading.CancellationToken)">
             <inheritdoc />
         </member>
-        <member name="M:Hnsw.RamStorage.RamStorageProvider.RemoveNodeLayer(System.Guid)">
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.GetNodeLayerAsync(System.Guid,System.Threading.CancellationToken)">
             <inheritdoc />
         </member>
-        <member name="M:Hnsw.RamStorage.RamStorageProvider.GetAllNodeLayers">
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.SetNodeLayerAsync(System.Guid,System.Int32,System.Threading.CancellationToken)">
             <inheritdoc />
         </member>
-        <member name="M:Hnsw.RamStorage.RamStorageProvider.Clear">
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.RemoveNodeLayerAsync(System.Guid,System.Threading.CancellationToken)">
             <inheritdoc />
         </member>
-        <member name="M:Hnsw.RamStorage.RamStorageProvider.Dispose">
-            <summary>
-            Disposes both the node storage and layer storage.
-            </summary>
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.GetAllNodeLayersAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
         </member>
-        <member name="M:Hnsw.RamStorage.RamStorageProvider.Dispose(System.Boolean)">
-            <summary>
-            Disposes managed resources.
-            </summary>
-            <param name="disposing">True when called from Dispose().</param>
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.ClearLayersAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.GetLayerCountAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.BeginTransactionAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.FlushAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Hnsw.RamStorage.RamStorageProvider.DisposeAsync">
+            <inheritdoc />
         </member>
     </members>
 </doc>

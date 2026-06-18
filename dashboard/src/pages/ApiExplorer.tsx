@@ -43,7 +43,7 @@ const ROUTES: ExplorerRoute[] = [
       {
         Name: 'example',
         Dimension: 384,
-        StorageType: 'RAM',
+        StorageType: 'PostgreSQL',
         DistanceFunction: 'Cosine',
         M: 16,
         MaxM: 32,

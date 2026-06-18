@@ -4,6 +4,7 @@
     using System.Collections.Generic;
     using System.Linq;
     using System.Threading;
+    using System.Threading.Tasks;
 
     /// <summary>
     /// In-memory implementation of HNSW layer storage with thread-safe operations.
@@ -53,14 +54,8 @@
         }
 
         // Public methods
-        /// <summary>
-        /// Gets the layer assignment for a specific node.
-        /// Thread-safe operation.
-        /// </summary>
-        /// <param name="nodeId">Node identifier.</param>
-        /// <returns>The layer number for the node, or 0 if not found.</returns>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public int GetNodeLayer(Guid nodeId)
+        // Synchronous helper behind the async public API.
+        private int GetNodeLayer(Guid nodeId)
         {
             ThrowIfDisposed();
 
@@ -75,16 +70,15 @@
             }
         }
 
-        /// <summary>
-        /// Sets the layer assignment for a specific node.
-        /// Thread-safe operation.
-        /// </summary>
-        /// <param name="nodeId">Node identifier. Cannot be Guid.Empty.</param>
-        /// <param name="layer">Layer number. Minimum: 0, Maximum: 63.</param>
-        /// <exception cref="ArgumentException">Thrown when nodeId is Guid.Empty.</exception>
-        /// <exception cref="ArgumentOutOfRangeException">Thrown when layer is outside valid range.</exception>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public void SetNodeLayer(Guid nodeId, int layer)
+        /// <inheritdoc />
+        public Task<int> GetNodeLayerAsync(Guid nodeId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(GetNodeLayer(nodeId));
+        }
+
+        // Synchronous helper behind the async public API.
+        private void SetNodeLayer(Guid nodeId, int layer)
         {
             ThrowIfDisposed();
 
@@ -106,14 +100,16 @@
             }
         }
 
-        /// <summary>
-        /// Removes the layer assignment for a specific node.
-        /// Thread-safe operation.
-        /// No effect if the node doesn't exist.
-        /// </summary>
-        /// <param name="nodeId">Node identifier.</param>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public void RemoveNodeLayer(Guid nodeId)
+        /// <inheritdoc />
+        public Task SetNodeLayerAsync(Guid nodeId, int layer, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            SetNodeLayer(nodeId, layer);
+            return Task.CompletedTask;
+        }
+
+        // Synchronous helper behind the async public API.
+        private void RemoveNodeLayer(Guid nodeId)
         {
             ThrowIfDisposed();
 
@@ -128,14 +124,16 @@
             }
         }
 
-        /// <summary>
-        /// Gets all node layer assignments.
-        /// Thread-safe operation.
-        /// Returns a copy to prevent external modification.
-        /// </summary>
-        /// <returns>Dictionary mapping node IDs to layer numbers.</returns>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public Dictionary<Guid, int> GetAllNodeLayers()
+        /// <inheritdoc />
+        public Task RemoveNodeLayerAsync(Guid nodeId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            RemoveNodeLayer(nodeId);
+            return Task.CompletedTask;
+        }
+
+        // Synchronous helper behind the async public API.
+        private Dictionary<Guid, int> GetAllNodeLayers()
         {
             ThrowIfDisposed();
 
@@ -150,12 +148,15 @@
             }
         }
 
-        /// <summary>
-        /// Removes all layer assignments.
-        /// Thread-safe operation.
-        /// </summary>
-        /// <exception cref="ObjectDisposedException">Thrown when the storage has been disposed.</exception>
-        public void Clear()
+        /// <inheritdoc />
+        public Task<Dictionary<Guid, int>> GetAllNodeLayersAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(GetAllNodeLayers());
+        }
+
+        // Synchronous helper behind the async public API.
+        private void Clear()
         {
             ThrowIfDisposed();
 
@@ -168,6 +169,21 @@
             {
                 _layersLock.ExitWriteLock();
             }
+        }
+
+        /// <inheritdoc />
+        public Task ClearLayersAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Clear();
+            return Task.CompletedTask;
+        }
+
+        /// <inheritdoc />
+        public Task<int> GetLayerCountAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(Count);
         }
 
         /// <summary>

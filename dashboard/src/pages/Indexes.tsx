@@ -339,7 +339,7 @@ function CreateIndexModal({ onClose, onCreated }: { onClose: () => void; onCreat
   const [form, setForm] = useState<CreateIndexRequest>({
     Name: '',
     Dimension: 384,
-    StorageType: 'SQLite',
+    StorageType: 'PostgreSQL',
     DistanceFunction: 'Cosine',
     M: 16,
     MaxM: 32,
@@ -404,8 +404,9 @@ function CreateIndexModal({ onClose, onCreated }: { onClose: () => void; onCreat
             <span>Storage</span>
             <select
               value={form.StorageType}
-              onChange={(e) => setForm({ ...form, StorageType: e.target.value as 'RAM' | 'SQLite' })}
+              onChange={(e) => setForm({ ...form, StorageType: e.target.value as 'PostgreSQL' | 'SQLite' | 'RAM' })}
             >
+              <option value="PostgreSQL">PostgreSQL</option>
               <option value="RAM">RAM</option>
               <option value="SQLite">SQLite</option>
             </select>

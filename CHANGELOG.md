@@ -1,5 +1,35 @@
 # Change Log
 
+## v2.0.0
+
+### Breaking async storage API
+
+- `IHnswStorage`, `IHnswLayerStorage`, `IHnswNode`, and `IStorageProvider` are now async-only.
+- `IHnswNode` metadata is read-only through properties and updated with `SetMetadataAsync(...)`.
+- `IStorageProvider` now includes transaction/flush hooks and implements `IAsyncDisposable`.
+- Backward compatibility with the previous sync storage interface was intentionally removed.
+
+### PostgreSQL backend and server default
+
+- Added `HnswLite.PostgresqlStorage`, backed by Npgsql and PostgreSQL tables for indexes, nodes, node layers, neighbors, per-index metadata, and system metadata.
+- New server-created indexes default to `PostgreSQL`; callers can still explicitly request `SQLite` or `RAM`.
+- Server startup reloads PostgreSQL-backed index metadata from the database.
+
+### Docker deployment
+
+- Docker Compose now starts PostgreSQL 16, waits for health, runs a one-shot provisioner, and then starts the server/dashboard.
+- Docker server configuration points to PostgreSQL by default.
+- Factory reset scripts now remove PostgreSQL data, SQLite fallback data, and logs while preserving configuration.
+
+### Tests, SDKs, and docs
+
+- Shared .NET tests were migrated for async storage APIs and include opt-in PostgreSQL integration suites behind `HNSWLITE_POSTGRES_TEST_CONNECTION`.
+- C#, Python, and JS/TS SDK examples and harnesses now default to PostgreSQL/Docker settings.
+- README, REST API docs, Docker docs, API test docs, and Postman examples were updated for V2 defaults.
+- NuGet publish tooling packs all five packages and pushes `.snupkg` symbol packages exactly once.
+
+---
+
 ## v1.2.0
 
 ### Metadata filters on search and enumeration

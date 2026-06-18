@@ -1,14 +1,51 @@
 services:
 
-  hnswlite-server:
-    image: jchristn77/hnswlite-server:v1.2.0
-    container_name: hnswlite-server
+  hnswlite-postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: hnswlite
+      POSTGRES_PASSWORD: hnswlite
+      POSTGRES_DB: hnswlite
     ports:
-      - "8080:8080"
+      - "${HNSWLITE_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ./postgres/data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hnswlite -d hnswlite"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  hnswlite-postgres-provisioner:
+    image: postgres:16
+    depends_on:
+      hnswlite-postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: hnswlite
+    volumes:
+      - ./postgres/provision:/provision:ro
+    command: ["sh", "-c", "psql -h hnswlite-postgres -U hnswlite -d hnswlite -v ON_ERROR_STOP=1 -f /provision/001_hnswlite.sql"]
+    restart: "no"
+
+  hnswlite-server:
+    image: jchristn77/hnswlite-server:v2.0.0
+    build:
+      context: ../src
+      dockerfile: HnswIndex.Server/Dockerfile
+    ports:
+      - "${HNSWLITE_SERVER_PORT:-8080}:8080"
     volumes:
       - ./hnswlite/hnswindex.json:/app/hnswindex.json
       - ./hnswlite/data/:/app/data/
       - ./hnswlite/logs/:/app/logs/
+    depends_on:
+      hnswlite-postgres:
+        condition: service_healthy
+      hnswlite-postgres-provisioner:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/"]
       interval: 5s
@@ -18,10 +55,12 @@ services:
     restart: unless-stopped
 
   hnswlite-dashboard:
-    image: jchristn77/hnswlite-dashboard:v1.2.0
-    container_name: hnswlite-dashboard
+    image: jchristn77/hnswlite-dashboard:v2.0.0
+    build:
+      context: ../dashboard
+      dockerfile: Dockerfile
     ports:
-      - "8081:80"
+      - "${HNSWLITE_DASHBOARD_PORT:-8081}:80"
     depends_on:
       hnswlite-server:
         condition: service_healthy
