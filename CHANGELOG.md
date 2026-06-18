@@ -26,6 +26,7 @@
 - Shared .NET tests were migrated for async storage APIs and include opt-in PostgreSQL integration suites behind `HNSWLITE_POSTGRES_TEST_CONNECTION`.
 - C#, Python, and JS/TS SDK examples and harnesses now default to PostgreSQL/Docker settings.
 - README, REST API docs, Docker docs, API test docs, and Postman examples were updated for V2 defaults.
+- NuGet publish tooling packs all five packages and pushes `.snupkg` symbol packages exactly once.
 
 ---
 

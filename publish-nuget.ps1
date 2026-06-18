@@ -50,6 +50,7 @@ foreach ($package in $packages) {
     & dotnet nuget push $nupkg `
         --api-key $ApiKey `
         --source $Source `
+        --no-symbols `
         --skip-duplicate
 
     $snupkg = Join-Path $outputPath "$($package.Id).$Version.snupkg"
