@@ -162,6 +162,97 @@ namespace HnswLite.Test.Shared
                                     new List<float> { 1f, 2f },
                                     new List<float> { 1f, 2f, 3f }),
                                 "Euclidean dimension mismatch");
+                            TestAssert.Throws<ArgumentException>(
+                                () => new CosineDistance().Distance(
+                                    new List<float> { 1f, 2f },
+                                    new List<float> { 1f, 2f, 3f }),
+                                "Cosine dimension mismatch");
+                            TestAssert.Throws<ArgumentException>(
+                                () => new DotProductDistance().Distance(
+                                    new List<float> { 1f, 2f },
+                                    new List<float> { 1f, 2f, 3f }),
+                                "DotProduct dimension mismatch");
+                            return Task.CompletedTask;
+                        }),
+                    new TestCaseDescriptor(
+                        suiteId: "Distance",
+                        caseId: "DistanceFunctionsRejectNull",
+                        displayName: "Distance functions throw ArgumentNullException on null input",
+                        executeAsync: ct =>
+                        {
+                            List<float> valid = new List<float> { 1f, 2f };
+                            TestAssert.Throws<ArgumentNullException>(
+                                () => new EuclideanDistance().Distance(null!, valid), "Euclidean null a");
+                            TestAssert.Throws<ArgumentNullException>(
+                                () => new EuclideanDistance().Distance(valid, null!), "Euclidean null b");
+                            TestAssert.Throws<ArgumentNullException>(
+                                () => new CosineDistance().Distance(null!, valid), "Cosine null a");
+                            TestAssert.Throws<ArgumentNullException>(
+                                () => new DotProductDistance().Distance(valid, null!), "DotProduct null b");
+                            return Task.CompletedTask;
+                        }),
+                    new TestCaseDescriptor(
+                        suiteId: "Distance",
+                        caseId: "CosineZeroVectorReturnsOne",
+                        displayName: "Cosine distance with a zero-magnitude vector returns 1 (no divide-by-zero)",
+                        executeAsync: ct =>
+                        {
+                            CosineDistance fn = new CosineDistance();
+                            // Zero magnitude on either side is undefined cosine similarity; the
+                            // implementation defines this as distance 1 rather than NaN.
+                            float zeroLeft = fn.Distance(
+                                new List<float> { 0f, 0f, 0f },
+                                new List<float> { 1f, 2f, 3f });
+                            float zeroRight = fn.Distance(
+                                new List<float> { 1f, 2f, 3f },
+                                new List<float> { 0f, 0f, 0f });
+                            float bothZero = fn.Distance(
+                                new List<float> { 0f, 0f, 0f },
+                                new List<float> { 0f, 0f, 0f });
+                            TestAssert.NearEqual(1f, zeroLeft, 1e-6f, "Zero left operand");
+                            TestAssert.NearEqual(1f, zeroRight, 1e-6f, "Zero right operand");
+                            TestAssert.NearEqual(1f, bothZero, 1e-6f, "Both operands zero");
+                            TestAssert.False(float.IsNaN(zeroLeft), "Result must not be NaN");
+                            return Task.CompletedTask;
+                        }),
+                    new TestCaseDescriptor(
+                        suiteId: "Distance",
+                        caseId: "SimdMatchesScalarHighDimensional",
+                        displayName: "SIMD-accelerated paths agree with a scalar reference over 67-d vectors",
+                        executeAsync: ct =>
+                        {
+                            // 67 is prime, so the vectorized loop plus the scalar remainder loop are
+                            // both exercised regardless of the hardware SIMD width. This guards the
+                            // System.Numerics paths across the runtime update.
+                            const int dim = 67;
+                            Random rng = new Random(20260815);
+                            List<float> a = new List<float>(dim);
+                            List<float> b = new List<float>(dim);
+                            for (int i = 0; i < dim; i++)
+                            {
+                                a.Add((float)(rng.NextDouble() * 4.0 - 2.0));
+                                b.Add((float)(rng.NextDouble() * 4.0 - 2.0));
+                            }
+
+                            float refDot = 0f;
+                            float refNormA = 0f;
+                            float refNormB = 0f;
+                            float refSquared = 0f;
+                            for (int i = 0; i < dim; i++)
+                            {
+                                float diff = a[i] - b[i];
+                                refSquared += diff * diff;
+                                refDot += a[i] * b[i];
+                                refNormA += a[i] * a[i];
+                                refNormB += b[i] * b[i];
+                            }
+                            float expectedEuclidean = (float)Math.Sqrt(refSquared);
+                            float expectedCosine = 1f - refDot / ((float)Math.Sqrt(refNormA) * (float)Math.Sqrt(refNormB));
+                            float expectedDot = -refDot;
+
+                            TestAssert.NearEqual(expectedEuclidean, new EuclideanDistance().Distance(a, b), 1e-3f, "Euclidean SIMD vs scalar");
+                            TestAssert.NearEqual(expectedCosine, new CosineDistance().Distance(a, b), 1e-4f, "Cosine SIMD vs scalar");
+                            TestAssert.NearEqual(expectedDot, new DotProductDistance().Distance(a, b), 1e-3f, "DotProduct SIMD vs scalar");
                             return Task.CompletedTask;
                         }),
                 });

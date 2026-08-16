@@ -1,5 +1,28 @@
 # Change Log
 
+## v2.1.0
+
+### Dependency updates
+
+- **Microsoft.Data.Sqlite** `9.0.7` → `10.0.11` (`HnswLite.SqliteStorage`). Pulls the current patched SQLitePCLRaw native bundle, clearing advisory **GHSA-2m69-gcr7-jv3q** (high severity) that affected the previous transitive `SQLitePCLRaw.lib.e_sqlite3 2.1.10` — the Release build now restores with zero `NU1903` warnings.
+- **Npgsql** `9.0.3` → `10.0.3` (`HnswLite.PostgresqlStorage`).
+- **System.Text.Json** `9.0.4` → `10.0.11` (`HnswLite.Sdk`).
+- Server and test tooling: SyslogLogging `2.0.8` → `2.2.1`, Watson `7.0.11` → `7.1.0`, Microsoft.NET.Test.Sdk `17.14.1` → `18.9.0`, xunit.runner.visualstudio `3.1.4` → `3.1.5`, NUnit `4.3.2` → `4.6.1`, NUnit3TestAdapter `5.0.0` → `6.2.0`, MSTest.TestAdapter/TestFramework `4.0.2` → `4.3.3`.
+
+No public API changed; the dependency updates required no source changes.
+
+### Package versions
+
+- `HnswLite.SqliteStorage`, `HnswLite.PostgresqlStorage`, and `HnswLite.Sdk` move to **2.1.0** — their published NuGet dependency requirements changed to new major versions of Microsoft.Data.Sqlite / Npgsql / System.Text.Json, a consumer-visible surface change even though no HnswLite type or signature changed.
+- `HnswLite` (core) and `HnswLite.RamStorage` remain **2.0.1** — no dependency or API surface change.
+
+### Tests
+
+- Added distance-function coverage: Cosine/DotProduct dimension-mismatch and null-argument negative cases, Cosine zero-magnitude-vector behavior (returns distance `1`, no divide-by-zero), and a SIMD-vs-scalar parity check over 67-d vectors that guards the `System.Numerics` accelerated paths across the runtime update.
+- Full shared suite (97 cases) passes on RAM and SQLite via the console runner and via the xUnit, NUnit, and MSTest adapters, on both `net8.0` and `net10.0`.
+
+---
+
 ## v2.0.0
 
 ### Breaking async storage API
