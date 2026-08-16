@@ -138,11 +138,11 @@ See [archive/PERFORMANCE_IMPROVEMENTS.md](archive/PERFORMANCE_IMPROVEMENTS.md) f
 
 ### Testing
 
-- Unified Touchstone test suite: tests are defined once in `Test.Shared` and executed by **four** runners (`Test.Automated` console, `Test.XUnit`, `Test.NUnit`, `Test.MSTest`). Coverage grew from 23 to **53 cases** across 11 suites including concurrency, cross-storage parity, and cluster-recall scenarios.
+- Unified Touchstone test suite: tests are defined once in `Test.Shared` and executed by **four** runners (`Test.Automated` console, `Test.XUnit`, `Test.NUnit`, `Test.MSTest`). Coverage now includes **97 cases** across shared suites including concurrency, cross-storage parity, and cluster-recall scenarios.
 
 ### Dashboard
 
-- React 19 + Vite 6 + TypeScript dashboard at `dashboard/` with pages for **Indices**, **Vectors** (browse / edit / add / delete with an index dropdown and Add-vector modal), **Search**, **Request History** (30-day browser-local capture with hour / day / week / month ranges), **API Explorer**, **Server Info**, **Settings**, plus a login flow.
+- React 19 + Vite 8 + TypeScript dashboard at `dashboard/` with pages for **Indices**, **Vectors** (browse / edit / add / delete with an index dropdown and Add-vector modal), **Search**, **Request History** (30-day browser-local capture with hour / day / week / month ranges), **API Explorer**, **Server Info**, **Settings**, plus a login flow.
 - Docker image `jchristn77/hnswlite-dashboard` with nginx serving the SPA and proxying `/v1.0/` to the server container.
 
 ### SDKs
@@ -283,7 +283,7 @@ The adapter projects use the same shared configuration through environment varia
 
 ## Dashboard
 
-React 19 + Vite 6 + TypeScript dashboard at `dashboard/`. Pages include **Indices**, **Vectors** (browse / edit / add / delete), **Search**, **Request History** with an activity chart, **API Explorer**, **Server Info**, **Settings**, plus a login flow.
+React 19 + Vite 8 + TypeScript dashboard at `dashboard/`. Pages include **Indices**, **Vectors** (browse / edit / add / delete), **Search**, **Request History** with an activity chart, **API Explorer**, **Server Info**, **Settings**, plus a login flow. The dashboard toolchain requires Node 20.19+ or Node 22.12+.
 
 ```bash
 # Local development

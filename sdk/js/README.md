@@ -231,10 +231,19 @@ try {
 }
 ```
 
-## Running integration tests
+## Running tests
 
 ```bash
 npm test
+```
+
+The default test command runs offline unit tests for request serialization,
+response conversion, and API error handling.
+
+For the live integration harness:
+
+```bash
+npm run test:integration
 ```
 
 The harness defaults to Docker Compose settings:

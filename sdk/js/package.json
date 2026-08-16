@@ -13,13 +13,19 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "npx tsx tests/integration.ts"
+    "test": "node --test --import tsx tests/*.test.ts",
+    "test:integration": "tsx tests/integration.ts"
   },
-  "keywords": ["hnsw", "vector", "search", "sdk"],
+  "keywords": [
+    "hnsw",
+    "vector",
+    "search",
+    "sdk"
+  ],
   "license": "MIT",
   "devDependencies": {
-    "typescript": "^5.4.0",
-    "@types/node": "^20.11.0",
-    "tsx": "^4.7.0"
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2"
   }
 }

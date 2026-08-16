@@ -48,6 +48,7 @@ python tests/test_integration.py
 cd sdk/js
 npm install && npm run build
 npm test
+npm run test:integration
 ```
 
 ## API coverage matrix
