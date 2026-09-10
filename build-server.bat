@@ -6,6 +6,11 @@ PUSHD src
 docker buildx build -f HnswIndex.Server/Dockerfile --builder cloud-jchristn77-jchristn77 --platform linux/amd64,linux/arm64/v8 --tag jchristn77/hnswlite-server:%1 --tag jchristn77/hnswlite-server:latest --push .
 POPD
 
+ECHO.
+ECHO Loading images into the local registry...
+docker pull jchristn77/hnswlite-server:%1
+docker pull jchristn77/hnswlite-server:latest
+
 GOTO :Done
 
 :Usage

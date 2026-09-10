@@ -1,11 +1,12 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { GitHubIcon, LogoutIcon, MoonIcon, SunIcon } from './shared/Icons';
+import { DiscordIcon, GitHubIcon, LogoutIcon, MoonIcon, SunIcon } from './shared/Icons';
 
 declare const __APP_VERSION__: string;
 
 const GITHUB_URL = 'https://github.com/jchristn/HnswIndex';
+const DISCORD_URL = 'https://discord.gg/tRAN8HgvK5';
 
 export default function Layout() {
   const { logout } = useAuth();
@@ -43,6 +44,16 @@ export default function Layout() {
             style={{ textDecoration: 'none' }}
           >
             <GitHubIcon size={18} />
+          </a>
+          <a
+            className="btn-icon"
+            href={DISCORD_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Join us on Discord"
+            style={{ textDecoration: 'none' }}
+          >
+            <DiscordIcon size={18} />
           </a>
           <button
             className="btn-icon"

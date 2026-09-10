@@ -6,6 +6,11 @@ PUSHD dashboard
 docker buildx build --builder cloud-jchristn77-jchristn77 --platform linux/amd64,linux/arm64/v8 --tag jchristn77/hnswlite-dashboard:%1 --tag jchristn77/hnswlite-dashboard:latest --push .
 POPD
 
+ECHO.
+ECHO Loading images into the local registry...
+docker pull jchristn77/hnswlite-dashboard:%1
+docker pull jchristn77/hnswlite-dashboard:latest
+
 GOTO :Done
 
 :Usage
