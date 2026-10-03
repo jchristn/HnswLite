@@ -291,6 +291,28 @@ namespace Hnsw.SqliteStorage
 
         private async Task SaveNeighborsToDatabaseAsync(CancellationToken cancellationToken)
         {
+            if (!HnswTelemetry.IsStorageObserved)
+            {
+                await SaveNeighborsToDatabaseCoreAsync(cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            long startTimestamp = HnswTelemetry.GetTimestamp();
+            try
+            {
+                await SaveNeighborsToDatabaseCoreAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                HnswTelemetry.RecordStorageOperation(HnswTelemetryNames.ProviderSqlite, "SaveNeighbors", startTimestamp, e);
+                throw;
+            }
+
+            HnswTelemetry.RecordStorageOperation(HnswTelemetryNames.ProviderSqlite, "SaveNeighbors", startTimestamp);
+        }
+
+        private async Task SaveNeighborsToDatabaseCoreAsync(CancellationToken cancellationToken)
+        {
             byte[] blob = SerializeNeighbors(_Neighbors);
 
             await _DatabaseLock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -376,6 +398,28 @@ namespace Hnsw.SqliteStorage
         }
 
         private async Task SaveMetadataToDatabaseAsync(CancellationToken cancellationToken)
+        {
+            if (!HnswTelemetry.IsStorageObserved)
+            {
+                await SaveMetadataToDatabaseCoreAsync(cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            long startTimestamp = HnswTelemetry.GetTimestamp();
+            try
+            {
+                await SaveMetadataToDatabaseCoreAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                HnswTelemetry.RecordStorageOperation(HnswTelemetryNames.ProviderSqlite, "SaveMetadata", startTimestamp, e);
+                throw;
+            }
+
+            HnswTelemetry.RecordStorageOperation(HnswTelemetryNames.ProviderSqlite, "SaveMetadata", startTimestamp);
+        }
+
+        private async Task SaveMetadataToDatabaseCoreAsync(CancellationToken cancellationToken)
         {
             if (string.IsNullOrEmpty(_NodesTableName)) return;
 

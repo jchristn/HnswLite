@@ -2,6 +2,7 @@ namespace HnswIndex.SqliteStorage
 {
     using System;
     using System.Collections.Generic;
+    using System.Diagnostics;
     using System.Threading;
     using System.Threading.Tasks;
     using Hnsw;
@@ -15,6 +16,7 @@ namespace HnswIndex.SqliteStorage
     {
         private readonly SqliteHnswStorage _Storage;
         private readonly SqliteHnswLayerStorage _LayerStorage;
+        private const string _OperationOpen = "Open";
         private readonly SemaphoreSlim _DatabaseLock;
         private bool _Disposed;
 
@@ -48,6 +50,8 @@ namespace HnswIndex.SqliteStorage
         {
             SemaphoreSlim databaseLock = new SemaphoreSlim(1, 1);
             SqliteHnswStorage? storage = null;
+            Activity? activity = HnswTelemetry.StartStorageActivity(HnswTelemetryNames.ProviderSqlite, _OperationOpen);
+            long startTimestamp = HnswTelemetry.GetTimestamp();
             try
             {
                 storage = await SqliteHnswStorage.CreateAsync(
@@ -62,10 +66,14 @@ namespace HnswIndex.SqliteStorage
                     "hnsw_node_layers",
                     cancellationToken).ConfigureAwait(false);
 
+                HnswTelemetry.RecordStorageOperation(HnswTelemetryNames.ProviderSqlite, _OperationOpen, startTimestamp);
+                HnswTelemetry.CompleteActivity(activity, null);
                 return new SqliteStorageProvider(storage, layerStorage, databaseLock);
             }
-            catch
+            catch (Exception e)
             {
+                HnswTelemetry.RecordStorageOperation(HnswTelemetryNames.ProviderSqlite, _OperationOpen, startTimestamp, e);
+                HnswTelemetry.CompleteActivity(activity, e);
                 if (storage != null)
                 {
                     await storage.DisposeAsync().ConfigureAwait(false);
@@ -90,6 +98,8 @@ namespace HnswIndex.SqliteStorage
         {
             SemaphoreSlim databaseLock = new SemaphoreSlim(1, 1);
             SqliteHnswStorage? storage = null;
+            Activity? activity = HnswTelemetry.StartStorageActivity(HnswTelemetryNames.ProviderSqlite, _OperationOpen);
+            long startTimestamp = HnswTelemetry.GetTimestamp();
             try
             {
                 storage = await SqliteHnswStorage.CreateAsync(
@@ -107,10 +117,14 @@ namespace HnswIndex.SqliteStorage
                     layersTableName,
                     cancellationToken).ConfigureAwait(false);
 
+                HnswTelemetry.RecordStorageOperation(HnswTelemetryNames.ProviderSqlite, _OperationOpen, startTimestamp);
+                HnswTelemetry.CompleteActivity(activity, null);
                 return new SqliteStorageProvider(storage, layerStorage, databaseLock);
             }
-            catch
+            catch (Exception e)
             {
+                HnswTelemetry.RecordStorageOperation(HnswTelemetryNames.ProviderSqlite, _OperationOpen, startTimestamp, e);
+                HnswTelemetry.CompleteActivity(activity, e);
                 if (storage != null)
                 {
                     await storage.DisposeAsync().ConfigureAwait(false);
@@ -124,103 +138,120 @@ namespace HnswIndex.SqliteStorage
         /// <inheritdoc />
         public Task AddNodeAsync(Guid id, List<float> vector, CancellationToken cancellationToken = default)
         {
-            return _Storage.AddNodeAsync(id, vector, cancellationToken);
+            if (!IsObserved(false)) return _Storage.AddNodeAsync(id, vector, cancellationToken);
+            return ObserveAsync("AddNode", false, () => _Storage.AddNodeAsync(id, vector, cancellationToken));
         }
 
         /// <inheritdoc />
         public Task AddNodesAsync(Dictionary<Guid, List<float>> nodes, CancellationToken cancellationToken = default)
         {
-            return _Storage.AddNodesAsync(nodes, cancellationToken);
+            if (!IsObserved(true)) return _Storage.AddNodesAsync(nodes, cancellationToken);
+            return ObserveAsync("AddNodes", true, () => _Storage.AddNodesAsync(nodes, cancellationToken));
         }
 
         /// <inheritdoc />
         public Task RemoveNodeAsync(Guid id, CancellationToken cancellationToken = default)
         {
-            return _Storage.RemoveNodeAsync(id, cancellationToken);
+            if (!IsObserved(false)) return _Storage.RemoveNodeAsync(id, cancellationToken);
+            return ObserveAsync("RemoveNode", false, () => _Storage.RemoveNodeAsync(id, cancellationToken));
         }
 
         /// <inheritdoc />
         public Task RemoveNodesAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
         {
-            return _Storage.RemoveNodesAsync(ids, cancellationToken);
+            if (!IsObserved(true)) return _Storage.RemoveNodesAsync(ids, cancellationToken);
+            return ObserveAsync("RemoveNodes", true, () => _Storage.RemoveNodesAsync(ids, cancellationToken));
         }
 
         /// <inheritdoc />
         public Task<IHnswNode> GetNodeAsync(Guid id, CancellationToken cancellationToken = default)
         {
-            return _Storage.GetNodeAsync(id, cancellationToken);
+            if (!IsObserved(false)) return _Storage.GetNodeAsync(id, cancellationToken);
+            return ObserveAsync("GetNode", false, () => _Storage.GetNodeAsync(id, cancellationToken));
         }
 
         /// <inheritdoc />
         public Task<Dictionary<Guid, IHnswNode>> GetNodesAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
         {
-            return _Storage.GetNodesAsync(ids, cancellationToken);
+            if (!IsObserved(false)) return _Storage.GetNodesAsync(ids, cancellationToken);
+            return ObserveAsync("GetNodes", false, () => _Storage.GetNodesAsync(ids, cancellationToken));
         }
 
         /// <inheritdoc />
         public Task<TryGetNodeResult> TryGetNodeAsync(Guid id, CancellationToken cancellationToken = default)
         {
-            return _Storage.TryGetNodeAsync(id, cancellationToken);
+            if (!IsObserved(false)) return _Storage.TryGetNodeAsync(id, cancellationToken);
+            return ObserveAsync("TryGetNode", false, () => _Storage.TryGetNodeAsync(id, cancellationToken));
         }
 
         /// <inheritdoc />
         public Task<IEnumerable<Guid>> GetAllNodeIdsAsync(CancellationToken cancellationToken = default)
         {
-            return _Storage.GetAllNodeIdsAsync(cancellationToken);
+            if (!IsObserved(true)) return _Storage.GetAllNodeIdsAsync(cancellationToken);
+            return ObserveAsync("GetAllNodeIds", true, () => _Storage.GetAllNodeIdsAsync(cancellationToken));
         }
 
         /// <inheritdoc />
         public Task<int> GetCountAsync(CancellationToken cancellationToken = default)
         {
-            return _Storage.GetCountAsync(cancellationToken);
+            if (!IsObserved(false)) return _Storage.GetCountAsync(cancellationToken);
+            return ObserveAsync("GetCount", false, () => _Storage.GetCountAsync(cancellationToken));
         }
 
         /// <inheritdoc />
         public Task<Guid?> GetEntryPointAsync(CancellationToken cancellationToken = default)
         {
-            return _Storage.GetEntryPointAsync(cancellationToken);
+            if (!IsObserved(false)) return _Storage.GetEntryPointAsync(cancellationToken);
+            return ObserveAsync("GetEntryPoint", false, () => _Storage.GetEntryPointAsync(cancellationToken));
         }
 
         /// <inheritdoc />
         public Task SetEntryPointAsync(Guid? entryPoint, CancellationToken cancellationToken = default)
         {
-            return _Storage.SetEntryPointAsync(entryPoint, cancellationToken);
+            if (!IsObserved(false)) return _Storage.SetEntryPointAsync(entryPoint, cancellationToken);
+            return ObserveAsync("SetEntryPoint", false, () => _Storage.SetEntryPointAsync(entryPoint, cancellationToken));
         }
 
         /// <inheritdoc />
         public Task<int> GetNodeLayerAsync(Guid nodeId, CancellationToken cancellationToken = default)
         {
-            return _LayerStorage.GetNodeLayerAsync(nodeId, cancellationToken);
+            if (!IsObserved(false)) return _LayerStorage.GetNodeLayerAsync(nodeId, cancellationToken);
+            return ObserveAsync("GetNodeLayer", false, () => _LayerStorage.GetNodeLayerAsync(nodeId, cancellationToken));
         }
 
         /// <inheritdoc />
         public Task SetNodeLayerAsync(Guid nodeId, int layer, CancellationToken cancellationToken = default)
         {
-            return _LayerStorage.SetNodeLayerAsync(nodeId, layer, cancellationToken);
+            if (!IsObserved(false)) return _LayerStorage.SetNodeLayerAsync(nodeId, layer, cancellationToken);
+            return ObserveAsync("SetNodeLayer", false, () => _LayerStorage.SetNodeLayerAsync(nodeId, layer, cancellationToken));
         }
 
         /// <inheritdoc />
         public Task RemoveNodeLayerAsync(Guid nodeId, CancellationToken cancellationToken = default)
         {
-            return _LayerStorage.RemoveNodeLayerAsync(nodeId, cancellationToken);
+            if (!IsObserved(false)) return _LayerStorage.RemoveNodeLayerAsync(nodeId, cancellationToken);
+            return ObserveAsync("RemoveNodeLayer", false, () => _LayerStorage.RemoveNodeLayerAsync(nodeId, cancellationToken));
         }
 
         /// <inheritdoc />
         public Task<Dictionary<Guid, int>> GetAllNodeLayersAsync(CancellationToken cancellationToken = default)
         {
-            return _LayerStorage.GetAllNodeLayersAsync(cancellationToken);
+            if (!IsObserved(true)) return _LayerStorage.GetAllNodeLayersAsync(cancellationToken);
+            return ObserveAsync("GetAllNodeLayers", true, () => _LayerStorage.GetAllNodeLayersAsync(cancellationToken));
         }
 
         /// <inheritdoc />
         public Task ClearLayersAsync(CancellationToken cancellationToken = default)
         {
-            return _LayerStorage.ClearLayersAsync(cancellationToken);
+            if (!IsObserved(true)) return _LayerStorage.ClearLayersAsync(cancellationToken);
+            return ObserveAsync("ClearLayers", true, () => _LayerStorage.ClearLayersAsync(cancellationToken));
         }
 
         /// <inheritdoc />
         public Task<int> GetLayerCountAsync(CancellationToken cancellationToken = default)
         {
-            return _LayerStorage.GetLayerCountAsync(cancellationToken);
+            if (!IsObserved(false)) return _LayerStorage.GetLayerCountAsync(cancellationToken);
+            return ObserveAsync("GetLayerCount", false, () => _LayerStorage.GetLayerCountAsync(cancellationToken));
         }
 
         /// <inheritdoc />
@@ -233,7 +264,8 @@ namespace HnswIndex.SqliteStorage
         /// <inheritdoc />
         public Task FlushAsync(CancellationToken cancellationToken = default)
         {
-            return _Storage.FlushAsync(cancellationToken);
+            if (!IsObserved(true)) return _Storage.FlushAsync(cancellationToken);
+            return ObserveAsync("Flush", true, () => _Storage.FlushAsync(cancellationToken));
         }
 
         /// <inheritdoc />
@@ -253,6 +285,51 @@ namespace HnswIndex.SqliteStorage
                 _Disposed = true;
                 GC.SuppressFinalize(this);
             }
+        }
+
+        private static bool IsObserved(bool span)
+        {
+            return HnswTelemetry.IsStorageObserved || (span && HnswTelemetry.ActivitySource.HasListeners());
+        }
+
+        private static async Task ObserveAsync(string operation, bool span, Func<Task> action)
+        {
+            Activity? activity = span ? HnswTelemetry.StartStorageActivity(HnswTelemetryNames.ProviderSqlite, operation) : null;
+            long startTimestamp = HnswTelemetry.GetTimestamp();
+            try
+            {
+                await action().ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                HnswTelemetry.RecordStorageOperation(HnswTelemetryNames.ProviderSqlite, operation, startTimestamp, e);
+                HnswTelemetry.CompleteActivity(activity, e);
+                throw;
+            }
+
+            HnswTelemetry.RecordStorageOperation(HnswTelemetryNames.ProviderSqlite, operation, startTimestamp);
+            HnswTelemetry.CompleteActivity(activity, null);
+        }
+
+        private static async Task<T> ObserveAsync<T>(string operation, bool span, Func<Task<T>> action)
+        {
+            Activity? activity = span ? HnswTelemetry.StartStorageActivity(HnswTelemetryNames.ProviderSqlite, operation) : null;
+            long startTimestamp = HnswTelemetry.GetTimestamp();
+            T result;
+            try
+            {
+                result = await action().ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                HnswTelemetry.RecordStorageOperation(HnswTelemetryNames.ProviderSqlite, operation, startTimestamp, e);
+                HnswTelemetry.CompleteActivity(activity, e);
+                throw;
+            }
+
+            HnswTelemetry.RecordStorageOperation(HnswTelemetryNames.ProviderSqlite, operation, startTimestamp);
+            HnswTelemetry.CompleteActivity(activity, null);
+            return result;
         }
     }
 }

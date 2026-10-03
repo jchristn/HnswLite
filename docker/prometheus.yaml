@@ -1,0 +1,21 @@
+# Prometheus scrape configuration for the HnswLite stack.
+# The server's Radiant host serves every meter in the process (Watson HTTP, HnswLite library,
+# HnswLite.Server, Npgsql pool, .NET runtime) on port 9464 inside the compose network.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  # Classic underscore metric names. Prometheus 3 otherwise negotiates UTF-8 names, and the OpenTelemetry
+  # exporter then emits dotted names whose unit suffixes fail validation (watson.server.received.bytes).
+  metric_name_validation_scheme: legacy
+
+scrape_configs:
+  - job_name: 'hnswlite-server'
+    metrics_path: '/metrics'
+    scrape_protocols: ['PrometheusText0.0.4']
+    metric_name_escaping_scheme: underscores
+    static_configs:
+      - targets: ['hnswlite-server:9464']
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['127.0.0.1:9090']

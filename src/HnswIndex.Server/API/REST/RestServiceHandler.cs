@@ -7,6 +7,7 @@ namespace HnswIndex.Server.API.REST
     using WatsonWebserver.Core;
     using HnswIndex.Server.Classes;
     using HnswIndex.Server.Services;
+    using HnswIndex.Server.Telemetry;
     using SyslogLogging;
 
     /// <summary>
@@ -589,6 +590,7 @@ namespace HnswIndex.Server.API.REST
 
         private static async Task SendErrorResponseAsync(HttpContextBase ctx, ApiErrorEnum error, string message)
         {
+            ServerTelemetry.RecordApiError(error);
             HnswIndex.Server.Classes.ApiErrorResponse errorResponse = new HnswIndex.Server.Classes.ApiErrorResponse(error, message);
             string json = _Serializer.SerializeJson(errorResponse, true);
 

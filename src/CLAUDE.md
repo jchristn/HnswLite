@@ -163,6 +163,16 @@ See `HnswIndex.RamStorage` and `HnswIndex.SqliteStorage` as reference implementa
 - Both test suites validate identical behavior between storage backends
 - Performance tests include progress reporting for long-running operations (2000+ vectors)
 
+## Telemetry
+
+See `TELEMETRY.md` in the repository root for the full catalog. Rules for new code:
+
+- **Libraries** emit only through BCL `Meter`/`ActivitySource` via `HnswTelemetry` (`HnswIndex/HnswTelemetry.cs`); no exporter or Radiant reference. Every name lives in `HnswTelemetryNames`; server names live in `HnswIndex.Server/Telemetry/ServerTelemetryNames.cs`.
+- **Every new operation** gets a duration histogram plus outcome counter (with `error.type` on failure), a span, and `stage:<name>` child spans for its stages (`HnswOperationScope` / `ServerOperationScope`).
+- **Labels are bounded.** Never put index names, vector IDs, metadata, or free text on metric labels; put them on spans. Never record keys, connection strings, or vector payloads.
+- **Instrumentation is best-effort**: it must never throw into the caller.
+- Add a case to `Test.Shared/TelemetrySuites.cs` proving new telemetry is emitted, and update `TELEMETRY.md` and the dashboards in `assets/grafana/`.
+
 ## ACID Compliance
 
 SQLite storage maintains full ACID compliance:

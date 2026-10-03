@@ -9,6 +9,7 @@ namespace HnswIndex.Server
     using HnswIndex.Server.Classes;
     using HnswIndex.Server.Services;
     using HnswIndex.Server.API.REST;
+    using HnswIndex.Server.Telemetry;
 
     /// <summary>
     /// HNSW Index Server main application.
@@ -27,6 +28,7 @@ namespace HnswIndex.Server
         private static LoggingModule _Logging = null!;
         private static IndexManager _IndexManager = null!;
         private static Webserver _Server = null!;
+        private static TelemetryHost? _Telemetry = null;
 
         #endregion
 
@@ -81,6 +83,10 @@ namespace HnswIndex.Server
             {
                 await _IndexManager.DisposeAsync().ConfigureAwait(false);
             }
+
+            // Dispose telemetry last so the final flush includes shutdown activity.
+            ServerTelemetry.InventoryProvider = null;
+            _Telemetry?.Dispose();
             _Logging.Info(_Header + "shutdown complete");
 
             return 0;
@@ -188,10 +194,16 @@ namespace HnswIndex.Server
 
                 _Logging.Debug(_Header + "logging initialized");
 
+                // Initialize telemetry before any instrumented work so the startup reload job is captured.
+                // Best-effort: a failure here logs a warning and the server runs without exported telemetry.
+                ServerTelemetry.SetConfiguration(_Settings);
+                _Telemetry = TelemetryHost.Start(_Settings.Telemetry, _Logging);
+
                 // Initialize index manager
                 _IndexManager = new IndexManager(_Settings.Storage, _Logging);
-                await _IndexManager.ReloadSqlitePersistedIndexesAsync().ConfigureAwait(false);
-                await _IndexManager.ReloadPostgresqlIndexesAsync().ConfigureAwait(false);
+                IndexManager indexManager = _IndexManager;
+                ServerTelemetry.InventoryProvider = () => indexManager.GetInventory();
+                await _IndexManager.ReloadPersistedIndexesAsync().ConfigureAwait(false);
 
                 // Initialize REST handler
                 RestServiceHandler.Initialize(_IndexManager, _Settings, _Logging);
@@ -213,6 +225,15 @@ namespace HnswIndex.Server
                 WebserverSettings settings = new WebserverSettings(_Settings.Server.Hostname, _Settings.Server.Port);
                 settings.Debug.Requests = _Settings.Debug.HttpRequests;
                 settings.Debug.Responses = _Settings.Debug.HttpRequests;
+
+                // Watson's built-in HTTP telemetry (meter and activity source "Watson"). These are Watson's defaults,
+                // set explicitly so the contract is visible. The in-process Watson scrape endpoint stays off: the
+                // Radiant host serves one Prometheus endpoint for every meter in the process.
+                settings.Telemetry.Enable = _Settings.Telemetry.Enable;
+                settings.Telemetry.EnableMetrics = true;
+                settings.Telemetry.EnableTraces = true;
+                settings.Telemetry.PropagateContext = true;
+                settings.Telemetry.Prometheus.Enable = false;
 
                 // Apply CORS settings to Watson's built-in default response headers.
                 // These are emitted on every response (including the pre-flight OPTIONS handler).
@@ -288,15 +309,22 @@ namespace HnswIndex.Server
         {
             ArgumentNullException.ThrowIfNull(ctx);
 
-            if (!_Settings.Server.RequireAuthentication) return;
+            if (!_Settings.Server.RequireAuthentication)
+            {
+                ServerTelemetry.RecordAuth(ServerTelemetryNames.AuthDisabled);
+                return;
+            }
 
             string? apiKey = ctx.Request.RetrieveHeaderValue(_Settings.Server.AdminApiKeyHeader);
             if (!string.IsNullOrEmpty(apiKey)
                 && string.Equals(apiKey, _Settings.Server.AdminApiKey, StringComparison.Ordinal))
             {
                 // Authenticated admin request.
+                ServerTelemetry.RecordAuth(ServerTelemetryNames.AuthSuccess);
                 return;
             }
+
+            ServerTelemetry.RecordAuth(string.IsNullOrEmpty(apiKey) ? ServerTelemetryNames.AuthMissingKey : ServerTelemetryNames.AuthInvalidKey);
 
             _Logging?.Warn(_Header
                 + $"unauthorized access attempt from {ctx.Request.Source.IpAddress}:{ctx.Request.Source.Port}");

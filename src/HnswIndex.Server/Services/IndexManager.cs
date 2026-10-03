@@ -11,6 +11,7 @@ namespace HnswIndex.Server.Services
     using HnswIndex.PostgresqlStorage;
     using HnswIndex.SqliteStorage;
     using HnswIndex.Server.Classes;
+    using HnswIndex.Server.Telemetry;
     using Npgsql;
     using SyslogLogging;
 
@@ -89,6 +90,23 @@ namespace HnswIndex.Server.Services
         /// <exception cref="InvalidOperationException">Thrown when index with same name already exists.</exception>
         public async Task<IndexResponse> CreateIndexAsync(CreateIndexRequest request, CancellationToken cancellationToken = default)
         {
+            using (ServerOperationScope scope = ServerOperationScope.Start(ServerTelemetryNames.OperationIndexCreate, request?.Name))
+            {
+                try
+                {
+                    scope.StorageType = string.IsNullOrWhiteSpace(request?.StorageType) ? _StorageSettings.DefaultStorageType : request.StorageType;
+                    return await CreateIndexCoreAsync(request!, scope, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception e)
+                {
+                    scope.Fail(e);
+                    throw;
+                }
+            }
+        }
+
+        private async Task<IndexResponse> CreateIndexCoreAsync(CreateIndexRequest request, ServerOperationScope scope, CancellationToken cancellationToken)
+        {
             ArgumentNullException.ThrowIfNull(request);
             if (string.IsNullOrEmpty(request.Name)) throw new ArgumentException("Index name cannot be null or empty.", nameof(request));
             if (request.Dimension < 1) throw new ArgumentException("Dimension must be greater than zero.", nameof(request));
@@ -113,8 +131,10 @@ namespace HnswIndex.Server.Services
                 CreatedUtc = DateTime.UtcNow
             };
 
-            HnswIndex index = await CreateHnswIndexAsync(metadata, cancellationToken).ConfigureAwait(false);
+            scope.BeginStage(ServerTelemetryNames.StageStorageOpen);
+            HnswIndex index = await CreateHnswIndexAsync(metadata, cancellationToken, scope).ConfigureAwait(false);
             metadata.Index = index;
+            scope.EndStage(null);
 
             _Indexes.TryAdd(request.Name, metadata);
             _Logging?.Info(_Header + $"created index '{request.Name}' with {request.Dimension}D vectors using {metadata.StorageType} storage");
@@ -142,12 +162,30 @@ namespace HnswIndex.Server.Services
         /// <exception cref="ArgumentNullException">Thrown when indexName is null.</exception>
         public IndexResponse? GetIndex(string indexName)
         {
+            using (ServerOperationScope scope = ServerOperationScope.Start(ServerTelemetryNames.OperationIndexGet, indexName))
+            {
+                try
+                {
+                    return GetIndexCore(indexName, scope);
+                }
+                catch (Exception e)
+                {
+                    scope.Fail(e);
+                    throw;
+                }
+            }
+        }
+
+        private IndexResponse? GetIndexCore(string indexName, ServerOperationScope scope)
+        {
             ArgumentNullException.ThrowIfNull(indexName);
 
             if (!_Indexes.TryGetValue(indexName, out IndexMetadata? metadata))
             {
                 return null;
             }
+
+            scope.StorageType = metadata.StorageType;
 
             return new IndexResponse
             {
@@ -171,6 +209,24 @@ namespace HnswIndex.Server.Services
         /// <returns>Paginated enumeration result.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="query"/> is null.</exception>
         public EnumerationResult<IndexResponse> EnumerateIndexes(EnumerationQuery query)
+        {
+            using (ServerOperationScope scope = ServerOperationScope.Start(ServerTelemetryNames.OperationIndexList))
+            {
+                try
+                {
+                    EnumerationResult<IndexResponse> result = EnumerateIndexesCore(query);
+                    scope.SetTag(ServerTelemetryNames.AttributeResultCount, result.Objects?.Count ?? 0);
+                    return result;
+                }
+                catch (Exception e)
+                {
+                    scope.Fail(e);
+                    throw;
+                }
+            }
+        }
+
+        private EnumerationResult<IndexResponse> EnumerateIndexesCore(EnumerationQuery query)
         {
             ArgumentNullException.ThrowIfNull(query);
 
@@ -232,6 +288,22 @@ namespace HnswIndex.Server.Services
         /// <exception cref="ArgumentNullException">Thrown when indexName is null.</exception>
         public async Task<bool> DeleteIndexAsync(string indexName)
         {
+            using (ServerOperationScope scope = ServerOperationScope.Start(ServerTelemetryNames.OperationIndexDelete, indexName))
+            {
+                try
+                {
+                    return await DeleteIndexCoreAsync(indexName, scope).ConfigureAwait(false);
+                }
+                catch (Exception e)
+                {
+                    scope.Fail(e);
+                    throw;
+                }
+            }
+        }
+
+        private async Task<bool> DeleteIndexCoreAsync(string indexName, ServerOperationScope scope)
+        {
             ArgumentNullException.ThrowIfNull(indexName);
 
             if (!_Indexes.TryRemove(indexName, out IndexMetadata? metadata))
@@ -240,20 +312,14 @@ namespace HnswIndex.Server.Services
                 return false;
             }
 
+            scope.StorageType = metadata.StorageType;
+            scope.BeginStage(ServerTelemetryNames.StageDispose);
             await metadata.DisposeAsync().ConfigureAwait(false);
+            scope.EndStage(null);
             _Logging?.Info(_Header + $"deleted index '{indexName}'");
             return true;
         }
 
-        /// <summary>
-        /// Add a vector to an index.
-        /// </summary>
-        /// <param name="indexName">Index name.</param>
-        /// <param name="request">Add vector request.</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
-        /// <returns>True if successful.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when parameters are null.</exception>
-        /// <exception cref="InvalidOperationException">Thrown when index not found or dimension mismatch.</exception>
         /// <summary>
         /// Retrieve a single vector (including its values) from an index.
         /// Returns null when the vector is absent.
@@ -267,6 +333,23 @@ namespace HnswIndex.Server.Services
             Guid vectorGuid,
             CancellationToken cancellationToken = default)
         {
+            using (ServerOperationScope scope = ServerOperationScope.Start(ServerTelemetryNames.OperationVectorGet, indexName))
+            {
+                try
+                {
+                    scope.SetTag(ServerTelemetryNames.AttributeVectorId, vectorGuid.ToString());
+                    return await GetVectorCoreAsync(indexName, vectorGuid, scope, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception e)
+                {
+                    scope.Fail(e);
+                    throw;
+                }
+            }
+        }
+
+        private async Task<VectorEntryResponse?> GetVectorCoreAsync(string indexName, Guid vectorGuid, ServerOperationScope scope, CancellationToken cancellationToken)
+        {
             ArgumentNullException.ThrowIfNull(indexName);
 
             if (!_Indexes.TryGetValue(indexName, out IndexMetadata? metadata) || metadata == null)
@@ -274,23 +357,60 @@ namespace HnswIndex.Server.Services
                 throw new InvalidOperationException($"Index '{indexName}' not found.");
             }
 
+            scope.StorageType = metadata.StorageType;
+
             IStorageProvider? provider = GetProvider(metadata);
             if (provider == null)
             {
                 throw new InvalidOperationException($"Index '{indexName}' has no accessible storage provider.");
             }
 
+            scope.BeginStage(ServerTelemetryNames.StageNodeFetch);
             TryGetNodeResult r = await provider.TryGetNodeAsync(vectorGuid, cancellationToken).ConfigureAwait(false);
+            scope.EndStage(null);
             if (!r.Success || r.Node == null) return null;
 
             return NodeToEntry(r.Node, includeVector: true);
         }
 
+        /// <summary>
+        /// Enumerate the vectors of an index with prefix and label/tag filtering and pagination.
+        /// </summary>
+        /// <param name="indexName">Index name.</param>
+        /// <param name="query">Enumeration parameters.</param>
+        /// <param name="includeVectors">Whether to include vector values.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <returns>Paginated enumeration result.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when parameters are null.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when the index is not found.</exception>
         public async Task<EnumerationResult<VectorEntryResponse>> EnumerateVectorsAsync(
             string indexName,
             EnumerationQuery query,
             bool includeVectors,
             CancellationToken cancellationToken = default)
+        {
+            using (ServerOperationScope scope = ServerOperationScope.Start(ServerTelemetryNames.OperationVectorList, indexName))
+            {
+                try
+                {
+                    EnumerationResult<VectorEntryResponse> result = await EnumerateVectorsCoreAsync(indexName, query, includeVectors, scope, cancellationToken).ConfigureAwait(false);
+                    scope.SetTag(ServerTelemetryNames.AttributeResultCount, result.Objects?.Count ?? 0);
+                    return result;
+                }
+                catch (Exception e)
+                {
+                    scope.Fail(e);
+                    throw;
+                }
+            }
+        }
+
+        private async Task<EnumerationResult<VectorEntryResponse>> EnumerateVectorsCoreAsync(
+            string indexName,
+            EnumerationQuery query,
+            bool includeVectors,
+            ServerOperationScope scope,
+            CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(indexName);
             ArgumentNullException.ThrowIfNull(query);
@@ -300,12 +420,15 @@ namespace HnswIndex.Server.Services
                 throw new InvalidOperationException($"Index '{indexName}' not found.");
             }
 
+            scope.StorageType = metadata.StorageType;
+
             IStorageProvider? provider = GetProvider(metadata);
             if (provider == null)
             {
                 throw new InvalidOperationException($"Index '{indexName}' has no accessible storage provider.");
             }
 
+            scope.BeginStage(ServerTelemetryNames.StageEnumerateIds);
             IEnumerable<Guid> allIds = await provider.GetAllNodeIdsAsync(cancellationToken).ConfigureAwait(false);
             List<Guid> sorted = allIds.ToList();
             sorted.Sort();
@@ -326,6 +449,7 @@ namespace HnswIndex.Server.Services
 
             if (hasMetadataFilter && filtered.Count > 0)
             {
+                scope.BeginStage(ServerTelemetryNames.StageFilter);
                 prefetchedNodes = await provider.GetNodesAsync(filtered, cancellationToken).ConfigureAwait(false);
                 List<Guid> postMetadata = new List<Guid>(filtered.Count);
                 foreach (Guid id in filtered)
@@ -351,6 +475,7 @@ namespace HnswIndex.Server.Services
             // Always fetch nodes so metadata (Name/Labels/Tags) is populated.
             // Vector bodies are included only when the caller requests them.
             // Reuse the prefetched node map when available to avoid a second round-trip.
+            scope.BeginStage(ServerTelemetryNames.StageMetadataFetch);
             Dictionary<Guid, IHnswNode> nodes;
             if (prefetchedNodes != null)
             {
@@ -374,6 +499,7 @@ namespace HnswIndex.Server.Services
                 }
             }
 
+            scope.EndStage(null);
             long remaining = Math.Max(0, (long)filtered.Count - skip - take);
             return new EnumerationResult<VectorEntryResponse>
             {
@@ -390,7 +516,33 @@ namespace HnswIndex.Server.Services
             };
         }
 
+        /// <summary>
+        /// Add a vector to an index.
+        /// </summary>
+        /// <param name="indexName">Index name.</param>
+        /// <param name="request">Add vector request.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <returns>True if successful.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when parameters are null.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when index not found or dimension mismatch.</exception>
         public async Task<bool> AddVectorAsync(string indexName, AddVectorRequest request, CancellationToken cancellationToken = default)
+        {
+            using (ServerOperationScope scope = ServerOperationScope.Start(ServerTelemetryNames.OperationVectorAdd, indexName))
+            {
+                try
+                {
+                    if (request != null) scope.SetTag(ServerTelemetryNames.AttributeVectorId, request.GUID.ToString());
+                    return await AddVectorCoreAsync(indexName, request!, scope, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception e)
+                {
+                    scope.Fail(e);
+                    throw;
+                }
+            }
+        }
+
+        private async Task<bool> AddVectorCoreAsync(string indexName, AddVectorRequest request, ServerOperationScope scope, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(indexName);
             ArgumentNullException.ThrowIfNull(request);
@@ -402,6 +554,8 @@ namespace HnswIndex.Server.Services
                 throw new InvalidOperationException($"Index '{indexName}' not found.");
             }
 
+            scope.StorageType = metadata.StorageType;
+
             if (request.Vector.Count != metadata.Dimension)
             {
                 throw new InvalidOperationException($"Vector dimension {request.Vector.Count} does not match index dimension {metadata.Dimension}.");
@@ -409,18 +563,22 @@ namespace HnswIndex.Server.Services
 
             System.Guid vectorGuid = request.GUID;
 
+            scope.BeginStage(ServerTelemetryNames.StageInsert);
             await metadata.Index.AddAsync(vectorGuid, request.Vector, cancellationToken).ConfigureAwait(false);
             metadata.VectorCount++;
+            scope.EndStage(null);
 
             // Set optional metadata on the node post-creation.
             if (request.Name != null || request.Labels != null || request.Tags != null)
             {
+                scope.BeginStage(ServerTelemetryNames.StageMetadataWrite);
                 IStorageProvider? provider = GetProvider(metadata);
                 if (provider != null)
                 {
                     IHnswNode node = await provider.GetNodeAsync(vectorGuid, cancellationToken).ConfigureAwait(false);
                     await node.SetMetadataAsync(request.Name, request.Labels, request.Tags, cancellationToken).ConfigureAwait(false);
                 }
+                scope.EndStage(null);
             }
 
             return true;
@@ -437,6 +595,23 @@ namespace HnswIndex.Server.Services
         /// <exception cref="InvalidOperationException">Thrown when index not found or dimension mismatch.</exception>
         public async Task<bool> AddVectorsAsync(string indexName, AddVectorsRequest request, CancellationToken cancellationToken = default)
         {
+            using (ServerOperationScope scope = ServerOperationScope.Start(ServerTelemetryNames.OperationVectorAddBatch, indexName))
+            {
+                try
+                {
+                    scope.SetTag(ServerTelemetryNames.AttributeBatchSize, request?.Vectors?.Count ?? 0);
+                    return await AddVectorsCoreAsync(indexName, request!, scope, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception e)
+                {
+                    scope.Fail(e);
+                    throw;
+                }
+            }
+        }
+
+        private async Task<bool> AddVectorsCoreAsync(string indexName, AddVectorsRequest request, ServerOperationScope scope, CancellationToken cancellationToken)
+        {
             ArgumentNullException.ThrowIfNull(indexName);
             ArgumentNullException.ThrowIfNull(request);
 
@@ -446,6 +621,8 @@ namespace HnswIndex.Server.Services
             {
                 throw new InvalidOperationException($"Index '{indexName}' not found.");
             }
+
+            scope.StorageType = metadata.StorageType;
 
             Dictionary<System.Guid, List<float>> vectors = new Dictionary<System.Guid, List<float>>();
 
@@ -460,10 +637,12 @@ namespace HnswIndex.Server.Services
                 vectors.Add(vectorGuid, vectorRequest.Vector);
             }
 
+            scope.BeginStage(ServerTelemetryNames.StageInsert);
             await metadata.Index.AddNodesAsync(vectors, cancellationToken).ConfigureAwait(false);
             metadata.VectorCount += vectors.Count;
 
             // Set metadata on each vector that has any non-null fields.
+            scope.BeginStage(ServerTelemetryNames.StageMetadataWrite);
             IStorageProvider? batchProvider = GetProvider(metadata);
             if (batchProvider != null)
             {
@@ -477,6 +656,7 @@ namespace HnswIndex.Server.Services
                 }
             }
 
+            scope.EndStage(null);
             return true;
         }
 
@@ -491,6 +671,23 @@ namespace HnswIndex.Server.Services
         /// <exception cref="InvalidOperationException">Thrown when index not found.</exception>
         public async Task<bool> RemoveVectorAsync(string indexName, Guid vectorGuid, CancellationToken cancellationToken = default)
         {
+            using (ServerOperationScope scope = ServerOperationScope.Start(ServerTelemetryNames.OperationVectorRemove, indexName))
+            {
+                try
+                {
+                    scope.SetTag(ServerTelemetryNames.AttributeVectorId, vectorGuid.ToString());
+                    return await RemoveVectorCoreAsync(indexName, vectorGuid, scope, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception e)
+                {
+                    scope.Fail(e);
+                    throw;
+                }
+            }
+        }
+
+        private async Task<bool> RemoveVectorCoreAsync(string indexName, Guid vectorGuid, ServerOperationScope scope, CancellationToken cancellationToken)
+        {
             ArgumentNullException.ThrowIfNull(indexName);
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -501,8 +698,11 @@ namespace HnswIndex.Server.Services
                 throw new InvalidOperationException($"Index '{indexName}' not found.");
             }
 
+            scope.StorageType = metadata.StorageType;
+            scope.BeginStage(ServerTelemetryNames.StageRemove);
             await metadata.Index.RemoveAsync(vectorGuid, cancellationToken).ConfigureAwait(false);
             metadata.VectorCount = Math.Max(0, metadata.VectorCount - 1);
+            scope.EndStage(null);
 
             return true;
         }
@@ -518,6 +718,26 @@ namespace HnswIndex.Server.Services
         /// <exception cref="InvalidOperationException">Thrown when index not found or dimension mismatch.</exception>
         public async Task<SearchResponse> SearchAsync(string indexName, SearchRequest request, CancellationToken cancellationToken = default)
         {
+            using (ServerOperationScope scope = ServerOperationScope.Start(ServerTelemetryNames.OperationSearch, indexName))
+            {
+                try
+                {
+                    SearchResponse response = await SearchCoreAsync(indexName, request, scope, cancellationToken).ConfigureAwait(false);
+                    scope.SetTag(ServerTelemetryNames.AttributeResultCount, response.Results.Count);
+                    scope.SetTag(ServerTelemetryNames.AttributeFilteredCount, response.FilteredCount);
+                    ServerTelemetry.RecordSearch(response.Results.Count, response.FilteredCount);
+                    return response;
+                }
+                catch (Exception e)
+                {
+                    scope.Fail(e);
+                    throw;
+                }
+            }
+        }
+
+        private async Task<SearchResponse> SearchCoreAsync(string indexName, SearchRequest request, ServerOperationScope scope, CancellationToken cancellationToken)
+        {
             ArgumentNullException.ThrowIfNull(indexName);
             ArgumentNullException.ThrowIfNull(request);
 
@@ -528,23 +748,28 @@ namespace HnswIndex.Server.Services
                 throw new InvalidOperationException($"Index '{indexName}' not found.");
             }
 
+            scope.StorageType = metadata.StorageType;
+
             if (request.Vector.Count != metadata.Dimension)
             {
                 throw new InvalidOperationException($"Query vector dimension {request.Vector.Count} does not match index dimension {metadata.Dimension}.");
             }
 
             Stopwatch stopwatch = Stopwatch.StartNew();
+            scope.BeginStage(ServerTelemetryNames.StageTopK);
             IEnumerable<VectorResult> results = await metadata.Index.GetTopKAsync(request.Vector, request.K, request.Ef, cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
 
             List<VectorSearchResult> searchResults = new List<VectorSearchResult>();
             // Batch-fetch nodes to populate metadata alongside the vector results.
+            scope.BeginStage(ServerTelemetryNames.StageMetadataFetch);
             IStorageProvider? searchProvider = GetProvider(metadata);
             List<Guid> resultIds = results.Select(r => r.GUID).ToList();
             Dictionary<Guid, IHnswNode> nodeMap = (searchProvider != null && resultIds.Count > 0)
                 ? await searchProvider.GetNodesAsync(resultIds, cancellationToken).ConfigureAwait(false)
                 : new Dictionary<Guid, IHnswNode>();
 
+            scope.BeginStage(ServerTelemetryNames.StageFilter);
             bool hasFilter = (request.Labels != null && request.Labels.Count > 0)
                              || (request.Tags != null && request.Tags.Count > 0);
             int filteredOut = 0;
@@ -575,12 +800,77 @@ namespace HnswIndex.Server.Services
                 searchResults.Add(sr);
             }
 
+            scope.EndStage(null);
             return new SearchResponse
             {
                 Results = searchResults,
                 SearchTimeMs = Math.Round(stopwatch.Elapsed.TotalMilliseconds, 2),
                 FilteredCount = filteredOut
             };
+        }
+
+        /// <summary>
+        /// Run the startup index-reload job: reload persisted SQLite index files, then PostgreSQL indexes.
+        /// Emits a root span named job:index_reload with a child span per stage, a job counter and duration by
+        /// outcome, per-stage durations and counters, per-index results, and the last-success timestamp gauge.
+        /// Individual index failures are logged and counted but do not fail the job.
+        /// </summary>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <returns>Task.</returns>
+        public async Task ReloadPersistedIndexesAsync(CancellationToken cancellationToken = default)
+        {
+            long startTimestamp = HnswTelemetry.GetTimestamp();
+            Activity? job = null;
+            try
+            {
+                job = ServerTelemetry.ActivitySource.StartActivity(ServerTelemetryNames.ReloadJobSpanName, ActivityKind.Internal);
+            }
+            catch (Exception)
+            {
+                job = null;
+            }
+
+            Exception? failure = null;
+            try
+            {
+                await ReloadSqlitePersistedIndexesAsync(cancellationToken).ConfigureAwait(false);
+                await ReloadPostgresqlIndexesAsync(cancellationToken).ConfigureAwait(false);
+                job?.SetTag(ServerTelemetryNames.AttributeResultCount, _Indexes.Count);
+            }
+            catch (Exception e)
+            {
+                failure = e;
+                throw;
+            }
+            finally
+            {
+                ServerTelemetry.RecordReloadJob(HnswTelemetry.GetElapsedSeconds(startTimestamp), failure);
+                HnswTelemetry.CompleteActivity(job, failure);
+            }
+        }
+
+        /// <summary>
+        /// Snapshot index and vector totals per storage type, for the inventory gauges.
+        /// Thread safe; reads a point-in-time view of the loaded indexes.
+        /// </summary>
+        /// <returns>One entry per storage type in use. Never null.</returns>
+        public List<StorageInventory> GetInventory()
+        {
+            Dictionary<string, StorageInventory> byType = new Dictionary<string, StorageInventory>(StringComparer.Ordinal);
+            foreach (IndexMetadata metadata in _Indexes.Values)
+            {
+                string type = ServerTelemetry.NormalizeStorageType(metadata.StorageType);
+                if (!byType.TryGetValue(type, out StorageInventory? inventory))
+                {
+                    inventory = new StorageInventory { StorageType = type };
+                    byType[type] = inventory;
+                }
+
+                inventory.IndexCount++;
+                inventory.VectorCount += Math.Max(0, metadata.VectorCount);
+            }
+
+            return byType.Values.ToList();
         }
 
         /// <summary>
@@ -610,7 +900,7 @@ namespace HnswIndex.Server.Services
 
         #region Private-Methods
 
-        private async Task<HnswIndex> CreateHnswIndexAsync(IndexMetadata metadata, CancellationToken cancellationToken = default)
+        private async Task<HnswIndex> CreateHnswIndexAsync(IndexMetadata metadata, CancellationToken cancellationToken = default, ServerOperationScope? scope = null)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -634,6 +924,7 @@ namespace HnswIndex.Server.Services
                 // Persist server-level metadata into the index's SQLite file so the index
                 // self-describes across restarts. The library uses hnsw_metadata as a
                 // key/value table; the server writes its own namespaced keys alongside.
+                scope?.BeginStage(ServerTelemetryNames.StageMetadataPersist);
                 await WriteServerMetadataAsync(provider.Connection, metadata, cancellationToken).ConfigureAwait(false);
             }
             else if (string.Equals(metadata.StorageType, "PostgreSQL", StringComparison.OrdinalIgnoreCase)
@@ -766,19 +1057,23 @@ namespace HnswIndex.Server.Services
                 return;
             }
 
+            long startTimestamp = HnswTelemetry.GetTimestamp();
+            Activity? stage = StartReloadStage(ServerTelemetryNames.StageReloadPostgresql);
+            Exception? failure = null;
+            int loaded = 0;
             try
             {
                 List<PostgresqlIndexMetadata> persisted = await PostgresqlStorageProvider.ListIndexesAsync(
                     GetPostgresqlDataSource(),
                     cancellationToken).ConfigureAwait(false);
 
-                int loaded = 0;
                 foreach (PostgresqlIndexMetadata pg in persisted)
                 {
                     if (_Indexes.ContainsKey(pg.Name)) continue;
                     if (pg.Dimension < 1)
                     {
                         _Logging?.Warn(_Header + $"skipping PostgreSQL index '{pg.Name}': invalid persisted dimension");
+                        ServerTelemetry.RecordReloadIndex(ServerTelemetryNames.StoragePostgresql, ServerTelemetryNames.ReloadSkipped);
                         continue;
                     }
 
@@ -815,6 +1110,7 @@ namespace HnswIndex.Server.Services
 
                     _Indexes.TryAdd(im.Name, im);
                     loaded++;
+                    ServerTelemetry.RecordReloadIndex(ServerTelemetryNames.StoragePostgresql, ServerTelemetryNames.ReloadLoaded);
                     _Logging?.Info(_Header + $"reloaded PostgreSQL index '{im.Name}' ({im.Dimension}-d, {im.VectorCount} vectors)");
                 }
 
@@ -822,12 +1118,55 @@ namespace HnswIndex.Server.Services
             }
             catch (Exception ex)
             {
+                failure = ex;
+                ServerTelemetry.RecordReloadIndex(ServerTelemetryNames.StoragePostgresql, ServerTelemetryNames.ReloadFailed);
                 _Logging?.Warn(_Header + $"failed to reload PostgreSQL indexes: {ex.Message}");
+            }
+            finally
+            {
+                stage?.SetTag(ServerTelemetryNames.AttributeLoadedCount, loaded);
+                ServerTelemetry.RecordReloadStage(ServerTelemetryNames.StageReloadPostgresql, HnswTelemetry.GetElapsedSeconds(startTimestamp), failure);
+                HnswTelemetry.CompleteActivity(stage, failure);
             }
         }
 
+        /// <summary>
+        /// Reloads persisted SQLite index files from the configured SQLite directory.
+        /// </summary>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <returns>Task.</returns>
         public async Task ReloadSqlitePersistedIndexesAsync(CancellationToken cancellationToken = default)
         {
+            long startTimestamp = HnswTelemetry.GetTimestamp();
+            Activity? stage = StartReloadStage(ServerTelemetryNames.StageReloadSqlite);
+            Exception? failure = null;
+            int loaded = 0;
+            try
+            {
+                loaded = await ReloadSqlitePersistedIndexesCoreAsync(cancellationToken).ConfigureAwait(false);
+                if (loaded < 0)
+                {
+                    // Directory enumeration failed: startup continues (as before), but the stage is reported failed.
+                    failure = new IOException($"Cannot enumerate SQLite directory '{_SqliteDirectory}'.");
+                    loaded = 0;
+                }
+            }
+            catch (Exception e)
+            {
+                failure = e;
+                throw;
+            }
+            finally
+            {
+                stage?.SetTag(ServerTelemetryNames.AttributeLoadedCount, loaded);
+                ServerTelemetry.RecordReloadStage(ServerTelemetryNames.StageReloadSqlite, HnswTelemetry.GetElapsedSeconds(startTimestamp), failure);
+                HnswTelemetry.CompleteActivity(stage, failure);
+            }
+        }
+
+        private async Task<int> ReloadSqlitePersistedIndexesCoreAsync(CancellationToken cancellationToken)
+        {
+            // Returns the number of indexes loaded, or -1 when the directory cannot be enumerated.
             cancellationToken.ThrowIfCancellationRequested();
 
             string[] dbFiles;
@@ -838,7 +1177,7 @@ namespace HnswIndex.Server.Services
             catch (Exception ex)
             {
                 _Logging?.Warn(_Header + $"cannot enumerate SQLite directory: {ex.Message}");
-                return;
+                return -1;
             }
 
             int loaded = 0;
@@ -861,8 +1200,9 @@ namespace HnswIndex.Server.Services
                     if (meta == null)
                     {
                         // No server-written metadata (e.g., a db created before this fix). Skip
-                        // rather than guess — the index can be rebuilt explicitly by the user.
+                        // rather than guess; the index can be rebuilt explicitly by the user.
                         _Logging?.Warn(_Header + $"skipping '{name}': no server metadata in {Path.GetFileName(dbPath)}");
+                        ServerTelemetry.RecordReloadIndex(ServerTelemetryNames.StorageSqlite, ServerTelemetryNames.ReloadSkipped);
                         await provider.DisposeAsync().ConfigureAwait(false);
                         continue;
                     }
@@ -883,6 +1223,7 @@ namespace HnswIndex.Server.Services
                     if (im.Dimension < 1)
                     {
                         _Logging?.Warn(_Header + $"skipping '{name}': invalid persisted dimension");
+                        ServerTelemetry.RecordReloadIndex(ServerTelemetryNames.StorageSqlite, ServerTelemetryNames.ReloadSkipped);
                         await provider.DisposeAsync().ConfigureAwait(false);
                         continue;
                     }
@@ -904,15 +1245,32 @@ namespace HnswIndex.Server.Services
 
                     _Indexes.TryAdd(name, im);
                     loaded++;
+                    ServerTelemetry.RecordReloadIndex(ServerTelemetryNames.StorageSqlite, ServerTelemetryNames.ReloadLoaded);
                     _Logging?.Info(_Header + $"reloaded index '{name}' ({im.Dimension}-d, {im.VectorCount} vectors)");
                 }
                 catch (Exception ex)
                 {
+                    ServerTelemetry.RecordReloadIndex(ServerTelemetryNames.StorageSqlite, ServerTelemetryNames.ReloadFailed);
                     _Logging?.Warn(_Header + $"failed to reload index from {Path.GetFileName(dbPath)}: {ex.Message}");
                 }
             }
 
             if (loaded > 0) _Logging?.Info(_Header + $"reloaded {loaded} persisted index(es) from disk");
+            return loaded;
+        }
+
+        private static Activity? StartReloadStage(string stage)
+        {
+            try
+            {
+                Activity? activity = ServerTelemetry.ActivitySource.StartActivity("stage:" + stage, ActivityKind.Internal);
+                activity?.SetTag(ServerTelemetryNames.LabelStage, stage);
+                return activity;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         private static IStorageProvider? GetProvider(IndexMetadata metadata)

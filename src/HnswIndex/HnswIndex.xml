@@ -69,6 +69,13 @@
             <exception cref="T:System.ArgumentNullException">Thrown when a or b is null.</exception>
             <exception cref="T:System.ArgumentException">Thrown when vectors have different dimensions.</exception>
         </member>
+        <member name="T:Hnsw.HnswOperationScope">
+            <summary>
+            Tracks one index operation for telemetry: a root span named "hnsw.{operation}", a child span per stage
+            named "stage:{stage}", the operation duration and outcome, and per-stage durations.
+            Instrumentation is best-effort and never throws. Not thread safe: one scope belongs to one operation.
+            </summary>
+        </member>
         <member name="T:Hnsw.HnswParameters">
             <summary>
             Parameters for HNSW index configuration.
@@ -140,6 +147,460 @@
         <member name="M:Hnsw.HnswParameters.Validate">
             <summary>
             Validates that all parameters are consistent with each other.
+            </summary>
+        </member>
+        <member name="T:Hnsw.HnswTelemetry">
+            <summary>
+            Metrics and tracing for the HnswLite libraries, emitted through the .NET base class library
+            (<see cref="T:System.Diagnostics.Metrics.Meter"/> and <see cref="T:System.Diagnostics.ActivitySource"/>).
+            No exporter or SDK is referenced: nothing is collected until a host subscribes to
+            <see cref="F:Hnsw.HnswTelemetryNames.MeterName"/> and <see cref="F:Hnsw.HnswTelemetryNames.ActivitySourceName"/>,
+            and emission with no listener is effectively free.
+            Instrumentation is best-effort: every public method here swallows its own failures and never throws.
+            Thread safety: all members are thread safe.
+            </summary>
+        </member>
+        <member name="P:Hnsw.HnswTelemetry.Meter">
+            <summary>
+            The library meter, named <see cref="F:Hnsw.HnswTelemetryNames.MeterName"/>. Never null.
+            </summary>
+        </member>
+        <member name="P:Hnsw.HnswTelemetry.ActivitySource">
+            <summary>
+            The library activity source, named <see cref="F:Hnsw.HnswTelemetryNames.ActivitySourceName"/>. Never null.
+            </summary>
+        </member>
+        <member name="P:Hnsw.HnswTelemetry.Version">
+            <summary>
+            The library version stamped on the meter and activity source. Never null.
+            </summary>
+        </member>
+        <member name="P:Hnsw.HnswTelemetry.DurationBuckets">
+            <summary>
+            Recommended histogram bucket boundaries, in seconds, for the duration histograms.
+            Hosts that cannot honor instrument advice (for example on .NET 8) should apply these through a view.
+            Returns a defensive copy.
+            </summary>
+        </member>
+        <member name="P:Hnsw.HnswTelemetry.CountBuckets">
+            <summary>
+            Recommended histogram bucket boundaries for the count histograms (search results and nodes evaluated).
+            Returns a defensive copy.
+            </summary>
+        </member>
+        <member name="P:Hnsw.HnswTelemetry.IsStorageObserved">
+            <summary>
+            True when a listener is collecting storage operation metrics. Storage providers may use it to skip
+            timestamp collection when nobody is listening.
+            </summary>
+        </member>
+        <member name="M:Hnsw.HnswTelemetry.GetTimestamp">
+            <summary>
+            Capture a high-resolution timestamp to pass to the Record* methods.
+            </summary>
+            <returns>The current <see cref="T:System.Diagnostics.Stopwatch"/> timestamp.</returns>
+        </member>
+        <member name="M:Hnsw.HnswTelemetry.GetElapsedSeconds(System.Int64)">
+            <summary>
+            Compute the elapsed seconds since a timestamp captured by <see cref="M:Hnsw.HnswTelemetry.GetTimestamp"/>.
+            </summary>
+            <param name="startTimestamp">The start timestamp.</param>
+            <returns>Elapsed seconds; never negative.</returns>
+        </member>
+        <member name="M:Hnsw.HnswTelemetry.ClassifyOutcome(System.Exception)">
+            <summary>
+            Classify an exception into a bounded outcome value.
+            </summary>
+            <param name="exception">The exception, or null for success.</param>
+            <returns><see cref="F:Hnsw.HnswTelemetryNames.OutcomeSuccess"/>, <see cref="F:Hnsw.HnswTelemetryNames.OutcomeCancelled"/>, or <see cref="F:Hnsw.HnswTelemetryNames.OutcomeError"/>.</returns>
+        </member>
+        <member name="M:Hnsw.HnswTelemetry.GetErrorType(System.Exception)">
+            <summary>
+            Return the bounded error.type value for an exception: its full type name.
+            </summary>
+            <param name="exception">The exception. May be null.</param>
+            <returns>The full type name, or null when <paramref name="exception"/> is null.</returns>
+        </member>
+        <member name="M:Hnsw.HnswTelemetry.StartStorageActivity(System.String,System.String)">
+            <summary>
+            Start a client span for a storage provider operation, named "{provider} {operation}".
+            Returns null when no listener is sampling, so callers should use the null-conditional operator.
+            Never throws.
+            </summary>
+            <param name="provider">The provider name (see the Provider* constants in <see cref="T:Hnsw.HnswTelemetryNames"/>).</param>
+            <param name="operation">The operation name, for example AddNodes.</param>
+            <returns>The started activity, or null.</returns>
+        </member>
+        <member name="M:Hnsw.HnswTelemetry.CompleteActivity(System.Diagnostics.Activity,System.Exception)">
+            <summary>
+            Set the final status of an activity, record the exception (if any) as a span event, and stop it.
+            Safe to call with a null activity. Never throws.
+            </summary>
+            <param name="activity">The activity, or null.</param>
+            <param name="exception">The exception that failed the work, or null on success.</param>
+        </member>
+        <member name="M:Hnsw.HnswTelemetry.RecordStorageOperation(System.String,System.String,System.Int64,System.Exception)">
+            <summary>
+            Record the duration and outcome of a storage provider operation. Never throws.
+            </summary>
+            <param name="provider">The provider name (see the Provider* constants in <see cref="T:Hnsw.HnswTelemetryNames"/>).</param>
+            <param name="operation">The operation name. Must come from a bounded, code-defined set (for example a method name).</param>
+            <param name="startTimestamp">The timestamp captured by <see cref="M:Hnsw.HnswTelemetry.GetTimestamp"/> when the operation began.</param>
+            <param name="exception">The exception that failed the operation, or null on success.</param>
+        </member>
+        <member name="M:Hnsw.HnswTelemetry.RecordStorageTransaction(System.String,System.String)">
+            <summary>
+            Record the outcome of a storage transaction. Never throws.
+            </summary>
+            <param name="provider">The provider name.</param>
+            <param name="outcome">The outcome (see the Transaction* constants in <see cref="T:Hnsw.HnswTelemetryNames"/>).</param>
+        </member>
+        <member name="T:Hnsw.HnswTelemetryNames">
+            <summary>
+            Stable telemetry names emitted by the HnswLite libraries: the meter and activity source names, every
+            instrument name, every label (tag) key, and the bounded set of label values.
+            These strings are public contract consumed by collectors and Grafana dashboards. Do not rename them
+            without a major version change.
+            Thread safety: all members are constants and safe to read from any thread.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.MeterName">
+            <summary>
+            Name of the <see cref="T:System.Diagnostics.Metrics.Meter"/> used by the HnswLite libraries.
+            Subscribe to it from a host (for example Radiant's settings.Sources.AddMeter) to collect metrics.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.ActivitySourceName">
+            <summary>
+            Name of the <see cref="T:System.Diagnostics.ActivitySource"/> used by the HnswLite libraries.
+            Subscribe to it from a host (for example Radiant's settings.Sources.AddActivitySource) to collect traces.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.IndexOperationDuration">
+            <summary>
+            Histogram (seconds): end-to-end duration of an index operation.
+            Labels: hnswlite.operation, hnswlite.outcome, error.type (failures only).
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.IndexOperations">
+            <summary>
+            Counter ({operation}): index operations by outcome.
+            Labels: hnswlite.operation, hnswlite.outcome, error.type (failures only).
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.IndexStageDuration">
+            <summary>
+            Histogram (seconds): duration of each stage of an index operation, including the queued stage
+            spent waiting for the index write lock.
+            Labels: hnswlite.operation, hnswlite.stage, hnswlite.outcome.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.IndexVectors">
+            <summary>
+            Counter ({vector}): vectors successfully added, removed, or imported.
+            Labels: hnswlite.operation.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.IndexLockWaiting">
+            <summary>
+            UpDownCounter ({operation}): write operations currently waiting for the index write lock.
+            Labels: hnswlite.operation.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.IndexLockHeld">
+            <summary>
+            UpDownCounter ({operation}): write operations currently holding the index write lock.
+            The lock has a capacity of one per index.
+            Labels: hnswlite.operation.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.SearchResults">
+            <summary>
+            Histogram ({result}): number of results returned by a top-K search.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.SearchNodesEvaluated">
+            <summary>
+            Histogram ({node}): number of graph nodes whose distance to the query was evaluated by a search.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.SearchCacheRequests">
+            <summary>
+            Counter ({request}): node lookups served by the per-operation search cache.
+            Labels: hnswlite.cache.result (hit or miss).
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.StorageOperationDuration">
+            <summary>
+            Histogram (seconds): duration of a storage provider operation.
+            Labels: hnswlite.storage.provider, hnswlite.storage.operation, hnswlite.outcome, error.type (failures only).
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.StorageOperations">
+            <summary>
+            Counter ({operation}): storage provider operations by outcome.
+            Labels: hnswlite.storage.provider, hnswlite.storage.operation, hnswlite.outcome, error.type (failures only).
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.StorageTransactions">
+            <summary>
+            Counter ({transaction}): storage transactions by outcome.
+            Labels: hnswlite.storage.provider, hnswlite.transaction.outcome.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.LabelOperation">
+            <summary>
+            Label key: the index operation (see the Operation* constants).
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.LabelOutcome">
+            <summary>
+            Label key: the operation outcome (see the Outcome* constants).
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.LabelStage">
+            <summary>
+            Label key: the operation stage (see the Stage* constants).
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.LabelErrorType">
+            <summary>
+            Label key: the OpenTelemetry error type, the full type name of the exception that failed the operation.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.LabelCacheResult">
+            <summary>
+            Label key: search cache lookup result (hit or miss).
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.LabelStorageProvider">
+            <summary>
+            Label key: the storage provider (see the Provider* constants).
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.LabelStorageOperation">
+            <summary>
+            Label key: the storage operation, a provider method name such as GetNodes or AddNodes.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.LabelTransactionOutcome">
+            <summary>
+            Label key: the storage transaction outcome (see the Transaction* constants).
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.AttributeVectorDimension">
+            <summary>
+            Span attribute: index vector dimension.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.AttributeBatchSize">
+            <summary>
+            Span attribute: number of vectors in a batch operation.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.AttributeSearchK">
+            <summary>
+            Span attribute: requested number of neighbors (K) for a search.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.AttributeSearchEf">
+            <summary>
+            Span attribute: effective ef (dynamic candidate list size) for a search.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.AttributeSearchResults">
+            <summary>
+            Span attribute: number of results returned by a search.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.AttributeSearchNodesEvaluated">
+            <summary>
+            Span attribute: number of nodes evaluated by a search.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.AttributeDistanceFunction">
+            <summary>
+            Span attribute: distance function name.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.AttributeNodeLayer">
+            <summary>
+            Span attribute: layer assigned to a newly inserted node.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.AttributeDbSystemName">
+            <summary>
+            Span attribute: OpenTelemetry database system name.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.AttributeDbOperationName">
+            <summary>
+            Span attribute: OpenTelemetry database operation name.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.OperationAdd">
+            <summary>
+            Operation: add a single vector.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.OperationAddBatch">
+            <summary>
+            Operation: add a batch of vectors.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.OperationRemove">
+            <summary>
+            Operation: remove a single vector.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.OperationRemoveBatch">
+            <summary>
+            Operation: remove a batch of vectors.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.OperationSearch">
+            <summary>
+            Operation: top-K nearest neighbor search.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.OperationExport">
+            <summary>
+            Operation: export index state.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.OperationImport">
+            <summary>
+            Operation: import index state.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.StageQueued">
+            <summary>
+            Stage: waiting for the index write lock (a concurrency slot).
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.StageTransactionBegin">
+            <summary>
+            Stage: opening a storage transaction.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.StageStorageWrite">
+            <summary>
+            Stage: writing node rows and layer assignments to storage.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.StageGraphInsert">
+            <summary>
+            Stage: linking new nodes into the graph (greedy descent, candidate search, neighbor selection, pruning).
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.StageGraphUnlink">
+            <summary>
+            Stage: unlinking removed nodes from their neighbors and deleting them from storage.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.StageEntryPointUpdate">
+            <summary>
+            Stage: re-electing the graph entry point after a removal.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.StageGraphRepair">
+            <summary>
+            Stage: repairing neighbor connectivity after a batch removal.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.StageClear">
+            <summary>
+            Stage: clearing existing index contents before an import.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.StageStorageRead">
+            <summary>
+            Stage: reading nodes from storage (export).
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.StageFlush">
+            <summary>
+            Stage: flushing buffered storage writes.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.StageCommit">
+            <summary>
+            Stage: committing the storage transaction.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.StageRollback">
+            <summary>
+            Stage: rolling back the storage transaction after a failure.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.StageEntryPoint">
+            <summary>
+            Stage: loading the entry point and pre-fetching its neighbors (search).
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.StageGreedyDescent">
+            <summary>
+            Stage: greedy descent through the upper layers (search).
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.StageLayerZeroSearch">
+            <summary>
+            Stage: ef-bounded best-first search on layer 0 (search).
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.StageResultBuild">
+            <summary>
+            Stage: materializing result vectors (search).
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.OutcomeSuccess">
+            <summary>
+            Outcome: the operation completed successfully.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.OutcomeError">
+            <summary>
+            Outcome: the operation failed with an exception.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.OutcomeCancelled">
+            <summary>
+            Outcome: the operation was cancelled.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.CacheHit">
+            <summary>
+            Cache result: the node was served from the search cache.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.CacheMiss">
+            <summary>
+            Cache result: the node had to be loaded from storage.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.TransactionCommitted">
+            <summary>
+            Transaction outcome: committed.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.TransactionRolledBack">
+            <summary>
+            Transaction outcome: rolled back.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.TransactionFailed">
+            <summary>
+            Transaction outcome: commit or rollback failed.
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.ProviderSqlite">
+            <summary>
+            Storage provider: SQLite (HnswLite.SqliteStorage).
+            </summary>
+        </member>
+        <member name="F:Hnsw.HnswTelemetryNames.ProviderPostgresql">
+            <summary>
+            Storage provider: PostgreSQL (HnswLite.PostgresqlStorage).
             </summary>
         </member>
         <member name="T:Hnsw.HnswIndex">
@@ -815,6 +1276,23 @@
         <member name="P:Hnsw.SearchContext.CachedNodeCount">
             <summary>
             Gets the number of nodes currently cached.
+            </summary>
+        </member>
+        <member name="P:Hnsw.SearchContext.CacheHits">
+            <summary>
+            Gets the number of node lookups served from the cache since this context was created.
+            Used for telemetry. Not thread safe, like the rest of this class.
+            </summary>
+        </member>
+        <member name="P:Hnsw.SearchContext.CacheMisses">
+            <summary>
+            Gets the number of node lookups that had to be loaded from storage since this context was created.
+            Used for telemetry. Not thread safe, like the rest of this class.
+            </summary>
+        </member>
+        <member name="P:Hnsw.SearchContext.NodesEvaluated">
+            <summary>
+            Gets the number of node distance evaluations recorded against this context by the index search routines.
             </summary>
         </member>
         <member name="M:Hnsw.SearchContext.#ctor(Hnsw.IHnswStorage,System.Threading.CancellationToken,System.Int32)">

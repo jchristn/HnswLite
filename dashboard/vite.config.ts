@@ -8,6 +8,9 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
     __HNSWLITE_SERVER_URL__: JSON.stringify(process.env.HNSWLITE_SERVER_URL || ''),
+    __HNSWLITE_GRAFANA_URL__: JSON.stringify(process.env.HNSWLITE_GRAFANA_URL || ''),
+    __HNSWLITE_PROMETHEUS_URL__: JSON.stringify(process.env.HNSWLITE_PROMETHEUS_URL || ''),
+    __HNSWLITE_TEMPO_URL__: JSON.stringify(process.env.HNSWLITE_TEMPO_URL || ''),
   },
   build: {
     chunkSizeWarningLimit: 1000,

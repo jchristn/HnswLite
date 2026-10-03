@@ -24,7 +24,8 @@ HnswLite implements the Hierarchical Navigable Small World algorithm, which prov
 | `src/Test.Shared/` + `src/Test.{Automated,XUnit,NUnit,MSTest}/` | Touchstone-driven test suites |
 | `dashboard/` | React 19 + Vite dashboard |
 | `sdk/csharp/`, `sdk/python/`, `sdk/js/` | Client SDKs with 100% endpoint coverage |
-| `docker/` | `compose.yaml` for server + dashboard, plus factory-reset scripts |
+| `docker/` | `compose.yaml` for server + dashboard + Prometheus/Tempo/Grafana, plus factory-reset and update scripts |
+| `assets/grafana/` | Grafana dashboards (provisioned into the `HnswLite` folder) |
 
 ### Key features
 
@@ -37,6 +38,15 @@ HnswLite implements the Hierarchical Navigable Small World algorithm, which prov
 - **Persistence by default** - the REST server and Docker deployment default to PostgreSQL; SQLite remains available for embedded and fallback deployments.
 - **Paginated enumeration contract** across every GET collection endpoint (`EnumerationQuery` / `EnumerationResult<T>`).
 - **OPTIONS preflight + CORS** out of the box in the REST server.
+- **Observability built in.** Metrics and traces for HTTP, every service operation and its stages, graph operations, storage calls, and runtime health, with Prometheus, Tempo, and six Grafana dashboards in the compose stack. See [TELEMETRY.md](TELEMETRY.md).
+
+## New in v2.2.0
+
+- **Metrics and traces in the libraries.** `HnswLite`, `HnswLite.SqliteStorage`, and `HnswLite.PostgresqlStorage` emit through the .NET base class library on the `HnswLite` meter and activity source: per-operation and per-stage durations (including time queued for the index write lock), outcomes with `error.type`, lock waiters, search work and cache hit ratio, storage call latency and errors, and transaction outcomes. No new package dependency, and it costs nearly nothing when nobody subscribes.
+- **Server observability.** The REST server hosts one Radiant telemetry pipeline that exports traces to Tempo over OTLP and serves a Prometheus endpoint for Watson's HTTP metrics, the library metrics, the server's own `HnswLite.Server` metrics (service operations and stages, auth decisions, API errors, the startup reload job, inventory, build and config info), the Npgsql connection pool, and the .NET runtime. Configure it under `Telemetry` in `hnswindex.json`.
+- **Observability stack.** `docker/compose.yaml` adds Prometheus, Tempo, and Grafana with datasources and six domain dashboards (Overview, HTTP, Index Operations, Search, Storage & Integrations, Runtime & Lifecycle) provisioned as code.
+- **External services card.** The dashboard home page links to Grafana, Prometheus, and Tempo with their URLs, default credentials, and reachability.
+- Package versions: `HnswLite` 2.1.0, `HnswLite.SqliteStorage` 2.2.0, `HnswLite.PostgresqlStorage` 2.2.0.
 
 ## New in v2.0.0
 
@@ -270,6 +280,19 @@ The server listens on `http://localhost:8080` by default. Authentication uses th
 
 Full endpoint reference: [REST_API.md](REST_API.md). Interactive reference: [HNSW Index.postman_collection.json](HNSW%20Index.postman_collection.json).
 
+## Observability
+
+Subscribe to the library's meter and activity source from any OpenTelemetry host. The names are constants in `HnswTelemetryNames`:
+
+```csharp
+RadiantSettings settings = new RadiantSettings("my-service");
+settings.Sources.AddMeter(HnswTelemetryNames.MeterName);                  // "HnswLite"
+settings.Sources.AddActivitySource(HnswTelemetryNames.ActivitySourceName); // "HnswLite"
+using RadiantHost host = RadiantHost.Start(settings);
+```
+
+The REST server does this for you and adds Watson, server, Npgsql, and runtime telemetry. Under Docker, Grafana runs at `http://localhost:3000` (`admin` / `admin`), Prometheus at `http://localhost:9090`, and Tempo at `http://localhost:3200`. [TELEMETRY.md](TELEMETRY.md) has the full metrics and spans catalogs, configuration keys, dashboard map, and recommended alerts.
+
 ## Test runners
 
 The shared Touchstone tests can be run through `Test.Automated`, xUnit, NUnit, or MSTest. `Test.Automated` accepts storage overrides directly:
@@ -312,15 +335,20 @@ cd docker
 docker compose up -d --build
 ```
 
-- Server:    `http://localhost:8080/`
-- Dashboard: `http://localhost:8081/dashboard/`
-- Storage:   PostgreSQL by default, provisioned by the Compose stack
+- Server:     `http://localhost:8080/`
+- Dashboard:  `http://localhost:8081/dashboard/`
+- Grafana:    `http://localhost:3000/` (`admin` / `admin`; set `GRAFANA_ADMIN_PASSWORD` outside local development)
+- Prometheus: `http://localhost:9090/`
+- Tempo:      `http://localhost:3200/` (OTLP on 4317/4318)
+- Storage:    PostgreSQL by default, provisioned by the Compose stack
 
 Build and push both release images with one tag:
 
 ```cmd
 build-all.bat v2.0.0
 ```
+
+or, on macOS/Linux, `./build-all.sh v2.0.0`.
 
 Factory reset (with `RESET` confirmation):
 

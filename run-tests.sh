@@ -14,7 +14,7 @@ banner() {
 }
 
 banner "Test.Automated (console runner)"
-dotnet run --project Test.Automated/Test.Automated.csproj -c Release || FAILED=1
+dotnet run --framework net8.0 --project Test.Automated/Test.Automated.csproj -c Release || FAILED=1
 
 banner "Test.XUnit"
 dotnet test Test.XUnit/Test.XUnit.csproj -c Release --nologo || FAILED=1

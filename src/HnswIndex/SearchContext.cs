@@ -19,6 +19,23 @@ namespace Hnsw
         /// </summary>
         public int CachedNodeCount => _NodeCache.Count;
 
+        /// <summary>
+        /// Gets the number of node lookups served from the cache since this context was created.
+        /// Used for telemetry. Not thread safe, like the rest of this class.
+        /// </summary>
+        public long CacheHits => _CacheHits;
+
+        /// <summary>
+        /// Gets the number of node lookups that had to be loaded from storage since this context was created.
+        /// Used for telemetry. Not thread safe, like the rest of this class.
+        /// </summary>
+        public long CacheMisses => _CacheMisses;
+
+        /// <summary>
+        /// Gets the number of node distance evaluations recorded against this context by the index search routines.
+        /// </summary>
+        public long NodesEvaluated => _NodesEvaluated;
+
         #endregion
 
         #region Private-Members
@@ -27,6 +44,9 @@ namespace Hnsw
         private readonly IHnswStorage _Storage;
         private readonly CancellationToken _CancellationToken;
         private readonly int _MaxCacheSize;
+        private long _CacheHits = 0;
+        private long _CacheMisses = 0;
+        private long _NodesEvaluated = 0;
 
         #endregion
 
@@ -61,8 +81,12 @@ namespace Hnsw
             _CancellationToken.ThrowIfCancellationRequested();
             
             if (_NodeCache.TryGetValue(id, out IHnswNode? node))
+            {
+                _CacheHits++;
                 return node;
+            }
 
+            _CacheMisses++;
             node = await _Storage.GetNodeAsync(id, _CancellationToken).ConfigureAwait(false);
             _NodeCache[id] = node;
             EvictIfNeeded();
@@ -91,6 +115,9 @@ namespace Hnsw
                     missingIds.Add(id);
             }
 
+            _CacheHits += result.Count;
+            _CacheMisses += missingIds.Count;
+
             // Batch-load missing nodes
             if (missingIds.Count > 0)
             {
@@ -115,7 +142,10 @@ namespace Hnsw
             _CancellationToken.ThrowIfCancellationRequested();
             ArgumentNullException.ThrowIfNull(ids, nameof(ids));
             
-            List<Guid> missingIds = ids.Where(id => !_NodeCache.ContainsKey(id)).ToList();
+            List<Guid> requested = ids.ToList();
+            List<Guid> missingIds = requested.Where(id => !_NodeCache.ContainsKey(id)).ToList();
+            _CacheHits += requested.Count - missingIds.Count;
+            _CacheMisses += missingIds.Count;
             
             if (missingIds.Count > 0)
             {
@@ -138,8 +168,12 @@ namespace Hnsw
             _CancellationToken.ThrowIfCancellationRequested();
             
             if (_NodeCache.TryGetValue(id, out IHnswNode? node))
+            {
+                _CacheHits++;
                 return TryGetNodeResult.Found(node);
+            }
 
+            _CacheMisses++;
             TryGetNodeResult result = await _Storage.TryGetNodeAsync(id, _CancellationToken).ConfigureAwait(false);
             if (result.Success && result.Node != null)
                 _NodeCache[id] = result.Node;
@@ -156,7 +190,16 @@ namespace Hnsw
         }
 
         #endregion
-        
+
+        #region Internal-Methods
+
+        internal void RecordEvaluation()
+        {
+            _NodesEvaluated++;
+        }
+
+        #endregion
+
         #region Private-Methods
 
         private void EvictIfNeeded()

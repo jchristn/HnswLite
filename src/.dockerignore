@@ -1,0 +1,15 @@
+# Build outputs and local state are never needed in the image build context.
+**/bin/
+**/obj/
+**/TestResults/
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/logs/
+**/data/
+.vs/
+.vscode/
+.idea/
+.claude/
+**/*.user
+**/*.suo

@@ -3,7 +3,8 @@ echo ========================================
 echo  HnswLite Factory Reset
 echo ========================================
 echo.
-echo This will delete all PostgreSQL data, SQLite index databases, and log files.
+echo This will delete all PostgreSQL data, SQLite index databases, log files, and the
+echo Prometheus, Tempo, and Grafana volumes (metrics history, traces, Grafana state).
 echo Configuration (hnswindex.json) will be preserved.
 echo.
 set /p confirm="Type 'RESET' to confirm: "
@@ -12,9 +13,9 @@ if /i not "%confirm%"=="RESET" (
     exit /b 1
 )
 echo.
-echo [1/4] Stopping containers...
+echo [1/4] Stopping containers and removing observability volumes...
 pushd ..
-docker compose down
+docker compose down -v
 popd
 echo.
 echo [2/4] Deleting PostgreSQL data...

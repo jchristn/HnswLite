@@ -4,6 +4,7 @@ import type { RequestHistoryEntryClient } from '../api/client';
 import type { IndexSummary } from '../types/models';
 import HistoryChart, { HistoryChartLegend, RANGE_OPTIONS } from '../components/shared/HistoryChart';
 import type { RangeId } from '../components/shared/HistoryChart';
+import ExternalServicesCard from '../components/ExternalServicesCard';
 
 export default function Dashboard() {
   const [indexes, setIndexes] = useState<IndexSummary[] | null>(null);
@@ -93,6 +94,8 @@ export default function Dashboard() {
           <HistoryChartLegend />
         </div>
       </div>
+
+      <ExternalServicesCard />
     </>
   );
 }

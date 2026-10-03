@@ -1,5 +1,32 @@
 # Change Log
 
+## v2.2.0
+
+### Observability (metrics and traces)
+
+- **Library telemetry (`HnswLite`, `HnswLite.SqliteStorage`, `HnswLite.PostgresqlStorage`).** New public `HnswTelemetry` and `HnswTelemetryNames` emit on the `HnswLite` meter and activity source using only the .NET base class library: no new package dependencies, near-zero cost with no listener, and instrumentation never throws.
+  - Every `HnswIndex` operation (`add`, `add_batch`, `remove`, `remove_batch`, `search`, `export`, `import`) records a duration histogram and an outcome counter with `error.type`, opens an `hnsw.<operation>` span, and records each stage as a `stage:<name>` child span plus a per-stage histogram. Write operations include a `queued` stage for time spent waiting on the per-index write lock, and `hnswlite.index.lock.waiting` / `hnswlite.index.lock.held` show contention.
+  - Search records results returned, nodes evaluated, and `SearchContext` cache hits and misses. `SearchContext` gains `CacheHits`, `CacheMisses`, and `NodesEvaluated`.
+  - SQLite and PostgreSQL providers record per-operation storage latency and outcomes (`hnswlite.storage.*`), PostgreSQL transaction outcomes, and `<provider> <operation>` client spans for coarse operations (open, schema, batch writes, transactions, flush).
+- **Server telemetry (`HnswIndex.Server`).** One Radiant 0.1.2 host at the composition root subscribes to `Watson`, `HnswLite`, `HnswLite.Server`, and `Npgsql`, exports traces over OTLP, and serves a Prometheus endpoint (port 9464). The new `HnswLite.Server` meter and source cover every service operation and its stages, search results and filtering, API key decisions, API error codes, the startup index-reload job (job and stage spans, counters, last-success gauge), index/vector inventory gauges, and build/config info. Watson's built-in HTTP telemetry is enabled explicitly and not duplicated. A telemetry start failure logs a warning with the root cause and the server keeps running.
+- **Configuration.** New `Telemetry` block in `hnswindex.json`: `Enable`, `ServiceName`, `OtlpEnable`, `OtlpEndpoint`, `OtlpProtocol`, `PrometheusEnable`, `PrometheusHostname`, `PrometheusPort`, `TraceSamplingRatio`, `IncludeRuntimeMetrics`, `TraceDatabaseCommands`. Loopback defaults use `127.0.0.1`.
+- **Docker stack.** `docker/compose.yaml` adds Prometheus `v3.5.4`, Tempo `2.6.1`, and Grafana OSS `13.0.2` with healthchecks and health-gated startup. Grafana is provisioned as code: datasources with stable UIDs (`prometheus`, `tempo`) and six dashboards in the `HnswLite` folder (Overview, HTTP, Index Operations, Search, Storage & Integrations, Runtime & Lifecycle) from `assets/grafana/`. The Grafana admin password is overridable with `GRAFANA_ADMIN_PASSWORD`. The server healthcheck now probes `127.0.0.1` with `retries: 2`. Factory reset also removes the observability volumes, and `docker/update.bat` / `update.sh` pull and recreate the stack.
+- **Image builds.** Added `src/.dockerignore` and `dashboard/.dockerignore` (build outputs and local data were being sent as build context, which grew past 600 MB and broke cloud builds) and `build-all.sh` / `build-server.sh` / `build-dashboard.sh` equivalents of the `.bat` build scripts.
+- **Dashboard.** The home page has an External services card with Grafana, Prometheus, and Tempo URLs, default credentials, copy buttons, and a reachability check.
+- **Documentation.** New [TELEMETRY.md](TELEMETRY.md) with the metrics and spans catalogs, configuration, subscription examples, dashboard map, recommended PromQL alerts, and troubleshooting.
+
+### Tests
+
+- New `TelemetrySuites` (12 cases) prove emission with in-memory BCL listeners across library operations and stages, storage providers (including PostgreSQL), service operations, the reload job, gauges, auth and API errors, the Radiant host (including a live Prometheus scrape), failure paths, and the no-listener path.
+- `run-tests.sh` now passes `--framework net8.0` to the console runner (it previously failed on the multi-targeted project) and is executable.
+
+### Package versions
+
+- `HnswLite` **2.1.0**, `HnswLite.SqliteStorage` **2.2.0**, `HnswLite.PostgresqlStorage` **2.2.0**: additive public API (telemetry types and `SearchContext` counters) and instrumentation.
+- `HnswLite.RamStorage` (2.0.1) and `HnswLite.Sdk` (2.1.0) are unchanged.
+
+---
+
 ## v2.1.0
 
 ### Dependency updates

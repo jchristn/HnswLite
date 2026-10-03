@@ -42,5 +42,18 @@
     "ExposeHeaders": "",
     "MaxAgeSeconds": 86400,
     "AllowCredentials": false
+  },
+  "Telemetry": {
+    "Enable": true,
+    "ServiceName": "hnswlite-server",
+    "OtlpEnable": true,
+    "OtlpEndpoint": "http://hnswlite-tempo:4317",
+    "OtlpProtocol": "grpc",
+    "PrometheusEnable": true,
+    "PrometheusHostname": "hnswlite-server",
+    "PrometheusPort": 9464,
+    "TraceSamplingRatio": 1.0,
+    "IncludeRuntimeMetrics": true,
+    "TraceDatabaseCommands": false
   }
 }

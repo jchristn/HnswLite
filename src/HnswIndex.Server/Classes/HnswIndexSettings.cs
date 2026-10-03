@@ -53,6 +53,15 @@ namespace HnswIndex.Server.Classes
         }
 
         /// <summary>
+        /// Telemetry (metrics and traces) settings.
+        /// </summary>
+        public TelemetrySettings Telemetry
+        {
+            get { return _Telemetry; }
+            set { _Telemetry = value ?? throw new ArgumentNullException(nameof(value)); }
+        }
+
+        /// <summary>
         /// CORS (Cross-Origin Resource Sharing) settings.
         /// </summary>
         public CorsSettings Cors
@@ -71,6 +80,7 @@ namespace HnswIndex.Server.Classes
         private AuthenticationSettings _Authentication = new AuthenticationSettings();
         private StorageSettings _Storage = new StorageSettings();
         private CorsSettings _Cors = new CorsSettings();
+        private TelemetrySettings _Telemetry = new TelemetrySettings();
 
         #endregion
 

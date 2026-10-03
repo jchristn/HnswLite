@@ -262,32 +262,62 @@
         /// <param name="cancellationToken">Cancellation token.</param>
         public async Task AddAsync(Guid guid, List<float> vector, CancellationToken cancellationToken = default)
         {
+            using (HnswOperationScope scope = HnswOperationScope.Start(HnswTelemetryNames.OperationAdd))
+            {
+                try
+                {
+                    scope.SetTag(HnswTelemetryNames.AttributeVectorDimension, _VectorDimension);
+                    scope.SetTag(HnswTelemetryNames.AttributeDistanceFunction, _DistanceFunction.Name);
+                    await AddCoreAsync(guid, vector, scope, cancellationToken).ConfigureAwait(false);
+                    HnswTelemetry.RecordVectors(HnswTelemetryNames.OperationAdd, 1);
+                }
+                catch (Exception e)
+                {
+                    scope.Fail(e);
+                    throw;
+                }
+            }
+        }
+
+        private async Task AddCoreAsync(Guid guid, List<float> vector, HnswOperationScope scope, CancellationToken cancellationToken)
+        {
             if (vector == null) throw new ArgumentNullException(nameof(vector));
             if (vector.Count != _VectorDimension)
                 throw new ArgumentException($"Vector dimension {vector.Count} does not match index dimension {_VectorDimension}");
 
+            scope.BeginLockWait();
             await _IndexLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            scope.LockAcquired();
             IHnswStorageTransaction? transaction = null;
             bool committed = false;
             try
             {
+                scope.BeginStage(HnswTelemetryNames.StageTransactionBegin);
                 transaction = await BeginStorageTransactionAsync(cancellationToken).ConfigureAwait(false);
 
+                scope.BeginStage(HnswTelemetryNames.StageStorageWrite);
                 await _Storage.AddNodeAsync(guid, vector, cancellationToken).ConfigureAwait(false);
 
                 int count = await _Storage.GetCountAsync(cancellationToken).ConfigureAwait(false);
                 if (count == 1)
                 {
                     await SetNodeLayerAsync(guid, 0, cancellationToken).ConfigureAwait(false);
+                    scope.SetTag(HnswTelemetryNames.AttributeNodeLayer, 0);
+                    scope.BeginStage(HnswTelemetryNames.StageFlush);
                     await FlushStorageAsync(cancellationToken).ConfigureAwait(false);
+                    scope.BeginStage(HnswTelemetryNames.StageCommit);
                     await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
                     committed = true;
+                    scope.EndStage(null);
                     return;
                 }
 
                 // Assign layer using standard HNSW approach
                 int nodeLevel = AssignLevel();
                 await SetNodeLayerAsync(guid, nodeLevel, cancellationToken).ConfigureAwait(false);
+                scope.SetTag(HnswTelemetryNames.AttributeNodeLayer, nodeLevel);
+
+                scope.BeginStage(HnswTelemetryNames.StageGraphInsert);
 
                 // Get entry point
                 Guid? entryPoint = await _Storage.GetEntryPointAsync(cancellationToken).ConfigureAwait(false);
@@ -359,9 +389,12 @@
                     await _Storage.SetEntryPointAsync(guid, cancellationToken).ConfigureAwait(false);
                 }
 
+                scope.BeginStage(HnswTelemetryNames.StageFlush);
                 await FlushStorageAsync(cancellationToken).ConfigureAwait(false);
+                scope.BeginStage(HnswTelemetryNames.StageCommit);
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
                 committed = true;
+                scope.EndStage(null);
             }
             finally
             {
@@ -369,11 +402,14 @@
                 {
                     if (!committed)
                     {
+                        scope.BeginStage(HnswTelemetryNames.StageRollback);
                         await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                        scope.EndStage(null);
                     }
                     await transaction.DisposeAsync().ConfigureAwait(false);
                 }
                 _IndexLock.Release();
+                scope.LockReleased();
             }
         }
 
@@ -387,6 +423,26 @@
         /// <exception cref="ArgumentNullException">Thrown when nodes is null.</exception>
         /// <exception cref="ArgumentException">Thrown when nodes is empty, any ID is Guid.Empty, or vector dimensions don't match.</exception>
         public async Task AddNodesAsync(Dictionary<Guid, List<float>> nodes, CancellationToken cancellationToken = default)
+        {
+            using (HnswOperationScope scope = HnswOperationScope.Start(HnswTelemetryNames.OperationAddBatch))
+            {
+                try
+                {
+                    scope.SetTag(HnswTelemetryNames.AttributeVectorDimension, _VectorDimension);
+                    scope.SetTag(HnswTelemetryNames.AttributeDistanceFunction, _DistanceFunction.Name);
+                    scope.SetTag(HnswTelemetryNames.AttributeBatchSize, nodes?.Count ?? 0);
+                    await AddNodesCoreAsync(nodes!, scope, cancellationToken).ConfigureAwait(false);
+                    HnswTelemetry.RecordVectors(HnswTelemetryNames.OperationAddBatch, nodes!.Count);
+                }
+                catch (Exception e)
+                {
+                    scope.Fail(e);
+                    throw;
+                }
+            }
+        }
+
+        private async Task AddNodesCoreAsync(Dictionary<Guid, List<float>> nodes, HnswOperationScope scope, CancellationToken cancellationToken)
         {
             if (nodes == null) throw new ArgumentNullException(nameof(nodes));
             if (nodes.Count == 0) throw new ArgumentException("Nodes collection cannot be empty.", nameof(nodes));
@@ -403,18 +459,23 @@
             }
 
             // Acquire write lock for entire operation
+            scope.BeginLockWait();
             await _IndexLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            scope.LockAcquired();
             IHnswStorageTransaction? transaction = null;
             bool committed = false;
             try
             {
+                scope.BeginStage(HnswTelemetryNames.StageTransactionBegin);
                 transaction = await BeginStorageTransactionAsync(cancellationToken).ConfigureAwait(false);
 
                 // Step 1: Add all nodes to _Storage in batch
+                scope.BeginStage(HnswTelemetryNames.StageStorageWrite);
                 await _Storage.AddNodesAsync(nodes, cancellationToken).ConfigureAwait(false);
 
                 // Step 2: Build graph structure for each node while holding lock
                 // Use SearchContext to cache nodes during graph construction for better performance
+                scope.BeginStage(HnswTelemetryNames.StageGraphInsert);
                 SearchContext context = new SearchContext(_Storage, cancellationToken);
                 bool isFirstNode = await _Storage.GetCountAsync(cancellationToken).ConfigureAwait(false) == nodes.Count;
 
@@ -511,9 +572,12 @@
 
                 }
 
+                scope.BeginStage(HnswTelemetryNames.StageFlush);
                 await FlushStorageAsync(cancellationToken).ConfigureAwait(false);
+                scope.BeginStage(HnswTelemetryNames.StageCommit);
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
                 committed = true;
+                scope.EndStage(null);
             }
             finally
             {
@@ -521,11 +585,14 @@
                 {
                     if (!committed)
                     {
+                        scope.BeginStage(HnswTelemetryNames.StageRollback);
                         await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                        scope.EndStage(null);
                     }
                     await transaction.DisposeAsync().ConfigureAwait(false);
                 }
                 _IndexLock.Release();
+                scope.LockReleased();
             }
         }
 
@@ -536,19 +603,42 @@
         /// <param name="cancellationToken">Cancellation token.</param>
         public async Task RemoveAsync(Guid guid, CancellationToken cancellationToken = default)
         {
+            using (HnswOperationScope scope = HnswOperationScope.Start(HnswTelemetryNames.OperationRemove))
+            {
+                try
+                {
+                    bool removed = await RemoveCoreAsync(guid, scope, cancellationToken).ConfigureAwait(false);
+                    if (removed) HnswTelemetry.RecordVectors(HnswTelemetryNames.OperationRemove, 1);
+                }
+                catch (Exception e)
+                {
+                    scope.Fail(e);
+                    throw;
+                }
+            }
+        }
+
+        private async Task<bool> RemoveCoreAsync(Guid guid, HnswOperationScope scope, CancellationToken cancellationToken)
+        {
+            scope.BeginLockWait();
             await _IndexLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            scope.LockAcquired();
             IHnswStorageTransaction? transaction = null;
             bool committed = false;
             try
             {
+                scope.BeginStage(HnswTelemetryNames.StageTransactionBegin);
                 transaction = await BeginStorageTransactionAsync(cancellationToken).ConfigureAwait(false);
 
+                scope.BeginStage(HnswTelemetryNames.StageGraphUnlink);
                 TryGetNodeResult tryGetResult = await _Storage.TryGetNodeAsync(guid, cancellationToken).ConfigureAwait(false);
                 if (!tryGetResult.Success || tryGetResult.Node == null)
                 {
+                    scope.BeginStage(HnswTelemetryNames.StageCommit);
                     await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
                     committed = true;
-                    return;
+                    scope.EndStage(null);
+                    return false;
                 }
                 IHnswNode nodeToRemove = tryGetResult.Node;
 
@@ -573,6 +663,7 @@
                 }
 
                 // Update entry point if the removed node was the entry point
+                scope.BeginStage(HnswTelemetryNames.StageEntryPointUpdate);
                 if (await _Storage.GetEntryPointAsync(cancellationToken).ConfigureAwait(false) == guid)
                 {
                     // Find a new entry point - pick the node with the highest layer
@@ -600,9 +691,13 @@
                     }
                 }
 
+                scope.BeginStage(HnswTelemetryNames.StageFlush);
                 await FlushStorageAsync(cancellationToken).ConfigureAwait(false);
+                scope.BeginStage(HnswTelemetryNames.StageCommit);
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
                 committed = true;
+                scope.EndStage(null);
+                return true;
             }
             finally
             {
@@ -610,11 +705,14 @@
                 {
                     if (!committed)
                     {
+                        scope.BeginStage(HnswTelemetryNames.StageRollback);
                         await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                        scope.EndStage(null);
                     }
                     await transaction.DisposeAsync().ConfigureAwait(false);
                 }
                 _IndexLock.Release();
+                scope.LockReleased();
             }
         }
 
@@ -629,6 +727,24 @@
         /// <exception cref="ArgumentException">Thrown when nodeIds is empty.</exception>
         public async Task RemoveNodesAsync(List<Guid> nodeIds, CancellationToken cancellationToken = default)
         {
+            using (HnswOperationScope scope = HnswOperationScope.Start(HnswTelemetryNames.OperationRemoveBatch))
+            {
+                try
+                {
+                    scope.SetTag(HnswTelemetryNames.AttributeBatchSize, nodeIds?.Count ?? 0);
+                    int removed = await RemoveNodesCoreAsync(nodeIds!, scope, cancellationToken).ConfigureAwait(false);
+                    HnswTelemetry.RecordVectors(HnswTelemetryNames.OperationRemoveBatch, removed);
+                }
+                catch (Exception e)
+                {
+                    scope.Fail(e);
+                    throw;
+                }
+            }
+        }
+
+        private async Task<int> RemoveNodesCoreAsync(List<Guid> nodeIds, HnswOperationScope scope, CancellationToken cancellationToken)
+        {
             if (nodeIds == null) throw new ArgumentNullException(nameof(nodeIds));
             if (nodeIds.Count == 0) throw new ArgumentException("Node IDs collection cannot be empty.", nameof(nodeIds));
 
@@ -636,14 +752,18 @@
             HashSet<Guid> uniqueNodeIds = new HashSet<Guid>(nodeIds);
 
             // Acquire write lock for entire operation
+            scope.BeginLockWait();
             await _IndexLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            scope.LockAcquired();
             IHnswStorageTransaction? transaction = null;
             bool committed = false;
             try
             {
+                scope.BeginStage(HnswTelemetryNames.StageTransactionBegin);
                 transaction = await BeginStorageTransactionAsync(cancellationToken).ConfigureAwait(false);
 
                 // Collect all nodes that need to be processed before removal
+                scope.BeginStage(HnswTelemetryNames.StageGraphUnlink);
                 Dictionary<Guid, IHnswNode> nodesToRemove = new Dictionary<Guid, IHnswNode>();
                 HashSet<Guid> nodesToUpdate = new HashSet<Guid>();
 
@@ -694,6 +814,7 @@
                 }
 
                 // Fourth pass: Update entry point if necessary
+                scope.BeginStage(HnswTelemetryNames.StageEntryPointUpdate);
                 Guid? currentEntryPoint = await _Storage.GetEntryPointAsync(cancellationToken).ConfigureAwait(false);
                 if (currentEntryPoint.HasValue && uniqueNodeIds.Contains(currentEntryPoint.Value))
                 {
@@ -724,6 +845,7 @@
 
                 // Fifth pass: Repair graph connectivity if needed
                 // For each updated neighbor, ensure they still have enough connections
+                scope.BeginStage(HnswTelemetryNames.StageGraphRepair);
                 foreach (Guid neighborId in nodesToUpdate)
                 {
                     IHnswNode neighbor = await _Storage.GetNodeAsync(neighborId, cancellationToken).ConfigureAwait(false);
@@ -793,9 +915,13 @@
                     }
                 }
 
+                scope.BeginStage(HnswTelemetryNames.StageFlush);
                 await FlushStorageAsync(cancellationToken).ConfigureAwait(false);
+                scope.BeginStage(HnswTelemetryNames.StageCommit);
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
                 committed = true;
+                scope.EndStage(null);
+                return nodesToRemove.Count;
             }
             finally
             {
@@ -803,11 +929,14 @@
                 {
                     if (!committed)
                     {
+                        scope.BeginStage(HnswTelemetryNames.StageRollback);
                         await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                        scope.EndStage(null);
                     }
                     await transaction.DisposeAsync().ConfigureAwait(false);
                 }
                 _IndexLock.Release();
+                scope.LockReleased();
             }
         }
 
@@ -820,6 +949,25 @@
         /// <param name="cancellationToken">Cancellation token.</param>
         /// <returns>Collection of nearest neighbors with distances.</returns>
         public async Task<IEnumerable<VectorResult>> GetTopKAsync(List<float> vector, int count, int? ef = null, CancellationToken cancellationToken = default)
+        {
+            using (HnswOperationScope scope = HnswOperationScope.Start(HnswTelemetryNames.OperationSearch))
+            {
+                try
+                {
+                    scope.SetTag(HnswTelemetryNames.AttributeVectorDimension, _VectorDimension);
+                    scope.SetTag(HnswTelemetryNames.AttributeDistanceFunction, _DistanceFunction.Name);
+                    scope.SetTag(HnswTelemetryNames.AttributeSearchK, count);
+                    return await GetTopKCoreAsync(vector, count, ef, scope, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception e)
+                {
+                    scope.Fail(e);
+                    throw;
+                }
+            }
+        }
+
+        private async Task<IEnumerable<VectorResult>> GetTopKCoreAsync(List<float> vector, int count, int? ef, HnswOperationScope scope, CancellationToken cancellationToken)
         {
             if (vector == null) throw new ArgumentNullException(nameof(vector));
             if (vector.Count != _VectorDimension)
@@ -837,21 +985,33 @@
                     throw new ArgumentOutOfRangeException(nameof(ef), "EF greater than 10000 is not recommended.");
             }
 
+            scope.BeginStage(HnswTelemetryNames.StageEntryPoint);
             Guid? entryPointId = await _Storage.GetEntryPointAsync(cancellationToken).ConfigureAwait(false);
             if (!entryPointId.HasValue)
+            {
+                scope.EndStage(null);
+                scope.SetTag(HnswTelemetryNames.AttributeSearchResults, 0);
+                HnswTelemetry.RecordSearch(0, 0, 0, 0);
                 return Enumerable.Empty<VectorResult>();
+            }
 
             // Create search context for caching
             SearchContext context = new SearchContext(_Storage, cancellationToken);
 
             // Use provided ef or calculate based on count
             int searchEf = ef ?? Math.Max(EfConstruction, count * 2);
+            scope.SetTag(HnswTelemetryNames.AttributeSearchEf, searchEf);
 
             Guid currentNearest = entryPointId.Value;
 
             // Pre-fetch entry point and its neighbors for better performance
             IHnswNode entryNode = await context.GetNodeAsync(entryPointId.Value).ConfigureAwait(false);
-            if (entryNode == null) return Enumerable.Empty<VectorResult>();
+            if (entryNode == null)
+            {
+                scope.EndStage(null);
+                HnswTelemetry.RecordSearch(0, 0, context.CacheHits, context.CacheMisses);
+                return Enumerable.Empty<VectorResult>();
+            }
             Dictionary<int, HashSet<Guid>> entryNeighbors = await entryNode.GetNeighborsAsync(cancellationToken).ConfigureAwait(false);
 
             // Pre-fetch all neighbors at higher layers
@@ -863,15 +1023,18 @@
 
             // Search from top layer to layer 0
             int entryPointLayer = await _LayerStorage.GetNodeLayerAsync(entryPointId.Value, cancellationToken).ConfigureAwait(false);
+            scope.BeginStage(HnswTelemetryNames.StageGreedyDescent);
             for (int layer = entryPointLayer; layer > 0; layer--)
             {
                 currentNearest = await GreedySearchLayerWithContextAsync(vector, currentNearest, layer, context, cancellationToken).ConfigureAwait(false);
             }
 
             // Search at layer 0 with ef
+            scope.BeginStage(HnswTelemetryNames.StageLayerZeroSearch);
             List<SearchCandidate> candidates = await SearchLayerWithContextAsync(vector, currentNearest, searchEf, 0, context, cancellationToken).ConfigureAwait(false);
 
             // Build results - nodes are already cached
+            scope.BeginStage(HnswTelemetryNames.StageResultBuild);
             List<VectorResult> results = new List<VectorResult>();
             foreach (SearchCandidate candidate in candidates.Take(count))
             {
@@ -884,6 +1047,10 @@
                 });
             }
 
+            scope.EndStage(null);
+            scope.SetTag(HnswTelemetryNames.AttributeSearchResults, results.Count);
+            scope.SetTag(HnswTelemetryNames.AttributeSearchNodesEvaluated, context.NodesEvaluated);
+            HnswTelemetry.RecordSearch(results.Count, context.NodesEvaluated, context.CacheHits, context.CacheMisses);
             return results;
         }
 
@@ -894,6 +1061,26 @@
         /// <returns>Serializable state of the index. Never null.</returns>
         public async Task<HnswState> ExportStateAsync(CancellationToken cancellationToken = default)
         {
+            using (HnswOperationScope scope = HnswOperationScope.Start(HnswTelemetryNames.OperationExport))
+            {
+                try
+                {
+                    scope.SetTag(HnswTelemetryNames.AttributeVectorDimension, _VectorDimension);
+                    HnswState state = await ExportStateCoreAsync(scope, cancellationToken).ConfigureAwait(false);
+                    scope.SetTag(HnswTelemetryNames.AttributeBatchSize, state.Nodes.Count);
+                    return state;
+                }
+                catch (Exception e)
+                {
+                    scope.Fail(e);
+                    throw;
+                }
+            }
+        }
+
+        private async Task<HnswState> ExportStateCoreAsync(HnswOperationScope scope, CancellationToken cancellationToken)
+        {
+            scope.BeginStage(HnswTelemetryNames.StageStorageRead);
             HnswState state = new HnswState
             {
                 VectorDimension = this._VectorDimension,
@@ -933,6 +1120,7 @@
             }
 
             state.EntryPointId = await _Storage.GetEntryPointAsync(cancellationToken).ConfigureAwait(false);
+            scope.EndStage(null);
             return state;
         }
 
@@ -943,19 +1131,42 @@
         /// <param name="cancellationToken">Cancellation token.</param>
         public async Task ImportStateAsync(HnswState state, CancellationToken cancellationToken = default)
         {
+            using (HnswOperationScope scope = HnswOperationScope.Start(HnswTelemetryNames.OperationImport))
+            {
+                try
+                {
+                    scope.SetTag(HnswTelemetryNames.AttributeVectorDimension, _VectorDimension);
+                    scope.SetTag(HnswTelemetryNames.AttributeBatchSize, state?.Nodes?.Count ?? 0);
+                    await ImportStateCoreAsync(state!, scope, cancellationToken).ConfigureAwait(false);
+                    HnswTelemetry.RecordVectors(HnswTelemetryNames.OperationImport, state!.Nodes.Count);
+                }
+                catch (Exception e)
+                {
+                    scope.Fail(e);
+                    throw;
+                }
+            }
+        }
+
+        private async Task ImportStateCoreAsync(HnswState state, HnswOperationScope scope, CancellationToken cancellationToken)
+        {
             if (state == null) throw new ArgumentNullException(nameof(state));
             if (state.VectorDimension != _VectorDimension)
                 throw new ArgumentException($"State dimension {state.VectorDimension} does not match index dimension {_VectorDimension}");
             state.Validate();
 
+            scope.BeginLockWait();
             await _IndexLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            scope.LockAcquired();
             IHnswStorageTransaction? transaction = null;
             bool committed = false;
             try
             {
+                scope.BeginStage(HnswTelemetryNames.StageTransactionBegin);
                 transaction = await BeginStorageTransactionAsync(cancellationToken).ConfigureAwait(false);
 
                 // Clear existing data from _Storage
+                scope.BeginStage(HnswTelemetryNames.StageClear);
                 IEnumerable<Guid> existingIds = await _Storage.GetAllNodeIdsAsync(cancellationToken).ConfigureAwait(false);
                 foreach (Guid nodeId in existingIds.ToList())
                 {
@@ -993,6 +1204,7 @@
                 }
 
                 // First pass: add all nodes and their layer assignments
+                scope.BeginStage(HnswTelemetryNames.StageStorageWrite);
                 foreach (NodeState nodeState in state.Nodes)
                 {
                     await _Storage.AddNodeAsync(nodeState.Id, nodeState.Vector, cancellationToken).ConfigureAwait(false);
@@ -1000,6 +1212,7 @@
                 }
 
                 // Second pass: reconstruct connections
+                scope.BeginStage(HnswTelemetryNames.StageGraphInsert);
                 foreach (NodeState nodeState in state.Nodes)
                 {
                     IHnswNode node = await _Storage.GetNodeAsync(nodeState.Id, cancellationToken).ConfigureAwait(false);
@@ -1015,9 +1228,12 @@
                 // Set entry point
                 await _Storage.SetEntryPointAsync(state.EntryPointId, cancellationToken).ConfigureAwait(false);
 
+                scope.BeginStage(HnswTelemetryNames.StageFlush);
                 await FlushStorageAsync(cancellationToken).ConfigureAwait(false);
+                scope.BeginStage(HnswTelemetryNames.StageCommit);
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
                 committed = true;
+                scope.EndStage(null);
             }
             finally
             {
@@ -1025,11 +1241,14 @@
                 {
                     if (!committed)
                     {
+                        scope.BeginStage(HnswTelemetryNames.StageRollback);
                         await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                        scope.EndStage(null);
                     }
                     await transaction.DisposeAsync().ConfigureAwait(false);
                 }
                 _IndexLock.Release();
+                scope.LockReleased();
             }
         }
 
@@ -1241,6 +1460,7 @@
             Guid currentNearest = entryPointId;
             IHnswNode entryNode = await context.GetNodeAsync(entryPointId).ConfigureAwait(false);
             float currentDist = DistanceFunction.Distance(query, entryNode.Vector);
+            context.RecordEvaluation();
 
             bool improved = true;
             while (improved)
@@ -1262,6 +1482,7 @@
                         {
                             IHnswNode neighbor = await context.GetNodeAsync(neighborId).ConfigureAwait(false);
                             float dist = DistanceFunction.Distance(query, neighbor.Vector);
+                            context.RecordEvaluation();
                             if (dist < currentDist)
                             {
                                 currentDist = dist;
@@ -1285,6 +1506,7 @@
 
             IHnswNode entryPoint = await context.GetNodeAsync(entryPointId).ConfigureAwait(false);
             float d = DistanceFunction.Distance(query, entryPoint.Vector);
+            context.RecordEvaluation();
             candidates.Push(d, entryPointId);
             dynamicNearestNeighbors.Push(-d, entryPointId); // Use negative distance for max-heap behavior
             visited.Add(entryPointId);
@@ -1318,6 +1540,7 @@
                             visited.Add(neighborId);
                             IHnswNode neighbor = await context.GetNodeAsync(neighborId).ConfigureAwait(false);
                             d = DistanceFunction.Distance(query, neighbor.Vector);
+                            context.RecordEvaluation();
 
                             if (d < farthestDistance || dynamicNearestNeighbors.Count < ef)
                             {

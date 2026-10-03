@@ -2,9 +2,11 @@ namespace HnswIndex.PostgresqlStorage
 {
     using System;
     using System.Collections.Generic;
+    using System.Diagnostics;
     using System.IO;
     using System.Linq;
     using System.Net.Sockets;
+    using System.Runtime.CompilerServices;
     using System.Runtime.InteropServices;
     using System.Text.Json;
     using System.Threading;
@@ -21,6 +23,12 @@ namespace HnswIndex.PostgresqlStorage
     /// </summary>
     public sealed class PostgresqlStorageProvider : IStorageProvider
     {
+        private const string _ProviderName = HnswTelemetryNames.ProviderPostgresql;
+        private static readonly HashSet<string> _SpanOperations = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "AddNodes", "RemoveNodes", "GetAllNodeIds", "GetAllNodeLayers", "ClearLayers", "Clear"
+        };
+
         private readonly NpgsqlDataSource _DataSource;
         private readonly Dictionary<Guid, PostgresqlHnswNode> _NodeCache = new Dictionary<Guid, PostgresqlHnswNode>();
         private readonly SemaphoreSlim _Lock = new SemaphoreSlim(1, 1);
@@ -67,9 +75,14 @@ namespace HnswIndex.PostgresqlStorage
         /// <summary>
         /// Lists index metadata using a caller-owned PostgreSQL data source.
         /// </summary>
-        public static async Task<List<PostgresqlIndexMetadata>> ListIndexesAsync(NpgsqlDataSource dataSource, CancellationToken cancellationToken = default)
+        public static Task<List<PostgresqlIndexMetadata>> ListIndexesAsync(NpgsqlDataSource dataSource, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(dataSource);
+            return ObserveAsync("ListIndexes", true, () => ListIndexesCoreAsync(dataSource, cancellationToken));
+        }
+
+        private static async Task<List<PostgresqlIndexMetadata>> ListIndexesCoreAsync(NpgsqlDataSource dataSource, CancellationToken cancellationToken)
+        {
             await EnsureSchemaAsync(dataSource, cancellationToken).ConfigureAwait(false);
 
             List<PostgresqlIndexMetadata> results = new List<PostgresqlIndexMetadata>();
@@ -603,9 +616,15 @@ namespace HnswIndex.PostgresqlStorage
         }
 
         /// <inheritdoc />
-        public async Task<IHnswStorageTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
+        public Task<IHnswStorageTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
         {
             ThrowIfDisposed();
+            if (!IsObserved()) return BeginTransactionCoreAsync(cancellationToken);
+            return ObserveAsync("BeginTransaction", true, () => BeginTransactionCoreAsync(cancellationToken));
+        }
+
+        private async Task<IHnswStorageTransaction> BeginTransactionCoreAsync(CancellationToken cancellationToken)
+        {
 
             await _TransactionCommandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
@@ -762,7 +781,60 @@ namespace HnswIndex.PostgresqlStorage
             return result;
         }
 
-        private async Task ExecuteAsync(Func<NpgsqlConnection, NpgsqlTransaction?, Task> action, CancellationToken cancellationToken)
+        private async Task ExecuteAsync(Func<NpgsqlConnection, NpgsqlTransaction?, Task> action, CancellationToken cancellationToken, [CallerMemberName] string caller = "")
+        {
+            if (!IsObserved())
+            {
+                await ExecuteCoreAsync(action, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            string operation = ToOperationName(caller);
+            Activity? activity = _SpanOperations.Contains(operation) ? HnswTelemetry.StartStorageActivity(_ProviderName, operation) : null;
+            long startTimestamp = HnswTelemetry.GetTimestamp();
+            try
+            {
+                await ExecuteCoreAsync(action, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                HnswTelemetry.RecordStorageOperation(_ProviderName, operation, startTimestamp, e);
+                HnswTelemetry.CompleteActivity(activity, e);
+                throw;
+            }
+
+            HnswTelemetry.RecordStorageOperation(_ProviderName, operation, startTimestamp);
+            HnswTelemetry.CompleteActivity(activity, null);
+        }
+
+        private async Task<T> ExecuteAsync<T>(Func<NpgsqlConnection, NpgsqlTransaction?, Task<T>> action, CancellationToken cancellationToken, [CallerMemberName] string caller = "")
+        {
+            if (!IsObserved())
+            {
+                return await ExecuteCoreAsync(action, cancellationToken).ConfigureAwait(false);
+            }
+
+            string operation = ToOperationName(caller);
+            Activity? activity = _SpanOperations.Contains(operation) ? HnswTelemetry.StartStorageActivity(_ProviderName, operation) : null;
+            long startTimestamp = HnswTelemetry.GetTimestamp();
+            T result;
+            try
+            {
+                result = await ExecuteCoreAsync(action, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                HnswTelemetry.RecordStorageOperation(_ProviderName, operation, startTimestamp, e);
+                HnswTelemetry.CompleteActivity(activity, e);
+                throw;
+            }
+
+            HnswTelemetry.RecordStorageOperation(_ProviderName, operation, startTimestamp);
+            HnswTelemetry.CompleteActivity(activity, null);
+            return result;
+        }
+
+        private async Task ExecuteCoreAsync(Func<NpgsqlConnection, NpgsqlTransaction?, Task> action, CancellationToken cancellationToken)
         {
             await _TransactionCommandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
@@ -783,7 +855,7 @@ namespace HnswIndex.PostgresqlStorage
             await action(conn, null).ConfigureAwait(false);
         }
 
-        private async Task<T> ExecuteAsync<T>(Func<NpgsqlConnection, NpgsqlTransaction?, Task<T>> action, CancellationToken cancellationToken)
+        private async Task<T> ExecuteCoreAsync<T>(Func<NpgsqlConnection, NpgsqlTransaction?, Task<T>> action, CancellationToken cancellationToken)
         {
             await _TransactionCommandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
@@ -803,7 +875,16 @@ namespace HnswIndex.PostgresqlStorage
             return await action(conn, null).ConfigureAwait(false);
         }
 
-        private static async Task EnsureSchemaAsync(NpgsqlDataSource dataSource, CancellationToken cancellationToken)
+        private static Task EnsureSchemaAsync(NpgsqlDataSource dataSource, CancellationToken cancellationToken)
+        {
+            return ObserveAsync("EnsureSchema", true, async () =>
+            {
+                await EnsureSchemaCoreAsync(dataSource, cancellationToken).ConfigureAwait(false);
+                return true;
+            });
+        }
+
+        private static async Task EnsureSchemaCoreAsync(NpgsqlDataSource dataSource, CancellationToken cancellationToken)
         {
             string sql = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "postgresql-schema.sql"), cancellationToken).ConfigureAwait(false);
             await using NpgsqlConnection conn = await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -812,7 +893,21 @@ namespace HnswIndex.PostgresqlStorage
             await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        private static async Task<Guid> EnsureIndexAsync(
+        private static Task<Guid> EnsureIndexAsync(
+            NpgsqlDataSource dataSource,
+            string indexName,
+            int dimension,
+            string distanceFunction,
+            int m,
+            int maxM,
+            int efConstruction,
+            bool createIfNotExists,
+            CancellationToken cancellationToken)
+        {
+            return ObserveAsync("EnsureIndex", true, () => EnsureIndexCoreAsync(dataSource, indexName, dimension, distanceFunction, m, maxM, efConstruction, createIfNotExists, cancellationToken));
+        }
+
+        private static async Task<Guid> EnsureIndexCoreAsync(
             NpgsqlDataSource dataSource,
             string indexName,
             int dimension,
@@ -970,6 +1065,38 @@ namespace HnswIndex.PostgresqlStorage
             }
         }
 
+        private static bool IsObserved()
+        {
+            return HnswTelemetry.IsStorageObserved || HnswTelemetry.ActivitySource.HasListeners();
+        }
+
+        private static string ToOperationName(string caller)
+        {
+            if (string.IsNullOrEmpty(caller)) return "Unknown";
+            return caller.EndsWith("Async", StringComparison.Ordinal) ? caller.Substring(0, caller.Length - 5) : caller;
+        }
+
+        private static async Task<T> ObserveAsync<T>(string operation, bool span, Func<Task<T>> action)
+        {
+            Activity? activity = span ? HnswTelemetry.StartStorageActivity(_ProviderName, operation) : null;
+            long startTimestamp = HnswTelemetry.GetTimestamp();
+            T result;
+            try
+            {
+                result = await action().ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                HnswTelemetry.RecordStorageOperation(_ProviderName, operation, startTimestamp, e);
+                HnswTelemetry.CompleteActivity(activity, e);
+                throw;
+            }
+
+            HnswTelemetry.RecordStorageOperation(_ProviderName, operation, startTimestamp);
+            HnswTelemetry.CompleteActivity(activity, null);
+            return result;
+        }
+
         private void ThrowIfDisposed()
         {
             if (_Disposed) throw new ObjectDisposedException(nameof(PostgresqlStorageProvider));
@@ -1004,12 +1131,21 @@ namespace HnswIndex.PostgresqlStorage
             public async Task CommitAsync(CancellationToken cancellationToken = default)
             {
                 if (_Completed) return;
+                long startTimestamp = HnswTelemetry.GetTimestamp();
                 await _Provider._TransactionCommandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
                 try
                 {
                     await _Context.Transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
                     _Completed = true;
                     _Provider.CompleteTransaction(_Context, rolledBack: false);
+                    HnswTelemetry.RecordStorageOperation(_ProviderName, "Commit", startTimestamp);
+                    HnswTelemetry.RecordStorageTransaction(_ProviderName, HnswTelemetryNames.TransactionCommitted);
+                }
+                catch (Exception e)
+                {
+                    HnswTelemetry.RecordStorageOperation(_ProviderName, "Commit", startTimestamp, e);
+                    HnswTelemetry.RecordStorageTransaction(_ProviderName, HnswTelemetryNames.TransactionFailed);
+                    throw;
                 }
                 finally
                 {
@@ -1020,12 +1156,21 @@ namespace HnswIndex.PostgresqlStorage
             public async Task RollbackAsync(CancellationToken cancellationToken = default)
             {
                 if (_Completed) return;
+                long startTimestamp = HnswTelemetry.GetTimestamp();
                 await _Provider._TransactionCommandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
                 try
                 {
                     await _Context.Transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                     _Completed = true;
                     _Provider.CompleteTransaction(_Context, rolledBack: true);
+                    HnswTelemetry.RecordStorageOperation(_ProviderName, "Rollback", startTimestamp);
+                    HnswTelemetry.RecordStorageTransaction(_ProviderName, HnswTelemetryNames.TransactionRolledBack);
+                }
+                catch (Exception e)
+                {
+                    HnswTelemetry.RecordStorageOperation(_ProviderName, "Rollback", startTimestamp, e);
+                    HnswTelemetry.RecordStorageTransaction(_ProviderName, HnswTelemetryNames.TransactionFailed);
+                    throw;
                 }
                 finally
                 {
