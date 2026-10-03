@@ -15,8 +15,13 @@
 - **Dashboard.** The home page has an External services card with Grafana, Prometheus, and Tempo URLs, default credentials, copy buttons, and a reachability check.
 - **Documentation.** New [TELEMETRY.md](TELEMETRY.md) with the metrics and spans catalogs, configuration, subscription examples, dashboard map, recommended PromQL alerts, and troubleshooting.
 
+### Fixes
+
+- **Vector dimension mismatch returned `404 IndexNotFound`.** Adding a vector, adding a batch, or searching with a vector whose length differs from the index dimension now returns `400 InvalidDimension` (as `REST_API.md` documents) instead of `404 IndexNotFound`. `IndexManager` throws the new `VectorDimensionMismatchException` (an `ArgumentException` carrying `ActualDimension` and `ExpectedDimension`) rather than `InvalidOperationException`, and the server maps `InvalidDimension` to HTTP 400 (it previously fell through to 500). A missing index still returns `404 IndexNotFound`.
+
 ### Tests
 
+- New `ServerValidationSuites` (4 cases) cover dimension mismatches on add, batch add, and search, and confirm a missing index is still reported separately.
 - New `TelemetrySuites` (12 cases) prove emission with in-memory BCL listeners across library operations and stages, storage providers (including PostgreSQL), service operations, the reload job, gauges, auth and API errors, the Radiant host (including a live Prometheus scrape), failure paths, and the no-listener path.
 - `run-tests.sh` now passes `--framework net8.0` to the console runner (it previously failed on the multi-targeted project) and is executable.
 

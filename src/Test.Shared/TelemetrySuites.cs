@@ -461,7 +461,7 @@ namespace HnswLite.Test.Shared
                             await TestAssert.ThrowsAsync<InvalidOperationException>(
                                 () => manager.SearchAsync("missing", new SearchRequest { Vector = Vector(1) }, ct), "missing index").ConfigureAwait(false);
                             await manager.CreateIndexAsync(new CreateIndexRequest { Name = "idx", Dimension = _Dimension, StorageType = "RAM" }, ct).ConfigureAwait(false);
-                            await TestAssert.ThrowsAsync<InvalidOperationException>(
+                            await TestAssert.ThrowsAsync<VectorDimensionMismatchException>(
                                 () => manager.AddVectorAsync("idx", new AddVectorRequest { Vector = new List<float> { 1 } }, ct), "bad dimension").ConfigureAwait(false);
                             await TestAssert.ThrowsAsync<ArgumentException>(
                                 () => manager.CreateIndexAsync(new CreateIndexRequest { Name = "bad", Dimension = _Dimension, StorageType = "Nope" }, ct), "bad storage type").ConfigureAwait(false);
@@ -469,7 +469,7 @@ namespace HnswLite.Test.Shared
                             TestAssert.True(capture.Measurements(ServerTelemetryNames.Operations,
                                 m => m.Has(ServerTelemetryNames.LabelOperation, "search") && m.Has(ServerTelemetryNames.LabelOutcome, "error") && m.Has("error.type", "System.InvalidOperationException")).Any(), "search error");
                             TestAssert.True(capture.Measurements(ServerTelemetryNames.Operations,
-                                m => m.Has(ServerTelemetryNames.LabelOperation, "vector.add") && m.Has(ServerTelemetryNames.LabelOutcome, "error") && m.Has(ServerTelemetryNames.LabelStorageType, "ram")).Any(), "add error");
+                                m => m.Has(ServerTelemetryNames.LabelOperation, "vector.add") && m.Has(ServerTelemetryNames.LabelOutcome, "error") && m.Has(ServerTelemetryNames.LabelStorageType, "ram") && m.Has("error.type", "HnswIndex.Server.Classes.VectorDimensionMismatchException")).Any(), "add error");
                             TestAssert.True(capture.Measurements(ServerTelemetryNames.Operations,
                                 m => m.Has(ServerTelemetryNames.LabelOperation, "index.create") && m.Has(ServerTelemetryNames.LabelOutcome, "error") && m.Has(ServerTelemetryNames.LabelStorageType, "unknown")).Any(), "create error with bounded storage label");
                             TestAssert.True(capture.Measurements(ServerTelemetryNames.StageDuration,

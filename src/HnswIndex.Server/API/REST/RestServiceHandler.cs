@@ -362,6 +362,10 @@ namespace HnswIndex.Server.API.REST
                 ctx.Response.ContentType = "application/json";
                 await ctx.Response.Send(json, ctx.Token).ConfigureAwait(false);
             }
+            catch (VectorDimensionMismatchException ex)
+            {
+                await SendErrorResponseAsync(ctx, ApiErrorEnum.InvalidDimension, ex.Message).ConfigureAwait(false);
+            }
             catch (InvalidOperationException ex)
             {
                 await SendErrorResponseAsync(ctx, ApiErrorEnum.IndexNotFound, ex.Message).ConfigureAwait(false);
@@ -498,6 +502,10 @@ namespace HnswIndex.Server.API.REST
                     await ctx.Response.Send(ctx.Token).ConfigureAwait(false);
                 }
             }
+            catch (VectorDimensionMismatchException ex)
+            {
+                await SendErrorResponseAsync(ctx, ApiErrorEnum.InvalidDimension, ex.Message).ConfigureAwait(false);
+            }
             catch (InvalidOperationException ex)
             {
                 await SendErrorResponseAsync(ctx, ApiErrorEnum.IndexNotFound, ex.Message).ConfigureAwait(false);
@@ -549,6 +557,10 @@ namespace HnswIndex.Server.API.REST
                     ctx.Response.StatusCode = 500;
                     await ctx.Response.Send(ctx.Token).ConfigureAwait(false);
                 }
+            }
+            catch (VectorDimensionMismatchException ex)
+            {
+                await SendErrorResponseAsync(ctx, ApiErrorEnum.InvalidDimension, ex.Message).ConfigureAwait(false);
             }
             catch (InvalidOperationException ex)
             {
@@ -603,6 +615,7 @@ namespace HnswIndex.Server.API.REST
                 ApiErrorEnum.IndexNotFound => 404,
                 ApiErrorEnum.VectorNotFound => 404,
                 ApiErrorEnum.Conflict => 409,
+                ApiErrorEnum.InvalidDimension => 400,
                 _ => 500
             };
 

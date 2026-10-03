@@ -524,7 +524,8 @@ namespace HnswIndex.Server.Services
         /// <param name="cancellationToken">Cancellation token.</param>
         /// <returns>True if successful.</returns>
         /// <exception cref="ArgumentNullException">Thrown when parameters are null.</exception>
-        /// <exception cref="InvalidOperationException">Thrown when index not found or dimension mismatch.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when the index is not found.</exception>
+        /// <exception cref="VectorDimensionMismatchException">Thrown when a vector length does not match the index dimension.</exception>
         public async Task<bool> AddVectorAsync(string indexName, AddVectorRequest request, CancellationToken cancellationToken = default)
         {
             using (ServerOperationScope scope = ServerOperationScope.Start(ServerTelemetryNames.OperationVectorAdd, indexName))
@@ -558,7 +559,7 @@ namespace HnswIndex.Server.Services
 
             if (request.Vector.Count != metadata.Dimension)
             {
-                throw new InvalidOperationException($"Vector dimension {request.Vector.Count} does not match index dimension {metadata.Dimension}.");
+                throw new VectorDimensionMismatchException($"Vector dimension {request.Vector.Count} does not match index dimension {metadata.Dimension}.", request.Vector.Count, metadata.Dimension);
             }
 
             System.Guid vectorGuid = request.GUID;
@@ -592,7 +593,8 @@ namespace HnswIndex.Server.Services
         /// <param name="cancellationToken">Cancellation token.</param>
         /// <returns>True if successful.</returns>
         /// <exception cref="ArgumentNullException">Thrown when parameters are null.</exception>
-        /// <exception cref="InvalidOperationException">Thrown when index not found or dimension mismatch.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when the index is not found.</exception>
+        /// <exception cref="VectorDimensionMismatchException">Thrown when a vector length does not match the index dimension.</exception>
         public async Task<bool> AddVectorsAsync(string indexName, AddVectorsRequest request, CancellationToken cancellationToken = default)
         {
             using (ServerOperationScope scope = ServerOperationScope.Start(ServerTelemetryNames.OperationVectorAddBatch, indexName))
@@ -630,7 +632,7 @@ namespace HnswIndex.Server.Services
             {
                 if (vectorRequest.Vector.Count != metadata.Dimension)
                 {
-                    throw new InvalidOperationException($"Vector dimension {vectorRequest.Vector.Count} does not match index dimension {metadata.Dimension}.");
+                    throw new VectorDimensionMismatchException($"Vector dimension {vectorRequest.Vector.Count} does not match index dimension {metadata.Dimension}.", vectorRequest.Vector.Count, metadata.Dimension);
                 }
 
                 System.Guid vectorGuid = vectorRequest.GUID;
@@ -715,7 +717,8 @@ namespace HnswIndex.Server.Services
         /// <param name="cancellationToken">Cancellation token.</param>
         /// <returns>Search response.</returns>
         /// <exception cref="ArgumentNullException">Thrown when parameters are null.</exception>
-        /// <exception cref="InvalidOperationException">Thrown when index not found or dimension mismatch.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when the index is not found.</exception>
+        /// <exception cref="VectorDimensionMismatchException">Thrown when a vector length does not match the index dimension.</exception>
         public async Task<SearchResponse> SearchAsync(string indexName, SearchRequest request, CancellationToken cancellationToken = default)
         {
             using (ServerOperationScope scope = ServerOperationScope.Start(ServerTelemetryNames.OperationSearch, indexName))
@@ -752,7 +755,7 @@ namespace HnswIndex.Server.Services
 
             if (request.Vector.Count != metadata.Dimension)
             {
-                throw new InvalidOperationException($"Query vector dimension {request.Vector.Count} does not match index dimension {metadata.Dimension}.");
+                throw new VectorDimensionMismatchException($"Query vector dimension {request.Vector.Count} does not match index dimension {metadata.Dimension}.", request.Vector.Count, metadata.Dimension);
             }
 
             Stopwatch stopwatch = Stopwatch.StartNew();

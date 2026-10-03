@@ -50,6 +50,7 @@ namespace HnswLite.Test.Shared
                 };
                 all.AddRange(HnswExtendedSuites.All);
                 all.AddRange(MetadataFilterSuites.All);
+                all.AddRange(ServerValidationSuites.All);
                 all.AddRange(TelemetrySuites.All);
                 return all;
             }

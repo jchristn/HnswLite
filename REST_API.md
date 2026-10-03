@@ -159,7 +159,7 @@ K-nearest-neighbour query.
 - Response: `SearchResponse` — `{ "Results": [{GUID, Vector, Distance, Name, Labels, Tags}], "SearchTimeMs": n, "FilteredCount": m }`.
   - `Name` / `Labels` / `Tags` are populated on each result when set on the stored vector (null otherwise).
   - `FilteredCount` is the number of HNSW candidates dropped by the metadata filter — zero when no filter is set. Because filtering is applied **after** graph traversal, restrictive filters can return fewer than `K` results; `FilteredCount` makes this visible.
-- Errors: `400` (dimension mismatch), `404` (index not found).
+- Errors: `400 InvalidDimension` (query vector length differs from the index dimension), `400 BadRequest` (invalid body), `404 IndexNotFound` (unknown index).
 
 ### `GET /v1.0/indexes/{name}/vectors`
 
@@ -203,7 +203,7 @@ Add a single vector.
 
 - Body: `{ "GUID": "optional", "Vector": [...] }`.
 - Response: `201 Created` echoing the request body.
-- Errors: `400`, `404`.
+- Errors: `400 InvalidDimension` (vector length differs from the index dimension), `400 BadRequest` (invalid body), `404 IndexNotFound` (unknown index).
 
 ### `POST /v1.0/indexes/{name}/vectors/batch`
 
@@ -211,7 +211,7 @@ Add a batch of vectors.
 
 - Body: `{ "Vectors": [{ "GUID"?, "Vector": [...] }, ...] }`.
 - Response: `201 Created` echoing the request body.
-- Errors: `400`, `404`.
+- Errors: `400 InvalidDimension` (any entry's length differs from the index dimension; the whole batch is rejected), `400 BadRequest` (invalid body), `404 IndexNotFound` (unknown index).
 
 ### `DELETE /v1.0/indexes/{name}/vectors/{guid}`
 
