@@ -40,6 +40,11 @@ HnswLite implements the Hierarchical Navigable Small World algorithm, which prov
 - **OPTIONS preflight + CORS** out of the box in the REST server.
 - **Observability built in.** Metrics and traces for HTTP, every service operation and its stages, graph operations, storage calls, and runtime health, with Prometheus, Tempo, and six Grafana dashboards in the compose stack. See [TELEMETRY.md](TELEMETRY.md).
 
+## New in v2.2.1
+
+- Dependency refresh: Microsoft.Data.Sqlite and System.Text.Json `10.0.12`, Watson `7.2.2`, SyslogLogging `2.3.1`, and current test tooling (Touchstone `0.2.0`, NUnit `5.0.0`, MSTest `4.4.1`). See [CHANGELOG.md](CHANGELOG.md).
+- Package versions: `HnswLite.SqliteStorage` 2.2.1, `HnswLite.Sdk` 2.1.1.
+
 ## New in v2.2.0
 
 - **Metrics and traces in the libraries.** `HnswLite`, `HnswLite.SqliteStorage`, and `HnswLite.PostgresqlStorage` emit through the .NET base class library on the `HnswLite` meter and activity source: per-operation and per-stage durations (including time queued for the index write lock), outcomes with `error.type`, lock waiters, search work and cache hit ratio, storage call latency and errors, and transaction outcomes. No new package dependency, and it costs nearly nothing when nobody subscribes.

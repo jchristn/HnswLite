@@ -1,5 +1,28 @@
 # Change Log
 
+## v2.2.1
+
+### Dependency updates
+
+- **Microsoft.Data.Sqlite** `10.0.11` → `10.0.12` (`HnswLite.SqliteStorage`).
+- **System.Text.Json** `10.0.11` → `10.0.12` (`HnswLite.Sdk`).
+- Server: Watson `7.1.1` → `7.2.2`, SyslogLogging `2.2.2` → `2.3.1`.
+- Test tooling: Touchstone (Core, Cli, xUnit/NUnit/MSTest adapters) `0.1.12` → `0.2.0`, Microsoft.NET.Test.Sdk `18.9.0` → `18.10.1`, NUnit `4.6.1` → `5.0.0`, NUnit3TestAdapter `6.2.0` → `6.3.0`, MSTest.TestAdapter/TestFramework `4.3.3` → `4.4.1`.
+
+No public API changed; the library and server needed no source changes.
+
+### Tests
+
+- Touchstone.XunitAdapter 0.2.0's `TouchstoneTheoryData` now yields skipped descriptors, so the xUnit host ran the PostgreSQL telemetry case (skipped when no PostgreSQL connection is configured) and failed it. The xUnit host now builds its theory data from non-skipped cases, matching the NUnit and MSTest hosts.
+- The xUnit, NUnit, and MSTest hosts run each case through `TestExecutor.ExecuteCaseAsync`, so every row emits Touchstone's run telemetry.
+
+### Package versions
+
+- `HnswLite.SqliteStorage` **2.2.1** and `HnswLite.Sdk` **2.1.1**: patch dependency updates.
+- `HnswLite` (2.1.0), `HnswLite.RamStorage` (2.0.1), and `HnswLite.PostgresqlStorage` (2.2.0) are unchanged.
+
+---
+
 ## v2.2.0
 
 ### Observability (metrics and traces)

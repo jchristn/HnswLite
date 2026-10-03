@@ -34,7 +34,7 @@ namespace HnswLite.Test.MSTest
         [DynamicData(nameof(TestCases))]
         public async Task RunTouchstoneCase(TestCaseDescriptor testCase)
         {
-            await testCase.ExecuteAsync(CancellationToken.None).ConfigureAwait(false);
+            await TestExecutor.ExecuteCaseAsync(testCase, CancellationToken.None).ConfigureAwait(false);
         }
     }
 }

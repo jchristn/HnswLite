@@ -6,7 +6,6 @@ namespace HnswLite.Test.XUnit
 
     using HnswLite.Test.Shared;
     using Touchstone.Core;
-    using Touchstone.XunitAdapter;
     using Xunit;
 
     /// <summary>
@@ -19,9 +18,22 @@ namespace HnswLite.Test.XUnit
         /// <summary>
         /// Provides every non-skipped TestCaseDescriptor from the shared suites as xUnit theory data.
         /// </summary>
-        public static TouchstoneTheoryData TestCases
+        public static TheoryData<TestCaseDescriptor> TestCases
         {
-            get { return new TouchstoneTheoryData(HnswSuites.All); }
+            get
+            {
+                // Touchstone.XunitAdapter 0.2.0's TouchstoneTheoryData yields skipped cases too, so filter here.
+                TheoryData<TestCaseDescriptor> data = new TheoryData<TestCaseDescriptor>();
+                foreach (TestSuiteDescriptor suite in HnswSuites.All)
+                {
+                    foreach (TestCaseDescriptor testCase in suite.Cases)
+                    {
+                        if (!testCase.Skip) data.Add(testCase);
+                    }
+                }
+
+                return data;
+            }
         }
 
         /// <summary>
@@ -33,7 +45,7 @@ namespace HnswLite.Test.XUnit
         [MemberData(nameof(TestCases))]
         public async Task RunTouchstoneCase(TestCaseDescriptor testCase)
         {
-            await testCase.ExecuteAsync(CancellationToken.None);
+            await TestExecutor.ExecuteCaseAsync(testCase, CancellationToken.None);
         }
     }
 }
